@@ -29,10 +29,12 @@ jobs:
             target: arm64
             experimental: false
             arm64ec: false
+            python_arch: arm64
           - name: ARM64EC
             target: arm64ec
             experimental: true
             arm64ec: true
+            python_arch: amd64
 
     steps:
       - name: Check out build repository
@@ -89,6 +91,15 @@ jobs:
           ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
           cmake --install build --config ${{ env.BUILD_TYPE }}
 
+      - name: Test C ABI through Python ctypes
+        shell: pwsh
+        run: |
+          $url = 'https://www.python.org/ftp/python/3.13.12/python-3.13.12-embed-${{ matrix.python_arch }}.zip'
+          Invoke-WebRequest -Uri $url -OutFile python-embed.zip
+          Expand-Archive python-embed.zip -DestinationPath python-runtime
+          $dll = (Resolve-Path 'install/bin/unicorn.dll').Path
+          & 'python-runtime/python.exe' 'tools/unicorn_ctypes_smoke.py' $dll
+
       - name: Collect DLL and architecture report
         if: always()
         shell: pwsh
@@ -109,4 +120,3 @@ jobs:
           name: unicorn-windows-${{ matrix.target }}
           path: artifact
           if-no-files-found: error
-
