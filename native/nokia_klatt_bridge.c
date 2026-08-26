@@ -45,6 +45,9 @@ typedef struct {
     size_t frontend_hook;
     uint32_t frontend_count, frontend_table, frontend_values;
     uint64_t frontend_native_calls, frontend_fallback_calls;
+    size_t prosody_hook[2];
+    uint64_t prosody_entry[2];
+    uint64_t prosody_native_calls, prosody_fallback_calls;
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
@@ -76,6 +79,113 @@ static int rom_u32(uint32_t address, uint32_t *value) {
     if (offset + 4 > bridge.rom_size) return 0;
     *value = load_u32(bridge.rom + offset);
     return 1;
+}
+
+static int guest_read(void *uc, uint32_t address, void *data, size_t size) {
+    return address && bridge.mem_read(uc, address, data, size) == 0;
+}
+
+static int guest_write(void *uc, uint32_t address, const void *data,
+                       size_t size) {
+    return address && bridge.mem_write(uc, address, data, size) == 0;
+}
+
+static int16_t add_i16(int16_t a, int32_t b) {
+    return (int16_t)((uint16_t)a + (uint16_t)b);
+}
+
+/* Two 5320 duration-field helpers (guest 0x830ffaa2/0x830ffafe). */
+static void prosody_duration_hook(void *uc, uint64_t address, size_t size,
+                                  void *user) {
+    uint32_t r0, r1, r2, lr, durations_address, thresholds_address;
+    uint8_t object[0x24];
+    uint16_t *durations = NULL;
+    int16_t *thresholds = NULL;
+    uint32_t duration_count, threshold_count, i, index;
+    int16_t sum = 0;
+    int ok = 0;
+    (void)size; (void)user;
+    if (!read_reg(uc, bridge.r0, &r0) ||
+        !read_reg(uc, bridge.r1, &r1) ||
+        !read_reg(uc, bridge.r2, &r2) ||
+        !read_reg(uc, bridge.lr, &lr) ||
+        !guest_read(uc, r0, object, sizeof(object))) goto done;
+    durations_address = load_u32(object + 0x0c);
+    thresholds_address = load_u32(object +
+        (address == bridge.prosody_entry[1] ? 0x14 : 0x20));
+    threshold_count = load_u16(object +
+        (address == bridge.prosody_entry[1] ? 0x02 : 0x04));
+    duration_count = r1 + (address == bridge.prosody_entry[1]);
+    if (duration_count > 32768 || threshold_count > 32768 ||
+        !durations_address || !thresholds_address) goto done;
+    durations = (uint16_t *)malloc((duration_count ? duration_count : 1) * 2);
+    thresholds = (int16_t *)malloc((threshold_count ? threshold_count : 1) * 2);
+    if (!durations || !thresholds ||
+        (duration_count && !guest_read(uc, durations_address, durations,
+                                       duration_count * 2)) ||
+        (threshold_count && !guest_read(uc, thresholds_address, thresholds,
+                                        threshold_count * 2))) goto done;
+    for (i = 0; i < r1; ++i) sum = add_i16(sum, durations[i]);
+    index = 0;
+    { int16_t boundary = 0;
+      while (boundary < sum && index < threshold_count)
+          boundary = thresholds[index++]; }
+    if (address == bridge.prosody_entry[0]) {
+        /* nokia_duration_shift: add r2 from the selected boundary onward. */
+        if (index < threshold_count) {
+            if (index) --index;
+            if (!index) {
+                int16_t first = add_i16(thresholds[0], (int32_t)r2);
+                if (first >= 0) { thresholds[0] = first; index = 1; }
+            }
+            for (i = index; i < threshold_count; ++i)
+                thresholds[i] = add_i16(thresholds[i], (int32_t)r2);
+        }
+        if (threshold_count && !guest_write(uc, thresholds_address, thresholds,
+                                             threshold_count * 2)) goto done;
+        bridge.reg_write(uc, bridge.r1, &threshold_count);
+        bridge.reg_write(uc, bridge.r3, &threshold_count);
+    } else {
+        /* nokia_duration_spread: distribute r2 across the next boundaries. */
+        uint32_t span = 0;
+        uint32_t result = (uint32_t)(int32_t)sum;
+        int16_t step = 0;
+        if (index < threshold_count) {
+            if (index) --index;
+            while (index + span < threshold_count &&
+                   thresholds[index + span] <
+                       add_i16(sum, durations[r1]))
+                ++span;
+            if (span) step = (int16_t)((int32_t)r2 / (int32_t)span);
+            for (i = 0; i < span; ++i)
+                thresholds[index + i] = add_i16(
+                    thresholds[index + i], (int32_t)(i + 1) * step);
+            index += span;
+            if (!index && threshold_count) {
+                int16_t first = add_i16(thresholds[0], (int32_t)r2);
+                if (first >= 0) { thresholds[0] = first; index = 1; }
+            }
+            for (i = index; i < threshold_count; ++i)
+                thresholds[i] = add_i16(thresholds[i], (int32_t)r2);
+            result = threshold_count;
+        }
+        if (threshold_count && !guest_write(uc, thresholds_address, thresholds,
+                                             threshold_count * 2)) goto done;
+        r0 = result;
+        { uint32_t original_r0;
+          if (!read_reg(uc, bridge.r0, &original_r0)) goto done;
+          bridge.reg_write(uc, bridge.r1, &original_r0); }
+        r1 = duration_count - 1;
+        bridge.reg_write(uc, bridge.r2, &r1);
+        bridge.reg_write(uc, bridge.r3, &r2);
+        bridge.reg_write(uc, bridge.r0, &r0);
+    }
+    bridge.reg_write(uc, bridge.pc, &lr);
+    bridge.prosody_native_calls++;
+    ok = 1;
+done:
+    free(durations); free(thresholds);
+    if (!ok) bridge.prosody_fallback_calls++;
 }
 
 /* Bit-exact 5320 frontend Unicode/range lookup (guest 0x830ee500). */
@@ -295,9 +405,33 @@ NOKIA_EXPORT int nokia_install_frontend_lookup_hook(
                            entry, entry) == 0;
 }
 
+NOKIA_EXPORT int nokia_install_prosody_duration_hooks(uint64_t shift_entry,
+                                                       uint64_t spread_entry) {
+    if (!bridge.uc || !bridge.hook_add || !shift_entry || !spread_entry)
+        return 0;
+    bridge.prosody_entry[0] = shift_entry;
+    bridge.prosody_entry[1] = spread_entry;
+    if (bridge.hook_add(bridge.uc, &bridge.prosody_hook[0], 4,
+                        (void *)prosody_duration_hook, NULL,
+                        shift_entry, shift_entry) != 0) return 0;
+    if (bridge.hook_add(bridge.uc, &bridge.prosody_hook[1], 4,
+                        (void *)prosody_duration_hook, NULL,
+                        spread_entry, spread_entry) != 0) {
+        bridge.hook_del(bridge.uc, bridge.prosody_hook[0]);
+        bridge.prosody_hook[0] = 0;
+        return 0;
+    }
+    return 1;
+}
+
 NOKIA_EXPORT void nokia_frontend_lookup_hook_counters(uint64_t out[2]) {
     out[0] = bridge.frontend_native_calls;
     out[1] = bridge.frontend_fallback_calls;
+}
+
+NOKIA_EXPORT void nokia_prosody_duration_hook_counters(uint64_t out[2]) {
+    out[0] = bridge.prosody_native_calls;
+    out[1] = bridge.prosody_fallback_calls;
 }
 
 NOKIA_EXPORT void nokia_resampler_hook_counters(uint64_t out[2]) {
@@ -311,9 +445,13 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
         bridge.hook_del(bridge.uc, bridge.resampler_hook);
     if (bridge.uc && bridge.frontend_hook)
         bridge.hook_del(bridge.uc, bridge.frontend_hook);
+    for (int i = 0; i < 2; ++i)
+        if (bridge.uc && bridge.prosody_hook[i])
+            bridge.hook_del(bridge.uc, bridge.prosody_hook[i]);
     bridge.hook = 0;
     bridge.resampler_hook = 0;
     bridge.frontend_hook = 0;
+    bridge.prosody_hook[0] = bridge.prosody_hook[1] = 0;
 }
 
 NOKIA_EXPORT void nokia_klatt_hook_counters(uint64_t out[2]) {
