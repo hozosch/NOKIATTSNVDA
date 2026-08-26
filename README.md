@@ -31,10 +31,10 @@ synthesizer would be fast, but would not necessarily retain the Nokia sound.
 The emulated engine is therefore kept as a reference while the native
 implementation is developed and compared against its parameters and PCM.
 
-## Current status: compact transition build
+## Current status: accelerated hybrid build
 
-The current 0.9 test build is **not yet a native reimplementation of the Nokia
-speech engine**.
+Version 0.12 is the first accelerated hybrid build. It is **not yet a fully
+native reimplementation of the Nokia speech engine**.
 
 | Component | Current implementation | Intended final implementation |
 |---|---|---|
@@ -43,8 +43,8 @@ speech engine**.
 | TTS code and data | Compact address-preserving TTS packs | Data-only voice packages |
 | Text analysis and pronunciation | Nokia ARM32 code through Unicorn | Portable native frontend |
 | Prosody generation | Nokia ARM32 code through Unicorn | Portable native frontend |
-| Klatt/DSP signal generation | Mostly Nokia ARM32 code through Unicorn | Portable C/C++ core |
-| Resampling | One hot routine replaced on ARM64 | Portable x64/ARM64 implementation |
+| Klatt waveform generation | Bit-exact native x64/ARM64 code for all five bundled families | Portable native core |
+| Resampling and rate conversion | Native x64/ARM64; rate remains pitch-preserving post-processing | Native parameter timing |
 | Windows ARM host | Native ARM64 helper process | Native ARM64 library/process |
 | Intel/AMD host | In-process x64 Unicorn | Native x64 library/process |
 
@@ -54,23 +54,29 @@ with the external speech-resource files that the engines actually open. This
 reduces the add-on from well over 100 MB to roughly 12–17 MB, depending on the
 included host runtimes.
 
-### Why the compact build is not faster yet
+### First native performance milestone
 
-The compact packages remove unrelated phone software, but they do not change
-the instructions executed while speaking. Text processing, prosody and most
-of the Klatt/DSP work are still ARM32 Symbian machine code executed by
-Unicorn.
+The complete shared Klatt waveform-generator frame routine has now been
+reconstructed as portable C and built as native Windows x64 and ARM64 code for
+the 5320, 5500, 6650, 6220 and N85 families. End-to-end reference tests remain
+PCM-identical and report no ARM fallback. The full 5320 reference sentence is
+about 1.4 times faster locally.
 
-The ARM64 helper removes an unnecessary x64-to-ARM64 translation layer and
-fixes ABI problems, but measurements and listening tests have so far shown no
-meaningful improvement in reaction time. That is expected at this stage: the
-dominant synthesis workload itself has not yet been ported.
+Nokia text analysis, pronunciation and prosody preparation still execute as
+ARM32 code through Unicorn. Because most preparation for a short utterance
+happens before its first synthesis frame, some first-audio latency remains.
+That frontend is the next major performance target.
+
+Speaking-rate conversion now executes inside the same native library rather
+than Python. It preserves pitch and is deliberately described as native audio
+processing, not as a reconstructed Nokia prosody control: the frontend still
+creates frames at its natural durations.
 
 Profiling the Nokia 5320 attributes roughly **85.5% of guest basic-block
 executions** for a sentence to one DSP image (UID `0x101f8ca5`). This module
 is the main target for native replacement.
 
-## DSP trace test build
+## DSP trace and frame-capture builds
 
 Version 0.10 adds an explicit profiler for locating the boundary that the
 native Klatt/DSP implementation must replace. It is completely disabled during
@@ -103,7 +109,9 @@ utterance.
 
 The trace is a diagnostic milestone, not a performance improvement by itself.
 Its purpose is to identify stable parameters and hot routines that can be
-reimplemented and tested as native x64/ARM64 code.
+reimplemented and tested as native x64/ARM64 code. Version 0.11 added the
+complete parameter/state/PCM frame capture; version 0.12 is the first build to
+use the resulting native generator.
 
 ## Voices and languages
 
@@ -127,14 +135,12 @@ not be compatible.
 
 ## Native-port roadmap
 
-1. Trace the frame/parameter boundary between Nokia text/prosody processing
-   and the hot DSP code.
-2. Record parameter frames and reference PCM for automated comparison.
-3. Reproduce the 5320 DSP output in portable C or C++.
-4. Build the same core for Windows x64 and ARM64.
-5. Adapt compatible formats used by the 5500, 6650, 6220, N85 and later C5.
-6. Decode or replace the remaining text, phoneme and prosody frontend.
-7. Replace `TTS.PAK`, Unicorn and the embedded Python runtime with data-only
+1. Keep native generator output bit-exact across all supported voices.
+2. Port the preparation path responsible for latency before the first frame.
+3. Decode or replace the remaining text, phoneme and prosody frontend.
+4. Add compatible formats used by later families such as the C5 when matching
+   TTS data is available.
+5. Replace `TTS.PAK`, Unicorn and the embedded Python runtime with data-only
    voice packages once the native implementation matches the reference.
 
 A release should only be described as fully native once the ARM32 guest path
@@ -161,8 +167,9 @@ speech data only.
 
 At present this repository contains experimental build and porting work,
 including native Windows ARM/x64 dependencies and the transition add-on
-infrastructure. The next substantial performance milestone is the native
-Klatt/DSP core, not another buffering or ROM-compression change.
+infrastructure. The native Klatt frame generator is now implemented; the next
+substantial performance milestone is the pre-frame text/prosody path, not
+another buffering or ROM-compression change.
 
 ## Attribution
 
