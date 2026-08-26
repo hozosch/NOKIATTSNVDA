@@ -54,7 +54,7 @@ with the external speech-resource files that the engines actually open. This
 reduces the add-on from well over 100 MB to roughly 12–17 MB, depending on the
 included host runtimes.
 
-### Why version 0.9 is not faster yet
+### Why the compact build is not faster yet
 
 The compact packages remove unrelated phone software, but they do not change
 the instructions executed while speaking. Text processing, prosody and most
@@ -69,6 +69,41 @@ dominant synthesis workload itself has not yet been ported.
 Profiling the Nokia 5320 attributes roughly **85.5% of guest basic-block
 executions** for a sentence to one DSP image (UID `0x101f8ca5`). This module
 is the main target for native replacement.
+
+## DSP trace test build
+
+Version 0.10 adds an explicit profiler for locating the boundary that the
+native Klatt/DSP implementation must replace. It is completely disabled during
+ordinary speech and therefore adds no runtime hook overhead unless requested.
+
+Open NVDA's Python console with NVDA+Control+Z and run:
+
+```python
+from synthDrivers._nokia import bench
+bench.trace()
+```
+
+The trace records:
+
+- executed ARM basic blocks by ROM image;
+- likely DSP function calls and their ARM argument registers;
+- DSP activity observed before each PCM buffer reaches NVDA;
+- whether the existing native resampler accelerator is active.
+
+A much slower memory-write trace is available when needed:
+
+```python
+bench.trace(deep=True)
+```
+
+The summary is printed and written to NVDA's log. The complete structured
+report is saved as `nokiaTTS-dsp-trace.json` in NVDA's configuration
+directory. All profiling hooks are removed immediately after the test
+utterance.
+
+The trace is a diagnostic milestone, not a performance improvement by itself.
+Its purpose is to identify stable parameters and hot routines that can be
+reimplemented and tested as native x64/ARM64 code.
 
 ## Voices and languages
 
