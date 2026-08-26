@@ -1,0 +1,112 @@
+name: Build Unicorn for Windows on ARM
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-unicorn-windows-arm.yml"
+      - "patches/unicorn-arm64ec.patch"
+
+permissions:
+  contents: read
+
+env:
+  UNICORN_REPOSITORY: expend20/unicorn
+  UNICORN_REF: win-arm64-build
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: windows-11-arm
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Native ARM64
+            target: arm64
+            experimental: false
+            arm64ec: false
+          - name: ARM64EC
+            target: arm64ec
+            experimental: true
+            arm64ec: true
+
+    steps:
+      - name: Check out build repository
+        uses: actions/checkout@v4
+
+      - name: Check out Unicorn ARM64 branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UNICORN_REPOSITORY }}
+          ref: ${{ env.UNICORN_REF }}
+          submodules: recursive
+          path: unicorn
+
+      - name: Set up MSVC for ARM64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+
+      - name: Apply ARM64EC support patch
+        if: matrix.arm64ec
+        shell: pwsh
+        run: git -C unicorn apply --check ../patches/unicorn-arm64ec.patch; git -C unicorn apply ../patches/unicorn-arm64ec.patch
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          if ('${{ matrix.arm64ec }}' -eq 'true') {
+            $env:CFLAGS = '/arm64EC /O2'
+            $env:CXXFLAGS = '/arm64EC /O2'
+            $ecOption = '-DUNICORN_ARM64EC=ON'
+          } else {
+            $env:CFLAGS = '/O2'
+            $env:CXXFLAGS = '/O2'
+            $ecOption = '-DUNICORN_ARM64EC=OFF'
+          }
+
+          cmake `
+            -S unicorn `
+            -B build `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DCMAKE_INSTALL_PREFIX=install `
+            -DBUILD_SHARED_LIBS=ON `
+            -DUNICORN_ARCH=arm `
+            -DUNICORN_BUILD_TESTS=ON `
+            -DUNICORN_INSTALL=ON `
+            -DUNICORN_LEGACY_STATIC_ARCHIVE=OFF `
+            $ecOption
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+          ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
+          cmake --install build --config ${{ env.BUILD_TYPE }}
+
+      - name: Collect DLL and architecture report
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          $dll = Get-ChildItem -Path install, build -Filter unicorn.dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dll) {
+            throw 'unicorn.dll was not produced'
+          }
+          Copy-Item $dll.FullName "artifact/unicorn-${{ matrix.target }}.dll"
+          dumpbin /headers $dll.FullName | Out-File -Encoding utf8 "artifact/dumpbin-headers-${{ matrix.target }}.txt"
+          Get-FileHash -Algorithm SHA256 $dll.FullName | Format-List | Out-File -Encoding utf8 "artifact/sha256-${{ matrix.target }}.txt"
+
+      - name: Upload DLL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unicorn-windows-${{ matrix.target }}
+          path: artifact
+          if-no-files-found: error
+

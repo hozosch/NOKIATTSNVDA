@@ -1,0 +1,28 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5ac13ad..ed6a6c0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -87,6 +87,7 @@ option(UNICORN_LOGGING "Enable logging" OFF)
+ option(UNICORN_BUILD_TESTS "Build unicorn tests" ${PROJECT_IS_TOP_LEVEL})
+ option(UNICORN_INSTALL "Enable unicorn installation" ${PROJECT_IS_TOP_LEVEL})
+ set(UNICORN_ARCH "x86;arm;aarch64;riscv;mips;sparc;m68k;ppc;s390x;tricore" CACHE STRING "Enabled unicorn architectures")
++option(UNICORN_ARM64EC "Build an ARM64EC-compatible Windows binary" OFF)
+ option(UNICORN_TRACER "Trace unicorn execution" OFF)
+ 
+ foreach(ARCH_LOOP ${UNICORN_ARCH})
+@@ -1223,9 +1224,14 @@ if(MSVC)
+         qemu/util/qemu-thread-win32.c
+     )
+     if(MSVC_TARGET_ARCH STREQUAL "aarch64")
++        if(UNICORN_ARM64EC)
++            set(UNICORN_ARM64_ASM_MACHINE -machine ARM64EC)
++        else()
++            set(UNICORN_ARM64_ASM_MACHINE -machine ARM64)
++        endif()
+         # ARM64 uses armasm64 for assembly
+         add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/setjmp-wrapper-win32-arm64.obj"
+-            COMMAND armasm64 -o "${CMAKE_CURRENT_BINARY_DIR}/setjmp-wrapper-win32-arm64.obj" "${CMAKE_CURRENT_SOURCE_DIR}/qemu/util/setjmp-wrapper-win32-arm64.asm"
++            COMMAND armasm64 ${UNICORN_ARM64_ASM_MACHINE} -o "${CMAKE_CURRENT_BINARY_DIR}/setjmp-wrapper-win32-arm64.obj" "${CMAKE_CURRENT_SOURCE_DIR}/qemu/util/setjmp-wrapper-win32-arm64.asm"
+             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/qemu/util/setjmp-wrapper-win32-arm64.asm"
+             COMMENT "Building ARM64 setjmp wrapper"
+         )
