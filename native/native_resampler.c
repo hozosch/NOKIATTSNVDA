@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+/* Compiled for the native ARM64 helper process bundled with the add-on. */
+
 #if defined(_WIN32)
 #define API __declspec(dllexport)
 #else
