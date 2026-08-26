@@ -1,0 +1,41 @@
+name: Build native Nokia DSP accelerator
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [native-resampler-test]
+    paths:
+      - ".github/workflows/build-native-resampler-arm64.yml"
+      - "native/native_resampler.c"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC for ARM64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+
+      - name: Build ARM64 DLL
+        shell: cmd
+        run: |
+          mkdir artifact
+          cl /nologo /O2 /LD native\native_resampler.c /link /OUT:artifact\nokia_resampler.dll
+          dumpbin /headers artifact\nokia_resampler.dll > artifact\dumpbin-headers.txt
+          certutil -hashfile artifact\nokia_resampler.dll SHA256 > artifact\sha256.txt
+
+      - name: Verify exported function
+        shell: cmd
+        run: dumpbin /exports artifact\nokia_resampler.dll | findstr nokia_resample
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nokia-native-resampler-arm64
+          path: artifact
+          if-no-files-found: error
