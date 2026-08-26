@@ -1,0 +1,53 @@
+name: Build native Nokia Klatt engine
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "native/generated/**"
+      - "native/nokia_klatt_bridge.c"
+      - ".github/workflows/build-native-klatt.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+            suffix: x64
+          - runner: windows-11-arm
+            arch: arm64
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Build profile DLLs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/native | Out-Null
+          $profiles = @("5320", "5500", "6650", "6220", "n85")
+          foreach ($profile in $profiles) {
+            cl /nologo /O2 /LD "native/generated/nokia_klatt_$profile.c" native/nokia_klatt_bridge.c /link "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
+            if ($LASTEXITCODE -ne 0) { throw "Klatt build failed for $profile" }
+          }
+          Get-ChildItem build/native/*.dll | ForEach-Object {
+            dumpbin /headers $_.FullName | Select-String -Pattern "machine"
+          }
+
+      - name: Upload native Klatt DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: nokia-klatt-${{ matrix.suffix }}
+          path: build/native/nokia_klatt_*_${{ matrix.suffix }}.dll
+          if-no-files-found: error
