@@ -1,0 +1,50 @@
+name: Build native Nokia DSP filters
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "native/**"
+      - ".github/workflows/build-native-dsp.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+            suffix: x64
+          - runner: windows-11-arm
+            arch: arm64
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Build DLL and self-test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/native | Out-Null
+          cl /nologo /O2 /W4 /WX /LD native/nokia_dsp.c /link /OUT:build/native/nokia_dsp-${{ matrix.suffix }}.dll
+          cl /nologo /O2 /W4 /WX native/test_dsp.c native/nokia_dsp.c /Fe:build/native/test_dsp-${{ matrix.suffix }}.exe
+          & "build/native/test_dsp-${{ matrix.suffix }}.exe"
+          if ($LASTEXITCODE -ne 0) { throw "DSP self-test failed" }
+          dumpbin /headers "build/native/nokia_dsp-${{ matrix.suffix }}.dll" |
+            Select-String -Pattern "machine"
+
+      - name: Upload native DSP DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: nokia-dsp-${{ matrix.suffix }}
+          path: build/native/nokia_dsp-${{ matrix.suffix }}.dll
+          if-no-files-found: error
