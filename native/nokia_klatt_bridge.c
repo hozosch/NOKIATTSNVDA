@@ -15,6 +15,11 @@ typedef int (*UcRegRead)(void *, int, void *);
 typedef int (*UcRegWrite)(void *, int, const void *);
 typedef int (*UcMemRead)(void *, uint64_t, void *, size_t);
 typedef int (*UcMemWrite)(void *, uint64_t, const void *, size_t);
+typedef int32_t (*NokiaResample)(
+    const int16_t *, int32_t, int16_t *, int32_t,
+    int32_t *, int32_t *, int32_t *, const int32_t *, const int32_t *,
+    const int32_t *, uint16_t, uint16_t, uint16_t, uint16_t, uint16_t,
+    uint16_t, uint16_t, uint16_t *, uint16_t *, uint16_t *, uint32_t *);
 
 extern int nokia_klatt_generate_aot(
     int16_t *, int32_t *, uint8_t[122], uint8_t[564], uint32_t,
@@ -34,9 +39,28 @@ typedef struct {
     UcMemRead mem_read;
     UcMemWrite mem_write;
     uint64_t native_calls, fallback_calls;
+    size_t resampler_hook;
+    NokiaResample resample;
+    uint64_t resampler_native_calls, resampler_fallback_calls;
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
+
+static uint16_t load_u16(const uint8_t *p) {
+    uint16_t value; memcpy(&value, p, sizeof(value)); return value;
+}
+
+static uint32_t load_u32(const uint8_t *p) {
+    uint32_t value; memcpy(&value, p, sizeof(value)); return value;
+}
+
+static void store_u16(uint8_t *p, uint16_t value) {
+    memcpy(p, &value, sizeof(value));
+}
+
+static void store_u32(uint8_t *p, uint32_t value) {
+    memcpy(p, &value, sizeof(value));
+}
 
 static int read_reg(void *uc, int id, uint32_t *value) {
     return bridge.reg_read(uc, id, value) == 0;
@@ -90,6 +114,87 @@ static void klatt_hook(void *uc, uint64_t address, size_t size, void *user) {
     bridge.native_calls++;
 }
 
+static void resampler_hook(void *uc, uint64_t address, size_t size, void *user) {
+    uint32_t input_address, output_address, count, state_address, lr;
+    uint8_t fields[0x34];
+    uint32_t ring_address[3], coefficient_address[3], phase;
+    uint16_t length[3], repeat[3], divisor, position[3];
+    int16_t *input = NULL, *output = NULL;
+    int32_t *ring[3] = {NULL, NULL, NULL};
+    int32_t *coefficient[3] = {NULL, NULL, NULL};
+    size_t coefficient_count[3], capacity;
+    int32_t produced;
+    int ok = 0;
+    (void)address; (void)size; (void)user;
+    if (!bridge.resample ||
+        !read_reg(uc, bridge.r0, &input_address) ||
+        !read_reg(uc, bridge.r1, &output_address) ||
+        !read_reg(uc, bridge.r2, &count) ||
+        !read_reg(uc, bridge.r3, &state_address) ||
+        !read_reg(uc, bridge.lr, &lr) || count > 65536 ||
+        bridge.mem_read(uc, state_address, fields, sizeof(fields)))
+        goto done;
+    if (load_u16(fields + 2) == 1) goto done;
+    for (int i = 0; i < 3; ++i) {
+        ring_address[i] = load_u32(fields + 4 + i * 4);
+        coefficient_address[i] = load_u32(fields + 16 + i * 4);
+        length[i] = load_u16(fields + 28 + i * 2);
+        repeat[i] = load_u16(fields + 34 + i * 2);
+        position[i] = load_u16(fields + 42 + i * 2);
+        if (!ring_address[i] || !coefficient_address[i] || !length[i])
+            goto done;
+    }
+    divisor = load_u16(fields + 40);
+    phase = load_u32(fields + 48);
+    if (!divisor) goto done;
+    coefficient_count[0] = (length[0] + 1) / 2;
+    coefficient_count[1] = length[1] / 2;
+    coefficient_count[2] = (length[2] + 1) / 2;
+    capacity = (size_t)count;
+    for (int i = 0; i < 3; ++i)
+        capacity *= repeat[i] ? repeat[i] : 1;
+    capacity += 4;
+    input = (int16_t *)malloc((size_t)count * 2);
+    output = (int16_t *)malloc(capacity * 2);
+    if ((!input && count) || !output) goto done;
+    if (count && bridge.mem_read(uc, input_address, input, (size_t)count * 2))
+        goto done;
+    for (int i = 0; i < 3; ++i) {
+        ring[i] = (int32_t *)malloc((size_t)length[i] * 4);
+        coefficient[i] = (int32_t *)malloc(coefficient_count[i] * 4);
+        if (!ring[i] || !coefficient[i] ||
+            bridge.mem_read(uc, ring_address[i], ring[i], (size_t)length[i] * 4) ||
+            bridge.mem_read(uc, coefficient_address[i], coefficient[i],
+                            coefficient_count[i] * 4))
+            goto done;
+    }
+    produced = bridge.resample(
+        input, (int32_t)count, output, (int32_t)capacity,
+        ring[0], ring[1], ring[2], coefficient[0], coefficient[1],
+        coefficient[2], length[0], length[1], length[2], repeat[0],
+        repeat[1], repeat[2], divisor, &position[0], &position[1],
+        &position[2], &phase);
+    if (produced < 0 || (size_t)produced > capacity) goto done;
+    for (int i = 0; i < 3; ++i)
+        if (bridge.mem_write(uc, ring_address[i], ring[i],
+                             (size_t)length[i] * 4)) goto done;
+    store_u16(fields + 42, position[0]);
+    store_u16(fields + 44, position[1]);
+    store_u16(fields + 46, position[2]);
+    store_u32(fields + 48, phase);
+    if (bridge.mem_write(uc, state_address + 42, fields + 42, 10) ||
+        (produced && bridge.mem_write(uc, output_address, output,
+                                     (size_t)produced * 2)))
+        goto done;
+    bridge.reg_write(uc, bridge.pc, &lr);
+    bridge.resampler_native_calls++;
+    ok = 1;
+done:
+    free(input); free(output);
+    for (int i = 0; i < 3; ++i) { free(ring[i]); free(coefficient[i]); }
+    if (!ok) bridge.resampler_fallback_calls++;
+}
+
 NOKIA_EXPORT int nokia_install_klatt_hook(
     void *uc, uint64_t entry, const uint8_t *rom, uint32_t rom_base,
     size_t rom_size, const int register_ids[9], void *hook_add,
@@ -113,9 +218,25 @@ NOKIA_EXPORT int nokia_install_klatt_hook(
                            entry, entry) == 0;
 }
 
+NOKIA_EXPORT int nokia_install_resampler_hook(uint64_t entry,
+                                               void *resample) {
+    if (!bridge.uc || !bridge.hook_add || !resample) return 0;
+    bridge.resample = (NokiaResample)resample;
+    return bridge.hook_add(bridge.uc, &bridge.resampler_hook, 4,
+                           (void *)resampler_hook, NULL, entry, entry) == 0;
+}
+
+NOKIA_EXPORT void nokia_resampler_hook_counters(uint64_t out[2]) {
+    out[0] = bridge.resampler_native_calls;
+    out[1] = bridge.resampler_fallback_calls;
+}
+
 NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     if (bridge.uc && bridge.hook) bridge.hook_del(bridge.uc, bridge.hook);
+    if (bridge.uc && bridge.resampler_hook)
+        bridge.hook_del(bridge.uc, bridge.resampler_hook);
     bridge.hook = 0;
+    bridge.resampler_hook = 0;
 }
 
 NOKIA_EXPORT void nokia_klatt_hook_counters(uint64_t out[2]) {
