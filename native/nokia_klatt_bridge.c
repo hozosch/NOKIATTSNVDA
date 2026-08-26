@@ -42,6 +42,9 @@ typedef struct {
     size_t resampler_hook;
     NokiaResample resample;
     uint64_t resampler_native_calls, resampler_fallback_calls;
+    size_t frontend_hook;
+    uint32_t frontend_count, frontend_table, frontend_values;
+    uint64_t frontend_native_calls, frontend_fallback_calls;
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
@@ -64,6 +67,60 @@ static void store_u32(uint8_t *p, uint32_t value) {
 
 static int read_reg(void *uc, int id, uint32_t *value) {
     return bridge.reg_read(uc, id, value) == 0;
+}
+
+static int rom_u32(uint32_t address, uint32_t *value) {
+    uint64_t offset;
+    if (address < bridge.rom_base) return 0;
+    offset = (uint64_t)address - bridge.rom_base;
+    if (offset + 4 > bridge.rom_size) return 0;
+    *value = load_u32(bridge.rom + offset);
+    return 1;
+}
+
+/* Bit-exact 5320 frontend Unicode/range lookup (guest 0x830ee500). */
+static void frontend_lookup_hook(void *uc, uint64_t address, size_t size,
+                                 void *user) {
+    uint32_t key, out_class, out_code, lr, lo = 0, hi, a, b, mid, base;
+    uint32_t result = 0;
+    int found = 0;
+    (void)address; (void)size; (void)user;
+    if (!read_reg(uc, bridge.r0, &key) ||
+        !read_reg(uc, bridge.r1, &out_class) ||
+        !read_reg(uc, bridge.r2, &out_code) ||
+        !read_reg(uc, bridge.lr, &lr)) goto fallback;
+    hi = bridge.frontend_count;
+    while (hi > lo) {
+        mid = (lo + hi) >> 1;
+        if (!rom_u32(bridge.frontend_table + mid * 8, &a) ||
+            !rom_u32(bridge.frontend_table + mid * 8 + 4, &b))
+            goto fallback;
+        base = a & 0x001fffffu;
+        if (base == key ||
+            (base < key && ((a >> 20) & 0xfu) &&
+             base + (b & 0xffffu) >= key)) {
+            uint32_t index = b >> 26;
+            if (!rom_u32(bridge.frontend_values + index * 4, &result))
+                goto fallback;
+            a >>= 24;
+            if (bridge.mem_write(uc, out_class, &index, 4) ||
+                bridge.mem_write(uc, out_code, &a, 4)) goto fallback;
+            found = 1;
+            break;
+        }
+        if (base > key) hi = mid; else lo = mid + 1;
+    }
+    if (!found) {
+        a = 2; b = 9;
+        if (bridge.mem_write(uc, out_class, &a, 4) ||
+            bridge.mem_write(uc, out_code, &b, 4)) goto fallback;
+    }
+    bridge.reg_write(uc, bridge.r0, &result);
+    bridge.reg_write(uc, bridge.pc, &lr);
+    bridge.frontend_native_calls++;
+    return;
+fallback:
+    bridge.frontend_fallback_calls++;
 }
 
 static void klatt_hook(void *uc, uint64_t address, size_t size, void *user) {
@@ -226,6 +283,23 @@ NOKIA_EXPORT int nokia_install_resampler_hook(uint64_t entry,
                            (void *)resampler_hook, NULL, entry, entry) == 0;
 }
 
+NOKIA_EXPORT int nokia_install_frontend_lookup_hook(
+    uint64_t entry, uint32_t count, uint32_t table, uint32_t values) {
+    if (!bridge.uc || !bridge.hook_add || !count || !table || !values)
+        return 0;
+    bridge.frontend_count = count;
+    bridge.frontend_table = table;
+    bridge.frontend_values = values;
+    return bridge.hook_add(bridge.uc, &bridge.frontend_hook, 4,
+                           (void *)frontend_lookup_hook, NULL,
+                           entry, entry) == 0;
+}
+
+NOKIA_EXPORT void nokia_frontend_lookup_hook_counters(uint64_t out[2]) {
+    out[0] = bridge.frontend_native_calls;
+    out[1] = bridge.frontend_fallback_calls;
+}
+
 NOKIA_EXPORT void nokia_resampler_hook_counters(uint64_t out[2]) {
     out[0] = bridge.resampler_native_calls;
     out[1] = bridge.resampler_fallback_calls;
@@ -235,8 +309,11 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     if (bridge.uc && bridge.hook) bridge.hook_del(bridge.uc, bridge.hook);
     if (bridge.uc && bridge.resampler_hook)
         bridge.hook_del(bridge.uc, bridge.resampler_hook);
+    if (bridge.uc && bridge.frontend_hook)
+        bridge.hook_del(bridge.uc, bridge.frontend_hook);
     bridge.hook = 0;
     bridge.resampler_hook = 0;
+    bridge.frontend_hook = 0;
 }
 
 NOKIA_EXPORT void nokia_klatt_hook_counters(uint64_t out[2]) {
