@@ -21,7 +21,10 @@ $launcher = Join-Path $installation 'Common7\Tools\Launch-VsDevShell.ps1'
 if (-not (Test-Path $launcher)) {
     throw 'Launch-VsDevShell.ps1 was not found in Visual Studio'
 }
-& $launcher -Arch $Arch -HostArch $Arch -SkipAutomaticLocation
+# Visual Studio's ARM64 tools are cross-hosted by the AMD64 compiler even on
+# GitHub's native Windows-on-ARM runner. Launch-VsDevShell accepts arm64 as a
+# target architecture, but HostArch is deliberately limited to x86/amd64.
+& $launcher -Arch $Arch -HostArch amd64 -SkipAutomaticLocation
 if ($LASTEXITCODE -ne 0) {
     throw "Visual Studio developer shell setup failed for $Arch"
 }
