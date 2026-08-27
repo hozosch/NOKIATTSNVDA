@@ -51,6 +51,9 @@ typedef struct {
     size_t heap_hook[4];
     uint32_t heap_next, heap_limit;
     uint64_t heap_native_calls[4], heap_fallback_calls[4];
+    size_t executive_hook[3];
+    uint32_t thread_data;
+    uint64_t executive_native_calls[3], executive_fallback_calls[3];
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
@@ -251,6 +254,29 @@ static void heap_hook(void *uc, uint64_t address, size_t size, void *user) {
     bridge.reg_write(uc, bridge.r0, &result);
     bridge.reg_write(uc, bridge.pc, &lr);
     bridge.heap_native_calls[index]++;
+}
+
+static void executive_hook(void *uc, uint64_t address, size_t size,
+                           void *user) {
+    static const uint32_t offsets[3] = {0, 8, 4};
+    uint32_t result, previous, lr, next = (uint32_t)address + 4;
+    unsigned index = (unsigned)(uintptr_t)user;
+    (void)size;
+    if (index > 2 || !bridge.thread_data ||
+        bridge.mem_read(uc, bridge.thread_data + offsets[index],
+                        &result, sizeof(result)) != 0) {
+        if (index < 3) bridge.executive_fallback_calls[index]++;
+        return;
+    }
+    /* Symbian 9.1 executive tables save LR in IP and place consecutive SVCs
+       directly beside each other; later EKA2 tables use one bx lr per SVC.
+       Match Epoc._stub_returns_to_lr instead of falling into the next slot. */
+    if (bridge.mem_read(uc, address - 4, &previous, sizeof(previous)) == 0 &&
+        previous == 0xe1a0c00eu && read_reg(uc, bridge.lr, &lr))
+        next = lr;
+    bridge.reg_write(uc, bridge.r0, &result);
+    bridge.reg_write(uc, bridge.pc, &next);
+    bridge.executive_native_calls[index]++;
 }
 
 static int16_t add_i16(int16_t a, int32_t b) {
@@ -651,6 +677,39 @@ NOKIA_EXPORT void nokia_heap_hook_counters(uint64_t out[8]) {
     }
 }
 
+NOKIA_EXPORT int nokia_install_executive_hooks(
+    uint32_t thread_data, const uint64_t entries[3]) {
+    unsigned i;
+    if (!bridge.uc || !bridge.hook_add || !thread_data || !entries) return 0;
+    bridge.thread_data = thread_data;
+    memset(bridge.executive_native_calls, 0,
+           sizeof(bridge.executive_native_calls));
+    memset(bridge.executive_fallback_calls, 0,
+           sizeof(bridge.executive_fallback_calls));
+    for (i = 0; i < 3; ++i) {
+        if (!entries[i] ||
+            bridge.hook_add(bridge.uc, &bridge.executive_hook[i], 4,
+                            (void *)executive_hook, (void *)(uintptr_t)i,
+                            entries[i], entries[i]) != 0) {
+            while (i) {
+                --i;
+                bridge.hook_del(bridge.uc, bridge.executive_hook[i]);
+                bridge.executive_hook[i] = 0;
+            }
+            return 0;
+        }
+    }
+    return 1;
+}
+
+NOKIA_EXPORT void nokia_executive_hook_counters(uint64_t out[6]) {
+    unsigned i;
+    for (i = 0; i < 3; ++i) {
+        out[i] = bridge.executive_native_calls[i];
+        out[3 + i] = bridge.executive_fallback_calls[i];
+    }
+}
+
 NOKIA_EXPORT void nokia_frontend_lookup_hook_counters(uint64_t out[2]) {
     out[0] = bridge.frontend_native_calls;
     out[1] = bridge.frontend_fallback_calls;
@@ -678,11 +737,15 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     for (int i = 0; i < 4; ++i)
         if (bridge.uc && bridge.heap_hook[i])
             bridge.hook_del(bridge.uc, bridge.heap_hook[i]);
+    for (int i = 0; i < 3; ++i)
+        if (bridge.uc && bridge.executive_hook[i])
+            bridge.hook_del(bridge.uc, bridge.executive_hook[i]);
     bridge.hook = 0;
     bridge.resampler_hook = 0;
     bridge.frontend_hook = 0;
     bridge.prosody_hook[0] = bridge.prosody_hook[1] = 0;
     memset(bridge.heap_hook, 0, sizeof(bridge.heap_hook));
+    memset(bridge.executive_hook, 0, sizeof(bridge.executive_hook));
     free(heap_blocks);
     heap_blocks = NULL;
     heap_count = heap_capacity = 0;
