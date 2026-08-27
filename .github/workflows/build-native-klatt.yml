@@ -48,7 +48,7 @@ jobs:
             } else {
               $sources += "native/nokia_frontend_stub.c"
             }
-            cl /nologo /O2 /LD $sources /link "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
+            cl /nologo /O2 /Gy /LD $sources /link "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
             if ($LASTEXITCODE -ne 0) { throw "Klatt build failed for $profile" }
           }
           Get-ChildItem build/native/*.dll | ForEach-Object {
