@@ -15,6 +15,7 @@ typedef int (*UcRegRead)(void *, int, void *);
 typedef int (*UcRegWrite)(void *, int, const void *);
 typedef int (*UcMemRead)(void *, uint64_t, void *, size_t);
 typedef int (*UcMemWrite)(void *, uint64_t, const void *, size_t);
+typedef int (*UcCtl)(void *, uint32_t, ...);
 typedef int32_t (*NokiaResample)(
     const int16_t *, int32_t, int16_t *, int32_t,
     int32_t *, int32_t *, int32_t *, const int32_t *, const int32_t *,
@@ -36,6 +37,8 @@ extern int nokia_frontend_aot(
     uint8_t *, uint8_t *, uint8_t *, uint8_t *, uint8_t *,
     const uint8_t *, uint32_t, size_t, uint32_t[17], uint32_t,
     const NokiaFrontendHost *);
+extern uint32_t nokia_frontend_resume_count(void);
+extern uint32_t nokia_frontend_resume_address(uint32_t);
 
 typedef struct {
     void *uc;
@@ -50,6 +53,7 @@ typedef struct {
     UcRegWrite reg_write;
     UcMemRead mem_read;
     UcMemWrite mem_write;
+    UcCtl ctl;
     uint64_t native_calls, fallback_calls;
     size_t resampler_hook;
     NokiaResample resample;
@@ -73,9 +77,11 @@ typedef struct {
     uint32_t thread_data;
     uint64_t executive_native_calls[3], executive_fallback_calls[3];
     size_t full_frontend_hook, full_frontend_return_hook;
+    size_t *full_resume_hooks;
+    uint32_t *full_resume_addresses, full_resume_hook_count;
     int full_frontend_regs[17];
     uint8_t *full_heap, *full_vtable, *full_traps, *full_pool, *full_stack;
-    uint32_t full_return_address;
+    uint32_t full_return_address, full_callback_return, full_expected_resume;
     uint8_t full_active, full_yielded;
     uint64_t full_frontend_native_calls, full_frontend_fallback_calls;
 } NokiaKlattBridge;
@@ -311,6 +317,39 @@ static const NokiaFrontendHost full_host = {
     NULL, full_alloc, full_free, full_realloc, full_length
 };
 
+static void full_frontend_return_hook(void *uc, uint64_t address, size_t size,
+                                      void *user);
+
+static void full_remove_resume_hooks(void) {
+    uint32_t i;
+    if (bridge.uc)
+        for (i = 0; i < bridge.full_resume_hook_count; ++i)
+            if (bridge.full_resume_hooks[i])
+                bridge.hook_del(bridge.uc, bridge.full_resume_hooks[i]);
+    free(bridge.full_resume_hooks);
+    free(bridge.full_resume_addresses);
+    bridge.full_resume_hooks = NULL;
+    bridge.full_resume_addresses = NULL;
+    bridge.full_resume_hook_count = 0;
+}
+
+static int full_prepare_resume(uint32_t pc, uint32_t lr) {
+    uint32_t resume = lr & ~1u;
+    /* The scheduler trap already has a permanent return hook. */
+    if ((pc & ~1u) == 0x52000224u ||
+        resume == bridge.full_callback_return) {
+        bridge.full_expected_resume = bridge.full_callback_return;
+        return 1;
+    }
+    if (!resume) return 0;
+    for (uint32_t i = 0; i < bridge.full_resume_hook_count; ++i)
+        if (bridge.full_resume_addresses[i] == resume) {
+            bridge.full_expected_resume = resume;
+            return 1;
+        }
+    return 0;
+}
+
 static int full_read_registers(void *uc, uint32_t registers[17]) {
     unsigned i;
     for (i = 0; i < 17; ++i)
@@ -332,7 +371,8 @@ static int full_read_memory(void *uc, int initial) {
         ? bridge.heap_next - 0x53000000u : 0;
     if (pool_size > 0x800000u) return 0;
     if (initial &&
-        (bridge.mem_read(uc, 0x51000000u, bridge.full_vtable, 0x1000u) ||
+        (bridge.mem_read(uc, 0x50000000u, bridge.full_heap, 0x100000u) ||
+         bridge.mem_read(uc, 0x51000000u, bridge.full_vtable, 0x1000u) ||
          bridge.mem_read(uc, 0x52000000u, bridge.full_traps, 0x10000u)))
         return 0;
     if ((pool_size && bridge.mem_read(uc, 0x53000000u, bridge.full_pool,
@@ -342,11 +382,13 @@ static int full_read_memory(void *uc, int initial) {
     return 1;
 }
 
-static int full_write_memory(void *uc) {
+static int full_write_memory(void *uc, int complete) {
     uint32_t pool_size = bridge.heap_next > 0x53000000u
         ? bridge.heap_next - 0x53000000u : 0;
     if (pool_size > 0x800000u) return 0;
-    if ((pool_size && bridge.mem_write(uc, 0x53000000u, bridge.full_pool,
+    if ((complete && bridge.mem_write(uc, 0x50000000u, bridge.full_heap,
+                                      0x100000u)) ||
+        (pool_size && bridge.mem_write(uc, 0x53000000u, bridge.full_pool,
                                        pool_size)) ||
         bridge.mem_write(uc, 0x600f0000u, bridge.full_stack + 0xf0000u,
                          0x10000u)) return 0;
@@ -360,13 +402,17 @@ static int full_drive(void *uc, uint32_t registers[17]) {
         bridge.rom_size, registers, bridge.full_return_address, &full_host);
     if (result == 2) {
         bridge.full_yielded = 1;
-        return full_write_memory(uc) && full_write_registers(uc, registers);
+        return full_prepare_resume(registers[15], registers[14]) &&
+               full_write_memory(uc, 0) &&
+               full_write_registers(uc, registers);
     }
     if (result == 1) {
-        if (!full_write_memory(uc) || !full_write_registers(uc, registers))
+        if (!full_write_memory(uc, 1) ||
+            !full_write_registers(uc, registers))
             return 0;
         bridge.full_frontend_native_calls++;
         bridge.full_active = bridge.full_yielded = 0;
+        bridge.full_expected_resume = 0;
         return 1;
     }
     bridge.full_frontend_fallback_calls++;
@@ -391,9 +437,15 @@ static void full_frontend_return_hook(void *uc, uint64_t address, size_t size,
                                       void *user) {
     uint32_t registers[17];
     (void)address; (void)size; (void)user;
-    if (!bridge.full_active || !bridge.full_yielded) return;
+    if (!bridge.full_active || !bridge.full_yielded ||
+        ((uint32_t)address & ~1u) != bridge.full_expected_resume) return;
     bridge.full_yielded = 0;
-    if (!full_read_registers(uc, registers) || !full_read_memory(uc, 0) ||
+    if (!full_read_registers(uc, registers)) {
+        bridge.full_frontend_fallback_calls++;
+        bridge.full_active = 0;
+        return;
+    }
+    if (!full_read_memory(uc, 0) ||
         !full_drive(uc, registers)) {
         bridge.full_frontend_fallback_calls++;
         bridge.full_active = 0;
@@ -865,7 +917,7 @@ NOKIA_EXPORT int nokia_install_klatt_hook(
     void *uc, uint64_t entry, const uint8_t *rom, uint32_t rom_base,
     size_t rom_size, const int register_ids[9], void *hook_add,
     void *hook_del, void *reg_read, void *reg_write, void *mem_read,
-    void *mem_write) {
+    void *mem_write, void *ctl) {
     memset(&bridge, 0, sizeof(bridge));
     bridge.uc = uc; bridge.rom = rom; bridge.rom_base = rom_base;
     bridge.rom_size = rom_size;
@@ -877,6 +929,7 @@ NOKIA_EXPORT int nokia_install_klatt_hook(
     bridge.hook_add=(UcHookAdd)hook_add; bridge.hook_del=(UcHookDel)hook_del;
     bridge.reg_read=(UcRegRead)reg_read; bridge.reg_write=(UcRegWrite)reg_write;
     bridge.mem_read=(UcMemRead)mem_read; bridge.mem_write=(UcMemWrite)mem_write;
+    bridge.ctl=(UcCtl)ctl;
     if (!bridge.hook_add || !bridge.hook_del || !bridge.reg_read ||
         !bridge.reg_write || !bridge.mem_read || !bridge.mem_write)
         return 0;
@@ -895,6 +948,7 @@ NOKIA_EXPORT int nokia_install_resampler_hook(uint64_t entry,
 NOKIA_EXPORT int nokia_install_full_frontend_hook(
     uint64_t entry, uint64_t callback_return, const int register_ids[17]) {
     unsigned i;
+    uint32_t resume_count;
     if (!bridge.uc || !bridge.hook_add || !entry || !callback_return ||
         !register_ids || bridge.full_frontend_hook) return 0;
     bridge.full_heap = (uint8_t *)calloc(1, 0x100000u);
@@ -905,6 +959,26 @@ NOKIA_EXPORT int nokia_install_full_frontend_hook(
     if (!bridge.full_heap || !bridge.full_vtable || !bridge.full_traps ||
         !bridge.full_pool || !bridge.full_stack) return 0;
     for (i = 0; i < 17; ++i) bridge.full_frontend_regs[i] = register_ids[i];
+    bridge.full_callback_return = (uint32_t)callback_return & ~1u;
+    resume_count = nokia_frontend_resume_count();
+    bridge.full_resume_hooks = (size_t *)calloc(resume_count, sizeof(size_t));
+    bridge.full_resume_addresses = (uint32_t *)calloc(
+        resume_count, sizeof(uint32_t));
+    if (!bridge.full_resume_hooks || !bridge.full_resume_addresses) return 0;
+    bridge.full_resume_hook_count = resume_count;
+    for (i = 0; i < resume_count; ++i) {
+        uint32_t resume = nokia_frontend_resume_address(i) & ~1u;
+        bridge.full_resume_addresses[i] = resume;
+        if (!resume || resume == bridge.full_callback_return) continue;
+        if (bridge.hook_add(bridge.uc, &bridge.full_resume_hooks[i], 4,
+                            (void *)full_frontend_return_hook, NULL,
+                            resume, resume) != 0)
+            return 0;
+        if (bridge.ctl && bridge.ctl(bridge.uc, 0x48000009u,
+                                     (uint64_t)resume,
+                                     (uint64_t)resume + 4u) != 0)
+            return 0;
+    }
     if (bridge.hook_add(bridge.uc, &bridge.full_frontend_hook, 4,
                         (void *)full_frontend_entry_hook, NULL,
                         entry, entry) != 0 ||
@@ -1120,6 +1194,7 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
         bridge.hook_del(bridge.uc, bridge.full_frontend_hook);
     if (bridge.uc && bridge.full_frontend_return_hook)
         bridge.hook_del(bridge.uc, bridge.full_frontend_return_hook);
+    full_remove_resume_hooks();
     for (int i = 0; i < 2; ++i)
         if (bridge.uc && bridge.prosody_hook[i])
             bridge.hook_del(bridge.uc, bridge.prosody_hook[i]);
@@ -1135,6 +1210,7 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     bridge.search_hook = 0;
     bridge.partition_hook = 0;
     bridge.full_frontend_hook = bridge.full_frontend_return_hook = 0;
+    bridge.full_callback_return = 0;
     bridge.prosody_hook[0] = bridge.prosody_hook[1] = 0;
     memset(bridge.heap_hook, 0, sizeof(bridge.heap_hook));
     memset(bridge.executive_hook, 0, sizeof(bridge.executive_hook));

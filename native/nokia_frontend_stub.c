@@ -13,3 +13,12 @@ int nokia_frontend_aot(
     (void)return_address; (void)host;
     return 0;
 }
+
+uint32_t nokia_frontend_resume_count(void) {
+    return 0;
+}
+
+uint32_t nokia_frontend_resume_address(uint32_t index) {
+    (void)index;
+    return 0;
+}

@@ -7,6 +7,7 @@ on:
       - "native/generated/**"
       - "native/nokia_klatt_bridge.c"
       - "tools/split_frontend_aot.py"
+      - "tools/extend_prime_aot.py"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-klatt.yml"
 

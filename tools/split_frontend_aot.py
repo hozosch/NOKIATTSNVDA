@@ -15,6 +15,9 @@ def route(line: str, local: set[int]) -> str:
     indent = line[:len(line) - len(line.lstrip())]
     statement = line.strip()
     conditional = re.fullmatch(r"if \((.*)\) goto L_([0-9a-f]{8});", statement)
+    if not conditional:
+        conditional = re.fullmatch(
+            r"if \((.*)\) \{ goto L_([0-9a-f]{8}); \}", statement)
     if conditional:
         address = int(conditional.group(2), 16)
         if address not in local:
@@ -54,12 +57,15 @@ def split_source(source: str) -> str:
         blocks[int(match.group(1), 16)] = label_text[match.start():end].rstrip().splitlines()
 
     addresses = sorted(set(blocks) - EXECUTIVE)
+    resume_addresses = sorted({int(value) & ~1 for value in
+                               re.findall(r"reg_lr=UINT64_C\((\d+)\)",
+                                          label_text)})
     chunks = [addresses[index:index + CHUNK_SIZE]
               for index in range(0, len(addresses), CHUNK_SIZE)]
     out = [prefix.rstrip(), "", "typedef struct {"]
     out.extend(f"    uint64_t {name};" for name in variable_names)
     out.extend(["} NokiaFrontendState;",
-                "enum { NOKIA_FRONTEND_UNSUPPORTED=0, NOKIA_FRONTEND_CONTINUE=3 };"])
+                "enum { NOKIA_FRONTEND_UNSUPPORTED=0, NOKIA_FRONTEND_YIELDED=2, NOKIA_FRONTEND_CONTINUE=3 };"])
     out.extend(f"#define {name} (state->{name})" for name in variable_names)
     out.append("#define machine (*machine_ptr)")
 
@@ -71,7 +77,7 @@ def split_source(source: str) -> str:
                     "    switch((uint32_t)reg_pc&~1u){"])
         out.extend(f"    case 0x{address:08x}u: goto L_{address:08x};"
                    for address in chunk)
-        out.extend(["    default: return NOKIA_FRONTEND_UNSUPPORTED;", "    }"])
+        out.extend(["    default: return NOKIA_FRONTEND_YIELDED;", "    }"])
         for address in chunk:
             out.extend(route(line, local) for line in blocks[address])
         out.append("}")
@@ -82,7 +88,12 @@ def split_source(source: str) -> str:
     out.extend(f"    nokia_frontend_chunk_{index}," for index in range(len(chunks)))
     out.extend(["};", "static const uint32_t nokia_frontend_chunk_limits[]={"])
     out.extend(f"    0x{chunk[-1]:08x}u," for chunk in chunks)
-    out.extend(["};", "",
+    out.extend(["};", "", "static const uint32_t nokia_frontend_resumes[]={"])
+    out.extend(f"    0x{address:08x}u," for address in resume_addresses)
+    out.extend(["};",
+                "NOKIA_EXPORT uint32_t nokia_frontend_resume_count(void){return (uint32_t)(sizeof(nokia_frontend_resumes)/sizeof(nokia_frontend_resumes[0]));}",
+                "NOKIA_EXPORT uint32_t nokia_frontend_resume_address(uint32_t index){return index<nokia_frontend_resume_count()?nokia_frontend_resumes[index]:0;}",
+                "",
                 "NOKIA_EXPORT int nokia_frontend_aot(uint8_t*heap,uint8_t*vtable,uint8_t*traps,",
                 " uint8_t*pool,uint8_t*stack,const uint8_t*rom,uint32_t rom_base,size_t rom_size,",
                 " uint32_t regs[17],uint32_t return_address,const NokiaFrontendHost*host){",
@@ -114,8 +125,10 @@ def split_source(source: str) -> str:
                 "    }",
                 "    { uint32_t pc=(uint32_t)reg_pc&~1u; size_t lo=0,hi=sizeof(nokia_frontend_chunk_limits)/sizeof(nokia_frontend_chunk_limits[0]);",
                 "      while(lo<hi){size_t mid=lo+(hi-lo)/2;if(pc<=nokia_frontend_chunk_limits[mid])hi=mid;else lo=mid+1;}",
-                "      if(lo>=sizeof(nokia_frontend_chunks)/sizeof(nokia_frontend_chunks[0]))goto unsupported;",
-                "      if(nokia_frontend_chunks[lo](state,machine_ptr,host)==NOKIA_FRONTEND_CONTINUE)goto dispatch;",
+                "      if(lo>=sizeof(nokia_frontend_chunks)/sizeof(nokia_frontend_chunks[0]))goto yielded;",
+                "      int result=nokia_frontend_chunks[lo](state,machine_ptr,host);",
+                "      if(result==NOKIA_FRONTEND_CONTINUE)goto dispatch;",
+                "      if(result==NOKIA_FRONTEND_YIELDED)goto yielded;",
                 "      goto unsupported; }"])
     tail = body[finished.start():].rstrip()
     tail = tail.rsplit("}", 1)[0].rstrip()
