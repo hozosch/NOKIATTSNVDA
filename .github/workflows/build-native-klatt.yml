@@ -6,6 +6,8 @@ on:
     paths:
       - "native/generated/**"
       - "native/nokia_klatt_bridge.c"
+      - "tools/split_frontend_aot.py"
+      - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-klatt.yml"
 
 permissions:
@@ -25,20 +27,18 @@ jobs:
             suffix: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Expand generated sources
         shell: bash
-        run: gzip -dk native/generated/*.c.gz
-
-      - name: Configure MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.arch }}
+        run: |
+          gzip -dk native/generated/*.c.gz
+          python tools/split_frontend_aot.py native/generated/nokia_frontend_5320.c
 
       - name: Build profile DLLs
         shell: pwsh
         run: |
+          & .github/scripts/enter-msvc.ps1 -Arch '${{ matrix.arch }}'
           New-Item -ItemType Directory -Force build/native | Out-Null
           $profiles = @("5320", "5500", "6650", "6220", "n85")
           foreach ($profile in $profiles) {
@@ -56,7 +56,7 @@ jobs:
           }
 
       - name: Upload native Klatt DLLs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nokia-klatt-${{ matrix.suffix }}
           path: build/native/nokia_klatt_*_${{ matrix.suffix }}.dll

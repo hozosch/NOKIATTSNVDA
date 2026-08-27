@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/build-unicorn-windows-arm.yml"
+      - ".github/scripts/enter-msvc.ps1"
       - "patches/unicorn-arm64ec.patch"
 
 permissions:
@@ -38,20 +39,15 @@ jobs:
 
     steps:
       - name: Check out build repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out Unicorn ARM64 branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.UNICORN_REPOSITORY }}
           ref: ${{ env.UNICORN_REF }}
           submodules: recursive
           path: unicorn
-
-      - name: Set up MSVC for ARM64
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: arm64
 
       - name: Apply ARM64EC support patch
         if: matrix.arm64ec
@@ -61,6 +57,7 @@ jobs:
       - name: Configure
         shell: pwsh
         run: |
+          & .github/scripts/enter-msvc.ps1 -Arch arm64
           if ('${{ matrix.arm64ec }}' -eq 'true') {
             $env:CFLAGS = '/arm64EC /O2'
             $env:CXXFLAGS = '/arm64EC /O2'
@@ -87,6 +84,7 @@ jobs:
       - name: Build and test
         shell: pwsh
         run: |
+          & .github/scripts/enter-msvc.ps1 -Arch arm64
           cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
           ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
           cmake --install build --config ${{ env.BUILD_TYPE }}
@@ -104,6 +102,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          & .github/scripts/enter-msvc.ps1 -Arch arm64
           New-Item -ItemType Directory -Force -Path artifact | Out-Null
           $dll = Get-ChildItem -Path install, build -Filter unicorn.dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $dll) {
@@ -115,7 +114,7 @@ jobs:
 
       - name: Upload DLL
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unicorn-windows-${{ matrix.target }}
           path: artifact

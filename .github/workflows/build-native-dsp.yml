@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "native/**"
+      - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-dsp.yml"
 
 permissions:
@@ -24,16 +25,12 @@ jobs:
             suffix: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.arch }}
+      - uses: actions/checkout@v7
 
       - name: Build DLL and self-test
         shell: pwsh
         run: |
+          & .github/scripts/enter-msvc.ps1 -Arch '${{ matrix.arch }}'
           New-Item -ItemType Directory -Force build/native | Out-Null
           cl /nologo /O2 /W4 /WX /LD native/nokia_dsp.c /link /OUT:build/native/nokia_dsp-${{ matrix.suffix }}.dll
           cl /nologo /O2 /W4 /WX native/test_dsp.c native/nokia_dsp.c /Fe:build/native/test_dsp-${{ matrix.suffix }}.exe
@@ -43,7 +40,7 @@ jobs:
             Select-String -Pattern "machine"
 
       - name: Upload native DSP DLL
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nokia-dsp-${{ matrix.suffix }}
           path: build/native/nokia_dsp-${{ matrix.suffix }}.dll
