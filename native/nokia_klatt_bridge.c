@@ -48,9 +48,20 @@ typedef struct {
     size_t prosody_hook[2];
     uint64_t prosody_entry[2];
     uint64_t prosody_native_calls, prosody_fallback_calls;
+    size_t heap_hook[4];
+    uint32_t heap_next, heap_limit;
+    uint64_t heap_native_calls[4], heap_fallback_calls[4];
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
+
+typedef struct {
+    uint32_t address, size;
+    uint8_t used;
+} NokiaHeapBlock;
+
+static NokiaHeapBlock *heap_blocks;
+static size_t heap_count, heap_capacity;
 
 static uint16_t load_u16(const uint8_t *p) {
     uint16_t value; memcpy(&value, p, sizeof(value)); return value;
@@ -88,6 +99,158 @@ static int guest_read(void *uc, uint32_t address, void *data, size_t size) {
 static int guest_write(void *uc, uint32_t address, const void *data,
                        size_t size) {
     return address && bridge.mem_write(uc, address, data, size) == 0;
+}
+
+static int heap_reserve(size_t wanted) {
+    NokiaHeapBlock *grown;
+    size_t capacity = heap_capacity ? heap_capacity : 256;
+    if (wanted <= heap_capacity) return 1;
+    while (capacity < wanted) capacity *= 2;
+    grown = (NokiaHeapBlock *)realloc(heap_blocks,
+                                      capacity * sizeof(*heap_blocks));
+    if (!grown) return 0;
+    heap_blocks = grown;
+    heap_capacity = capacity;
+    return 1;
+}
+
+static int heap_add(uint32_t address, uint32_t size, int used) {
+    if (!address || !size || !heap_reserve(heap_count + 1)) return 0;
+    heap_blocks[heap_count].address = address;
+    heap_blocks[heap_count].size = size;
+    heap_blocks[heap_count].used = used != 0;
+    ++heap_count;
+    return 1;
+}
+
+static void heap_sort_merge(void) {
+    size_t i, out;
+    for (i = 1; i < heap_count; ++i) {
+        NokiaHeapBlock value = heap_blocks[i];
+        size_t j = i;
+        while (j && heap_blocks[j - 1].address > value.address) {
+            heap_blocks[j] = heap_blocks[j - 1];
+            --j;
+        }
+        heap_blocks[j] = value;
+    }
+    out = 0;
+    for (i = 0; i < heap_count; ++i) {
+        if (out && !heap_blocks[out - 1].used && !heap_blocks[i].used &&
+            heap_blocks[out - 1].address + heap_blocks[out - 1].size ==
+                heap_blocks[i].address) {
+            heap_blocks[out - 1].size += heap_blocks[i].size;
+        } else {
+            heap_blocks[out++] = heap_blocks[i];
+        }
+    }
+    heap_count = out;
+}
+
+static int heap_zero(uint32_t address, uint32_t size) {
+    uint8_t zeros[4096] = {0};
+    uint32_t offset = 0, limit = size < 0x10000u ? size : 0x10000u;
+    while (offset < limit) {
+        uint32_t chunk = limit - offset;
+        if (chunk > sizeof(zeros)) chunk = sizeof(zeros);
+        if (bridge.mem_write(bridge.uc, address + offset, zeros, chunk) != 0)
+            return 0;
+        offset += chunk;
+    }
+    return 1;
+}
+
+static uint32_t heap_alloc(uint32_t requested) {
+    uint32_t size, address;
+    size_t i;
+    if (requested > 0x800000u) return 0;
+    size = requested < 4 ? 4 : requested;
+    if (size > 0xfffffff0u) return 0;
+    size = (size + 15u) & ~15u;
+    for (i = 0; i < heap_count; ++i) {
+        if (heap_blocks[i].used || heap_blocks[i].size < size) continue;
+        address = heap_blocks[i].address;
+        if (heap_blocks[i].size == size) {
+            heap_blocks[i].used = 1;
+        } else {
+            NokiaHeapBlock remainder;
+            if (!heap_reserve(heap_count + 1)) return 0;
+            remainder.address = address + size;
+            remainder.size = heap_blocks[i].size - size;
+            remainder.used = 0;
+            heap_blocks[i].size = size;
+            heap_blocks[i].used = 1;
+            memmove(&heap_blocks[i + 2], &heap_blocks[i + 1],
+                    (heap_count - i - 1) * sizeof(*heap_blocks));
+            heap_blocks[i + 1] = remainder;
+            ++heap_count;
+        }
+        if (!heap_zero(address, size)) return 0;
+        return address;
+    }
+    if (bridge.heap_next > bridge.heap_limit ||
+        size > bridge.heap_limit - bridge.heap_next) return 0;
+    address = bridge.heap_next;
+    if (!heap_add(address, size, 1)) return 0;
+    bridge.heap_next += size;
+    if (!heap_zero(address, size)) return 0;
+    return address;
+}
+
+static uint32_t heap_size(uint32_t address) {
+    size_t i;
+    for (i = 0; i < heap_count; ++i)
+        if (heap_blocks[i].used && heap_blocks[i].address == address)
+            return heap_blocks[i].size;
+    return 0;
+}
+
+static void heap_free(uint32_t address) {
+    size_t i;
+    for (i = 0; i < heap_count; ++i) {
+        if (!heap_blocks[i].used || heap_blocks[i].address != address) continue;
+        heap_blocks[i].used = 0;
+        heap_sort_merge();
+        return;
+    }
+}
+
+static uint32_t heap_realloc(uint32_t address, uint32_t requested) {
+    uint32_t old_size = heap_size(address), result, copy_size, offset = 0;
+    uint8_t buffer[4096];
+    if (address && requested <= old_size) return address;
+    result = heap_alloc(requested);
+    if (result && address) {
+        copy_size = old_size < requested ? old_size : requested;
+        while (offset < copy_size) {
+            uint32_t chunk = copy_size - offset;
+            if (chunk > sizeof(buffer)) chunk = sizeof(buffer);
+            if (bridge.mem_read(bridge.uc, address + offset, buffer, chunk) ||
+                bridge.mem_write(bridge.uc, result + offset, buffer, chunk))
+                return 0;
+            offset += chunk;
+        }
+        heap_free(address);
+    }
+    return result;
+}
+
+static void heap_hook(void *uc, uint64_t address, size_t size, void *user) {
+    uint32_t r1, r2, lr, result = 0;
+    unsigned index = (unsigned)(uintptr_t)user;
+    (void)address; (void)size;
+    if (index > 3 || !read_reg(uc, bridge.r1, &r1) ||
+        !read_reg(uc, bridge.r2, &r2) || !read_reg(uc, bridge.lr, &lr)) {
+        if (index < 4) bridge.heap_fallback_calls[index]++;
+        return;
+    }
+    if (index == 0) result = heap_alloc(r1);
+    else if (index == 1) heap_free(r1);
+    else if (index == 2) result = heap_realloc(r1, r2);
+    else result = heap_size(r1);
+    bridge.reg_write(uc, bridge.r0, &result);
+    bridge.reg_write(uc, bridge.pc, &lr);
+    bridge.heap_native_calls[index]++;
 }
 
 static int16_t add_i16(int16_t a, int32_t b) {
@@ -424,6 +587,70 @@ NOKIA_EXPORT int nokia_install_prosody_duration_hooks(uint64_t shift_entry,
     return 1;
 }
 
+NOKIA_EXPORT int nokia_heap_begin(uint32_t next, uint32_t limit) {
+    heap_count = 0;
+    bridge.heap_next = next;
+    bridge.heap_limit = limit;
+    memset(bridge.heap_native_calls, 0, sizeof(bridge.heap_native_calls));
+    memset(bridge.heap_fallback_calls, 0, sizeof(bridge.heap_fallback_calls));
+    return bridge.uc && next && next <= limit;
+}
+
+NOKIA_EXPORT int nokia_heap_import(uint32_t address, uint32_t size,
+                                   int used) {
+    return heap_add(address, size, used);
+}
+
+NOKIA_EXPORT int nokia_install_heap_hooks(uint64_t trap_base,
+                                           uint64_t alloc_entry) {
+    unsigned i;
+    if (!bridge.uc || !bridge.hook_add || !trap_base) return 0;
+    heap_sort_merge();
+    for (i = 0; i < 4; ++i) {
+        uint64_t entry = i ? trap_base + i * 4 : alloc_entry;
+        uint16_t instruction;
+        /* Alloc already ran while EPOC bootstrapped, so Unicorn may have a
+           translated block for this two-byte SVC. Rewriting it unchanged
+           invalidates that block and makes the newly added code hook visible. */
+        if (bridge.mem_read(bridge.uc, entry, &instruction,
+                            sizeof(instruction)) != 0 ||
+            bridge.mem_write(bridge.uc, entry, &instruction,
+                             sizeof(instruction)) != 0)
+            return 0;
+        if (bridge.hook_add(bridge.uc, &bridge.heap_hook[i], 4,
+                            (void *)heap_hook, (void *)(uintptr_t)i,
+                            entry, entry) != 0) {
+            while (i) {
+                --i;
+                bridge.hook_del(bridge.uc, bridge.heap_hook[i]);
+                bridge.heap_hook[i] = 0;
+            }
+            return 0;
+        }
+    }
+    return 1;
+}
+
+NOKIA_EXPORT uint32_t nokia_heap_alloc(uint32_t size) {
+    return heap_alloc(size);
+}
+
+NOKIA_EXPORT void nokia_heap_free(uint32_t address) {
+    heap_free(address);
+}
+
+NOKIA_EXPORT uint32_t nokia_heap_position(void) {
+    return bridge.heap_next;
+}
+
+NOKIA_EXPORT void nokia_heap_hook_counters(uint64_t out[8]) {
+    unsigned i;
+    for (i = 0; i < 4; ++i) {
+        out[i] = bridge.heap_native_calls[i];
+        out[4 + i] = bridge.heap_fallback_calls[i];
+    }
+}
+
 NOKIA_EXPORT void nokia_frontend_lookup_hook_counters(uint64_t out[2]) {
     out[0] = bridge.frontend_native_calls;
     out[1] = bridge.frontend_fallback_calls;
@@ -448,10 +675,17 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     for (int i = 0; i < 2; ++i)
         if (bridge.uc && bridge.prosody_hook[i])
             bridge.hook_del(bridge.uc, bridge.prosody_hook[i]);
+    for (int i = 0; i < 4; ++i)
+        if (bridge.uc && bridge.heap_hook[i])
+            bridge.hook_del(bridge.uc, bridge.heap_hook[i]);
     bridge.hook = 0;
     bridge.resampler_hook = 0;
     bridge.frontend_hook = 0;
     bridge.prosody_hook[0] = bridge.prosody_hook[1] = 0;
+    memset(bridge.heap_hook, 0, sizeof(bridge.heap_hook));
+    free(heap_blocks);
+    heap_blocks = NULL;
+    heap_count = heap_capacity = 0;
 }
 
 NOKIA_EXPORT void nokia_klatt_hook_counters(uint64_t out[2]) {
