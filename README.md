@@ -33,8 +33,8 @@ implementation is developed and compared against its parameters and PCM.
 
 ## Current status: accelerated hybrid build
 
-Version 0.12 is the first accelerated hybrid build. It is **not yet a fully
-native reimplementation of the Nokia speech engine**.
+The current test series is an accelerated hybrid build. It is **not yet a
+fully native reimplementation of the Nokia speech engine**.
 
 | Component | Current implementation | Intended final implementation |
 |---|---|---|
@@ -123,10 +123,20 @@ The current compact build combines five working engine families:
 - Nokia 6220
 - Nokia N85
 
-Together they provide 27 model/language variants covering 23 distinct
-languages. Italian and Turkish were present in the available speech data but
-were missing from the earlier profile list; both have now been verified on
-the Nokia 5320 and Nokia 6220 with male and female voices.
+Test 29 expands the Nokia 5320 from 9 to 33 verified languages using the
+native RM-409 05.16 regional data preserved and documented by DJ Graco in
+[`djgraco/nokiaKlatt`](https://github.com/djgraco/nokiaKlatt). The set includes
+Dutch, Portuguese, Czech, Slovak, Polish, Slovenian, Croatian, Estonian,
+Greek, Hebrew, Latvian, Lithuanian, Serbian, Catalan, Basque and Galician in
+addition to the previously bundled 5320 languages. All 33 have been verified
+with complete synthesis, non-zero PCM and both distinct Nokia voice variants.
+
+No complete RM-409 ROM is added. The expanded build reuses the existing
+compact address-preserving 5320 code pack and adds only regional speech data.
+DJ Graco's repository also contains working Nokia E65 and Nokia N95 8GB
+profiles with 30 languages each. Those use distinct Nokia engine builds and
+therefore require separate compact-pack and native-port validation rather than
+being silently substituted as 5320 data.
 
 Other variants, such as French from the Nokia C5 family, require matching C5
 TTS data before they can be analysed and packaged. Data from a different
@@ -174,8 +184,19 @@ another buffering or ROM-compression change.
 ## Attribution
 
 - Original NVDA experiment: Guillem Leon, `nokiaKlatt 0.5.0`
+- Expanded RM-409 language collection, E65/N95 8GB reconstruction and detailed
+  firmware provenance: DJ Graco,
+  [`nokiaKlatt 0.5.1`](https://github.com/djgraco/nokiaKlatt). Many thanks for
+  preserving, testing and documenting these difficult-to-find Nokia speech
+  resources.
 - Continued porting and packaging: the NOKIATTSNVDA project
 - CPU emulation used by transition builds:
   [Unicorn Engine](https://github.com/unicorn-engine/unicorn)
 
-Nokia and Symbian are trademarks of their respective owners.
+Project code and documentation are GPL-2.0-or-later unless stated otherwise.
+Nokia firmware-derived speech data are not relicensed by that GPL and remain
+third-party material. Known origin and confidence boundaries are documented in
+[`docs/FIRMWARE-PROVENANCE.md`](docs/FIRMWARE-PROVENANCE.md).
+
+Nokia and Symbian are trademarks of their respective owners. This project is
+not affiliated with or endorsed by Nokia, HMD Global or NV Access.
