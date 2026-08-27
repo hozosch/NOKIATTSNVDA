@@ -62,6 +62,30 @@ def split_source(source: str) -> str:
                                           label_text)})
     chunks = [addresses[index:index + CHUNK_SIZE]
               for index in range(0, len(addresses), CHUNK_SIZE)]
+    # The bridge keeps the large, normally immutable guest regions cached.
+    # Record which shadow segments the generated code actually changed so it
+    # only copies dirty bytes back through Unicorn's comparatively expensive
+    # uc_mem_write API.  The mask is reset for every resumable AOT slice.
+    old_store = (
+        "static int nokia_mem_store(NokiaFrontendMachine*m,uint64_t address,uint64_t value,unsigned size) "
+        "{ uint8_t*p=segment(m,(uint32_t)address,size);if(!p){if(!m->bad_address)m->bad_address=(uint32_t)address;"
+        "return 0;}memcpy(p,&value,size);return 1; }")
+    new_store = (
+        "static uint32_t nokia_frontend_dirty_mask;\n"
+        "static uint32_t nokia_dirty_segment(uint32_t a){"
+        "if(a>=0x50000000u&&a<0x50100000u)return 1u;"
+        "if(a>=0x51000000u&&a<0x51001000u)return 2u;"
+        "if(a>=0x52000000u&&a<0x52010000u)return 4u;"
+        "if(a>=0x53000000u&&a<0x53800000u)return 8u;"
+        "if(a>=0x60000000u&&a<0x60100000u)return 16u;return 0u;}\n"
+        "static int nokia_mem_store(NokiaFrontendMachine*m,uint64_t address,uint64_t value,unsigned size) "
+        "{ uint32_t a=(uint32_t)address;uint8_t*p=segment(m,a,size);if(!p){if(!m->bad_address)m->bad_address=a;"
+        "return 0;}nokia_frontend_dirty_mask|=nokia_dirty_segment(a);memcpy(p,&value,size);return 1; }\n"
+        "NOKIA_EXPORT uint32_t nokia_frontend_dirty_mask_value(void){return nokia_frontend_dirty_mask;}")
+    if old_store not in prefix:
+        raise ValueError("generated frontend memory-store helper was not recognised")
+    prefix = prefix.replace(old_store, new_store)
+
     out = [prefix.rstrip(), "", "typedef struct {"]
     out.extend(f"    uint64_t {name};" for name in variable_names)
     out.extend(["} NokiaFrontendState;",
@@ -99,7 +123,8 @@ def split_source(source: str) -> str:
                 " uint32_t regs[17],uint32_t return_address,const NokiaFrontendHost*host){",
                 "    NokiaFrontendState state_storage={0},*state=&state_storage;",
                 "    NokiaFrontendMachine machine_storage={heap,vtable,traps,pool,stack,rom,rom_base,rom_size,0,host};",
-                "    NokiaFrontendMachine*machine_ptr=&machine_storage;"])
+                "    NokiaFrontendMachine*machine_ptr=&machine_storage;",
+                "    nokia_frontend_dirty_mask=0;"])
     register_order = ("r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
                       "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc")
     out.extend(f"    reg_{name}=regs[{index}];"

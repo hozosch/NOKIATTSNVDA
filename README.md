@@ -42,9 +42,10 @@ fully native reimplementation of the Nokia speech engine**.
 | Complete phone ROMs | Removed | Not required |
 | TTS code and data | Compact address-preserving TTS packs | Data-only voice packages |
 | Text analysis and pronunciation | Nokia ARM32 code through Unicorn | Portable native frontend |
-| Prosody generation | Nokia ARM32 code through Unicorn | Portable native frontend |
+| Prosody generation | Nokia ARM32 planning with native duration-field control | Portable native frontend |
 | Klatt waveform generation | Bit-exact native x64/ARM64 code for all five bundled families | Portable native core |
-| Resampling and rate conversion | Native x64/ARM64; rate remains pitch-preserving post-processing | Native parameter timing |
+| Resampling | Native x64/ARM64 | Portable native core |
+| Rate and pitch | Native Nokia duration fields and Klatt F0 parameters in the Test 30 candidate | Fully native controls |
 | Windows ARM host | Native ARM64 helper process | Native ARM64 library/process |
 | Intel/AMD host | In-process x64 Unicorn | Native x64 library/process |
 
@@ -67,10 +68,20 @@ ARM32 code through Unicorn. Because most preparation for a short utterance
 happens before its first synthesis frame, some first-audio latency remains.
 That frontend is the next major performance target.
 
-Speaking-rate conversion now executes inside the same native library rather
-than Python. It preserves pitch and is deliberately described as native audio
-processing, not as a reconstructed Nokia prosody control: the frontend still
-creates frames at its natural durations.
+The Test 30 candidate moves rate control before waveform generation. After
+`PrimeSynthesisL`, the native bridge scales Nokia's phoneme-duration array and
+both matching prosody timelines; the scheduler consequently creates fewer or
+more Klatt frames. It does not time-stretch completed PCM. The native pitch
+control independently scales the per-frame F0 value (stored in tenths of a
+hertz), so it likewise does not resample completed audio. At the neutral
+settings, output remains byte-identical to the ARM reference on all five
+families. The reverse-engineering evidence and field layout are recorded in
+[`docs/NATIVE-PROSODY-CONTROLS.md`](docs/NATIVE-PROSODY-CONTROLS.md).
+
+The 5320 Prime bridge also keeps immutable guest regions after its first
+transfer and copies back only AOT segments that were actually written. On the
+local German reference sentence this moved the median first PCM callback from
+about 43.2 ms to 36.1 ms. Windows ARM64 still needs to be measured separately.
 
 Profiling the Nokia 5320 attributes roughly **85.5% of guest basic-block
 executions** for a sentence to one DSP image (UID `0x101f8ca5`). This module
@@ -147,7 +158,8 @@ not be compatible.
 
 1. Keep native generator output bit-exact across all supported voices.
 2. Port the preparation path responsible for latency before the first frame.
-3. Decode or replace the remaining text, phoneme and prosody frontend.
+3. Decode or replace the remaining text, phoneme and prosody frontend, then
+   remove the now-reference-only PCM time scaler.
 4. Add compatible formats used by later families such as the C5 when matching
    TTS data is available.
 5. Replace `TTS.PAK`, Unicorn and the embedded Python runtime with data-only

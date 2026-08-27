@@ -22,3 +22,7 @@ uint32_t nokia_frontend_resume_address(uint32_t index) {
     (void)index;
     return 0;
 }
+
+uint32_t nokia_frontend_dirty_mask_value(void) {
+    return 0;
+}

@@ -39,6 +39,7 @@ extern int nokia_frontend_aot(
     const NokiaFrontendHost *);
 extern uint32_t nokia_frontend_resume_count(void);
 extern uint32_t nokia_frontend_resume_address(uint32_t);
+extern uint32_t nokia_frontend_dirty_mask_value(void);
 
 typedef struct {
     void *uc;
@@ -70,6 +71,7 @@ typedef struct {
     size_t prosody_hook[2];
     uint64_t prosody_entry[2];
     uint64_t prosody_native_calls, prosody_fallback_calls;
+    uint32_t prosody_object;
     size_t heap_hook[4];
     uint32_t heap_next, heap_limit;
     uint64_t heap_native_calls[4], heap_fallback_calls[4];
@@ -82,8 +84,9 @@ typedef struct {
     int full_frontend_regs[17];
     uint8_t *full_heap, *full_vtable, *full_traps, *full_pool, *full_stack;
     uint32_t full_return_address, full_callback_return, full_expected_resume;
-    uint8_t full_active, full_yielded;
+    uint8_t full_active, full_yielded, full_static_initialized;
     uint64_t full_frontend_native_calls, full_frontend_fallback_calls;
+    double pitch_factor;
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
@@ -370,11 +373,12 @@ static int full_read_memory(void *uc, int initial) {
     uint32_t pool_size = bridge.heap_next > 0x53000000u
         ? bridge.heap_next - 0x53000000u : 0;
     if (pool_size > 0x800000u) return 0;
-    if (initial &&
+    if (initial && !bridge.full_static_initialized &&
         (bridge.mem_read(uc, 0x50000000u, bridge.full_heap, 0x100000u) ||
          bridge.mem_read(uc, 0x51000000u, bridge.full_vtable, 0x1000u) ||
          bridge.mem_read(uc, 0x52000000u, bridge.full_traps, 0x10000u)))
         return 0;
+    if (initial) bridge.full_static_initialized = 1;
     if ((pool_size && bridge.mem_read(uc, 0x53000000u, bridge.full_pool,
                                       pool_size)) ||
         bridge.mem_read(uc, 0x600f0000u, bridge.full_stack + 0xf0000u,
@@ -385,13 +389,20 @@ static int full_read_memory(void *uc, int initial) {
 static int full_write_memory(void *uc, int complete) {
     uint32_t pool_size = bridge.heap_next > 0x53000000u
         ? bridge.heap_next - 0x53000000u : 0;
+    uint32_t dirty = nokia_frontend_dirty_mask_value();
+    (void)complete;
     if (pool_size > 0x800000u) return 0;
-    if ((complete && bridge.mem_write(uc, 0x50000000u, bridge.full_heap,
-                                      0x100000u)) ||
-        (pool_size && bridge.mem_write(uc, 0x53000000u, bridge.full_pool,
-                                       pool_size)) ||
-        bridge.mem_write(uc, 0x600f0000u, bridge.full_stack + 0xf0000u,
-                         0x10000u)) return 0;
+    if (((dirty & 1u) && bridge.mem_write(uc, 0x50000000u,
+                                          bridge.full_heap, 0x100000u)) ||
+        ((dirty & 2u) && bridge.mem_write(uc, 0x51000000u,
+                                          bridge.full_vtable, 0x1000u)) ||
+        ((dirty & 4u) && bridge.mem_write(uc, 0x52000000u,
+                                          bridge.full_traps, 0x10000u)) ||
+        ((dirty & 8u) && pool_size && bridge.mem_write(
+            uc, 0x53000000u, bridge.full_pool, pool_size)) ||
+        ((dirty & 16u) && bridge.mem_write(
+            uc, 0x600f0000u, bridge.full_stack + 0xf0000u, 0x10000u)))
+        return 0;
     return 1;
 }
 
@@ -417,6 +428,7 @@ static int full_drive(void *uc, uint32_t registers[17]) {
     }
     bridge.full_frontend_fallback_calls++;
     bridge.full_active = bridge.full_yielded = 0;
+    bridge.full_static_initialized = 0;
     return 0;
 }
 
@@ -513,6 +525,7 @@ static void prosody_duration_hook(void *uc, uint64_t address, size_t size,
         !read_reg(uc, bridge.r2, &r2) ||
         !read_reg(uc, bridge.lr, &lr) ||
         !guest_read(uc, r0, object, sizeof(object))) goto done;
+    bridge.prosody_object = r0;
     durations_address = load_u32(object + 0x0c);
     thresholds_address = load_u32(object +
         (address == bridge.prosody_entry[1] ? 0x14 : 0x20));
@@ -806,6 +819,22 @@ static void klatt_hook(void *uc, uint64_t address, size_t size, void *user) {
         return;
     }
     memcpy(&count, parameters + 2, sizeof(count));
+    /* The signed 16-bit value at +0x18 is Nokia's frame F0 in tenths of a
+       hertz (roughly 950..1320 for DefaultMale and 1720..2290 for
+       DefaultFemale).  Scaling it here changes the excitation period before
+       waveform generation; it is not resampling or PCM pitch shifting. */
+    if (bridge.pitch_factor > 0.0 && bridge.pitch_factor != 1.0) {
+        int16_t f0;
+        int32_t scaled;
+        memcpy(&f0, parameters + 0x18, sizeof(f0));
+        if (f0 > 0) {
+            scaled = (int32_t)(f0 * bridge.pitch_factor + 0.5);
+            if (scaled < 300) scaled = 300;
+            if (scaled > 5000) scaled = 5000;
+            f0 = (int16_t)scaled;
+            memcpy(parameters + 0x18, &f0, sizeof(f0));
+        }
+    }
     if (count < 0 || count > 8192 ||
         !nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
                                   bridge.rom, bridge.rom_base,
@@ -919,6 +948,7 @@ NOKIA_EXPORT int nokia_install_klatt_hook(
     void *hook_del, void *reg_read, void *reg_write, void *mem_read,
     void *mem_write, void *ctl) {
     memset(&bridge, 0, sizeof(bridge));
+    bridge.pitch_factor = 1.0;
     bridge.uc = uc; bridge.rom = rom; bridge.rom_base = rom_base;
     bridge.rom_size = rom_size;
     bridge.r0=register_ids[0]; bridge.r1=register_ids[1];
@@ -935,6 +965,12 @@ NOKIA_EXPORT int nokia_install_klatt_hook(
         return 0;
     return bridge.hook_add(uc, &bridge.hook, 4, (void *)klatt_hook, NULL,
                            entry, entry) == 0;
+}
+
+NOKIA_EXPORT void nokia_set_pitch_factor(double factor) {
+    if (factor < 0.5) factor = 0.5;
+    if (factor > 2.0) factor = 2.0;
+    bridge.pitch_factor = factor;
 }
 
 NOKIA_EXPORT int nokia_install_resampler_hook(uint64_t entry,
@@ -988,6 +1024,7 @@ NOKIA_EXPORT int nokia_install_full_frontend_hook(
         return 0;
     bridge.full_frontend_native_calls = 0;
     bridge.full_frontend_fallback_calls = 0;
+    bridge.full_static_initialized = 0;
     return 1;
 }
 
@@ -1043,6 +1080,134 @@ NOKIA_EXPORT int nokia_install_prosody_duration_hooks(uint64_t shift_entry,
         return 0;
     }
     return 1;
+}
+
+NOKIA_EXPORT void nokia_begin_prosody_utterance(void) {
+    bridge.prosody_object = 0;
+}
+
+static int pool_array(const uint8_t *pool, uint32_t pool_size,
+                      uint32_t address, uint32_t count, const int16_t **out) {
+    uint64_t offset;
+    if (address < 0x53000000u) return 0;
+    offset = (uint64_t)address - 0x53000000u;
+    if (offset + (uint64_t)count * 2u > pool_size) return 0;
+    *out = (const int16_t *)(pool + offset);
+    return 1;
+}
+
+static int prosody_object_valid(const uint8_t *pool, uint32_t pool_size,
+                                uint32_t address, uint32_t *score) {
+    static const uint8_t pointer_offsets[6] = {8, 12, 16, 20, 28, 32};
+    uint64_t offset;
+    const uint8_t *object;
+    const int16_t *phones, *durations, *pitch, *time1, *amplitude, *time2;
+    uint32_t n0, n1, n2, pointers[6], i, maximum;
+    if (address < 0x53000000u) return 0;
+    offset = (uint64_t)address - 0x53000000u;
+    if (offset + 0x28u > pool_size) return 0;
+    object = pool + offset;
+    n0 = load_u16(object); n1 = load_u16(object + 2);
+    n2 = load_u16(object + 4);
+    if (!n0 || n0 > 4096 || !n1 || n1 > 1024 || !n2 || n2 > 1024)
+        return 0;
+    for (i = 0; i < 6; ++i)
+        pointers[i] = load_u32(object + pointer_offsets[i]);
+    if (!pool_array(pool, pool_size, pointers[0], n0, &phones) ||
+        !pool_array(pool, pool_size, pointers[1], n0, &durations) ||
+        !pool_array(pool, pool_size, pointers[2], n1, &pitch) ||
+        !pool_array(pool, pool_size, pointers[3], n1, &time1) ||
+        !pool_array(pool, pool_size, pointers[4], n2, &amplitude) ||
+        !pool_array(pool, pool_size, pointers[5], n2, &time2)) return 0;
+    for (i = 0; i < n0; ++i)
+        if (phones[i] < 0 || phones[i] > 255 ||
+            durations[i] <= 0 || durations[i] > 2000) return 0;
+    for (i = 0; i < n1; ++i) {
+        if (pitch[i] < 0 || pitch[i] > 5000 || time1[i] < 0) return 0;
+        if (i && time1[i] < time1[i - 1]) return 0;
+    }
+    for (i = 0; i < n2; ++i) {
+        if (amplitude[i] < 0 || time2[i] < 0) return 0;
+        if (i && time2[i] < time2[i - 1]) return 0;
+    }
+    maximum = address;
+    for (i = 0; i < 6; ++i) if (pointers[i] > maximum) maximum = pointers[i];
+    *score = maximum;
+    return 1;
+}
+
+static int scale_prosody_array(uint32_t address, uint32_t count,
+                               double factor, int duration) {
+    int16_t *values;
+    uint32_t i;
+    int16_t previous_original = 0, previous_scaled = 0;
+    values = (int16_t *)malloc((count ? count : 1) * sizeof(int16_t));
+    if (!values || (count && !guest_read(bridge.uc, address, values,
+                                         count * sizeof(int16_t)))) {
+        free(values); return 0;
+    }
+    for (i = 0; i < count; ++i) {
+        int16_t original = values[i];
+        double divided = original / factor;
+        int32_t scaled = (int32_t)(divided + (divided >= 0 ? 0.5 : -0.5));
+        if (duration && scaled < 1) scaled = 1;
+        if (!duration && i && original > previous_original &&
+            scaled <= previous_scaled) scaled = previous_scaled + 1;
+        if (scaled < -32768) scaled = -32768;
+        if (scaled > 32767) scaled = 32767;
+        values[i] = (int16_t)scaled;
+        previous_original = original;
+        previous_scaled = values[i];
+    }
+    i = guest_write(bridge.uc, address, values, count * sizeof(int16_t));
+    free(values);
+    return i;
+}
+
+/* Scale Nokia's phoneme durations and the two prosody-control timelines after
+   PrimeSynthesisL, before the scheduler makes Klatt frames. */
+NOKIA_EXPORT int nokia_apply_prosody_rate(double factor) {
+    uint8_t *pool = NULL, object[0x28];
+    uint32_t pool_size, address, score = 0, candidate_score, offset;
+    uint32_t n0, n1, n2, durations, time1, time2;
+    if (!bridge.uc || !bridge.mem_read || !bridge.mem_write) return 0;
+    if (factor < 0.4) factor = 0.4;
+    if (factor > 4.0) factor = 4.0;
+    if (factor > 0.999 && factor < 1.001) return 1;
+    address = bridge.prosody_object;
+    pool_size = bridge.heap_next > 0x53000000u
+        ? bridge.heap_next - 0x53000000u : 0;
+    if (!pool_size || pool_size > 0x800000u) return 0;
+    pool = (uint8_t *)malloc(pool_size);
+    if (!pool || bridge.mem_read(bridge.uc, 0x53000000u, pool, pool_size))
+        goto failed;
+    if (!prosody_object_valid(pool, pool_size, address, &score)) {
+        address = 0;
+        for (offset = 0; offset + 0x28u <= pool_size; offset += 4) {
+            uint32_t possible = 0x53000000u + offset;
+            if (prosody_object_valid(pool, pool_size, possible,
+                                     &candidate_score) &&
+                (!address || candidate_score > score)) {
+                address = possible; score = candidate_score;
+            }
+        }
+    }
+    if (!address || bridge.mem_read(bridge.uc, address, object,
+                                    sizeof(object))) goto failed;
+    n0 = load_u16(object); n1 = load_u16(object + 2);
+    n2 = load_u16(object + 4);
+    durations = load_u32(object + 0x0c);
+    time1 = load_u32(object + 0x14);
+    time2 = load_u32(object + 0x20);
+    if (!scale_prosody_array(durations, n0, factor, 1) ||
+        !scale_prosody_array(time1, n1, factor, 0) ||
+        !scale_prosody_array(time2, n2, factor, 0)) goto failed;
+    bridge.prosody_object = address;
+    free(pool);
+    return 1;
+failed:
+    free(pool);
+    return 0;
 }
 
 NOKIA_EXPORT int nokia_heap_begin(uint32_t next, uint32_t limit) {
@@ -1211,6 +1376,7 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     bridge.partition_hook = 0;
     bridge.full_frontend_hook = bridge.full_frontend_return_hook = 0;
     bridge.full_callback_return = 0;
+    bridge.full_static_initialized = 0;
     bridge.prosody_hook[0] = bridge.prosody_hook[1] = 0;
     memset(bridge.heap_hook, 0, sizeof(bridge.heap_hook));
     memset(bridge.executive_hook, 0, sizeof(bridge.executive_hook));
