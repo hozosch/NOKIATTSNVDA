@@ -42,7 +42,11 @@ jobs:
           New-Item -ItemType Directory -Force build/native | Out-Null
           $profiles = @("5320", "5500", "6650", "6220", "n85")
           foreach ($profile in $profiles) {
-            cl /nologo /O2 /LD "native/generated/nokia_klatt_$profile.c" native/nokia_klatt_bridge.c /link "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
+            $sources = @("native/generated/nokia_klatt_$profile.c", "native/nokia_klatt_bridge.c")
+            if ($profile -eq "5320") {
+              $sources += "native/generated/nokia_frontend_5320.c"
+            }
+            cl /nologo /O2 /LD $sources /link "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
             if ($LASTEXITCODE -ne 0) { throw "Klatt build failed for $profile" }
           }
           Get-ChildItem build/native/*.dll | ForEach-Object {

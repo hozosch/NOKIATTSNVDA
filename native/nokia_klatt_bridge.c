@@ -26,6 +26,18 @@ extern int nokia_klatt_generate_aot(
     const uint8_t *, uint32_t, size_t, uint32_t[5]);
 
 typedef struct {
+    void *context;
+    uint32_t (*alloc)(void *, uint32_t);
+    void (*free)(void *, uint32_t);
+    uint32_t (*realloc)(void *, uint32_t, uint32_t);
+    uint32_t (*length)(void *, uint32_t);
+} NokiaFrontendHost;
+extern int nokia_frontend_aot(
+    uint8_t *, uint8_t *, uint8_t *, uint8_t *, uint8_t *,
+    const uint8_t *, uint32_t, size_t, uint32_t[17], uint32_t,
+    const NokiaFrontendHost *);
+
+typedef struct {
     void *uc;
     size_t hook;
     const uint8_t *rom;
@@ -45,6 +57,12 @@ typedef struct {
     size_t frontend_hook;
     uint32_t frontend_count, frontend_table, frontend_values;
     uint64_t frontend_native_calls, frontend_fallback_calls;
+    size_t search_hook;
+    uint32_t search_getter, search_compare_u16;
+    uint32_t search_compare_length, search_compare_lexical;
+    uint64_t search_native_calls, search_fallback_calls;
+    size_t partition_hook;
+    uint64_t partition_native_calls, partition_fallback_calls;
     size_t prosody_hook[2];
     uint64_t prosody_entry[2];
     uint64_t prosody_native_calls, prosody_fallback_calls;
@@ -54,6 +72,12 @@ typedef struct {
     size_t executive_hook[3];
     uint32_t thread_data;
     uint64_t executive_native_calls[3], executive_fallback_calls[3];
+    size_t full_frontend_hook, full_frontend_return_hook;
+    int full_frontend_regs[17];
+    uint8_t *full_heap, *full_vtable, *full_traps, *full_pool, *full_stack;
+    uint32_t full_return_address;
+    uint8_t full_active, full_yielded;
+    uint64_t full_frontend_native_calls, full_frontend_fallback_calls;
 } NokiaKlattBridge;
 
 static NokiaKlattBridge bridge;
@@ -236,6 +260,144 @@ static uint32_t heap_realloc(uint32_t address, uint32_t requested) {
         heap_free(address);
     }
     return result;
+}
+
+static uint8_t *full_pool_pointer(uint32_t address, uint32_t size) {
+    uint64_t offset;
+    if (address < 0x53000000u) return NULL;
+    offset = (uint64_t)address - 0x53000000u;
+    if (offset + size > 0x800000u) return NULL;
+    return bridge.full_pool + offset;
+}
+
+static uint32_t full_alloc(void *context, uint32_t requested) {
+    uint32_t address = heap_alloc(requested);
+    uint32_t size = requested < 4 ? 4 : requested;
+    uint8_t *pointer;
+    (void)context;
+    size = (size + 15u) & ~15u;
+    pointer = full_pool_pointer(address, size);
+    if (pointer) memset(pointer, 0, size);
+    return pointer ? address : 0;
+}
+
+static void full_free(void *context, uint32_t address) {
+    (void)context;
+    heap_free(address);
+}
+
+static uint32_t full_realloc(void *context, uint32_t address,
+                             uint32_t requested) {
+    uint32_t old_size = heap_size(address), result, copy_size;
+    uint8_t *old_pointer, *new_pointer;
+    (void)context;
+    if (address && requested <= old_size) return address;
+    result = full_alloc(NULL, requested);
+    old_pointer = full_pool_pointer(address, old_size);
+    new_pointer = full_pool_pointer(result, requested);
+    if (!result || (address && (!old_pointer || !new_pointer))) return 0;
+    copy_size = old_size < requested ? old_size : requested;
+    if (copy_size) memmove(new_pointer, old_pointer, copy_size);
+    if (address) heap_free(address);
+    return result;
+}
+
+static uint32_t full_length(void *context, uint32_t address) {
+    (void)context;
+    return heap_size(address);
+}
+
+static const NokiaFrontendHost full_host = {
+    NULL, full_alloc, full_free, full_realloc, full_length
+};
+
+static int full_read_registers(void *uc, uint32_t registers[17]) {
+    unsigned i;
+    for (i = 0; i < 17; ++i)
+        if (bridge.reg_read(uc, bridge.full_frontend_regs[i],
+                            &registers[i]) != 0) return 0;
+    return 1;
+}
+
+static int full_write_registers(void *uc, const uint32_t registers[17]) {
+    unsigned i;
+    for (i = 0; i < 17; ++i)
+        if (bridge.reg_write(uc, bridge.full_frontend_regs[i],
+                             &registers[i]) != 0) return 0;
+    return 1;
+}
+
+static int full_read_memory(void *uc, int initial) {
+    uint32_t pool_size = bridge.heap_next > 0x53000000u
+        ? bridge.heap_next - 0x53000000u : 0;
+    if (pool_size > 0x800000u) return 0;
+    if (initial &&
+        (bridge.mem_read(uc, 0x51000000u, bridge.full_vtable, 0x1000u) ||
+         bridge.mem_read(uc, 0x52000000u, bridge.full_traps, 0x10000u)))
+        return 0;
+    if ((pool_size && bridge.mem_read(uc, 0x53000000u, bridge.full_pool,
+                                      pool_size)) ||
+        bridge.mem_read(uc, 0x600f0000u, bridge.full_stack + 0xf0000u,
+                        0x10000u)) return 0;
+    return 1;
+}
+
+static int full_write_memory(void *uc) {
+    uint32_t pool_size = bridge.heap_next > 0x53000000u
+        ? bridge.heap_next - 0x53000000u : 0;
+    if (pool_size > 0x800000u) return 0;
+    if ((pool_size && bridge.mem_write(uc, 0x53000000u, bridge.full_pool,
+                                       pool_size)) ||
+        bridge.mem_write(uc, 0x600f0000u, bridge.full_stack + 0xf0000u,
+                         0x10000u)) return 0;
+    return 1;
+}
+
+static int full_drive(void *uc, uint32_t registers[17]) {
+    int result = nokia_frontend_aot(
+        bridge.full_heap, bridge.full_vtable, bridge.full_traps,
+        bridge.full_pool, bridge.full_stack, bridge.rom, bridge.rom_base,
+        bridge.rom_size, registers, bridge.full_return_address, &full_host);
+    if (result == 2) {
+        bridge.full_yielded = 1;
+        return full_write_memory(uc) && full_write_registers(uc, registers);
+    }
+    if (result == 1) {
+        if (!full_write_memory(uc) || !full_write_registers(uc, registers))
+            return 0;
+        bridge.full_frontend_native_calls++;
+        bridge.full_active = bridge.full_yielded = 0;
+        return 1;
+    }
+    bridge.full_frontend_fallback_calls++;
+    bridge.full_active = bridge.full_yielded = 0;
+    return 0;
+}
+
+static void full_frontend_entry_hook(void *uc, uint64_t address, size_t size,
+                                     void *user) {
+    uint32_t registers[17];
+    (void)address; (void)size; (void)user;
+    if (bridge.full_active || !full_read_registers(uc, registers) ||
+        !full_read_memory(uc, 1)) return;
+    bridge.full_active = 1;
+    bridge.full_yielded = 0;
+    bridge.full_return_address = registers[14] & ~1u;
+    if (!full_drive(uc, registers) && bridge.full_yielded)
+        bridge.full_frontend_fallback_calls++;
+}
+
+static void full_frontend_return_hook(void *uc, uint64_t address, size_t size,
+                                      void *user) {
+    uint32_t registers[17];
+    (void)address; (void)size; (void)user;
+    if (!bridge.full_active || !bridge.full_yielded) return;
+    bridge.full_yielded = 0;
+    if (!full_read_registers(uc, registers) || !full_read_memory(uc, 0) ||
+        !full_drive(uc, registers)) {
+        bridge.full_frontend_fallback_calls++;
+        bridge.full_active = 0;
+    }
 }
 
 static void heap_hook(void *uc, uint64_t address, size_t size, void *user) {
@@ -422,6 +584,154 @@ fallback:
     bridge.frontend_fallback_calls++;
 }
 
+/* Native form of the 5320's RArray binary-search comparison adapter.
+   The guest implementation crosses from euser into a virtual getter and then
+   into one of three frontend comparators for every search step.  Keeping the
+   complete adapter here removes thousands of tiny ARM/module transitions
+   before the first audio buffer without changing the search algorithm. */
+static int compare_descriptor(void *uc, uint32_t left, uint32_t right,
+                              int lexical, int32_t *result) {
+    uint32_t left_data, right_data;
+    uint16_t left_length, right_length, a, b;
+    uint32_t i, count;
+    if (!guest_read(uc, left, &left_data, 4) ||
+        !guest_read(uc, right, &right_data, 4) ||
+        !guest_read(uc, left + 4, &left_length, 2) ||
+        !guest_read(uc, right + 4, &right_length, 2)) return 0;
+    if (!lexical && left_length != right_length) {
+        *result = (int32_t)left_length - (int32_t)right_length;
+        return 1;
+    }
+    count = left_length < right_length ? left_length : right_length;
+    for (i = 0; i < count; ++i) {
+        if (!guest_read(uc, left_data + i * 2, &a, 2) ||
+            !guest_read(uc, right_data + i * 2, &b, 2)) return 0;
+        if (a != b) {
+            *result = (int32_t)a - (int32_t)b;
+            return 1;
+        }
+    }
+    *result = (int32_t)left_length - (int32_t)right_length;
+    return 1;
+}
+
+static int search_compare(void *uc, uint32_t object, uint32_t key_index,
+                          uint32_t item_index, int32_t *result) {
+    uint32_t vtable, getter, comparator;
+    uint32_t element_size, base, key_pointer, left, right;
+    uint16_t a, b;
+    if (!guest_read(uc, object, &vtable, 4) ||
+        !guest_read(uc, vtable + 4, &getter, 4) ||
+        !guest_read(uc, object + 8, &element_size, 4) ||
+        !guest_read(uc, object + 16, &base, 4) ||
+        !guest_read(uc, object + 20, &key_pointer, 4) ||
+        !guest_read(uc, object + 24, &comparator, 4) ||
+        (getter & ~1u) != bridge.search_getter || !element_size) return 0;
+    left = base + key_index * element_size;
+    right = item_index == UINT32_MAX
+        ? key_pointer : base + item_index * element_size;
+    comparator &= ~1u;
+    if (comparator == bridge.search_compare_u16 ||
+        comparator == bridge.search_compare_u16 + 8) {
+        if (!guest_read(uc, left, &a, 2) || !guest_read(uc, right, &b, 2))
+            return 0;
+        *result = (int32_t)a - (int32_t)b;
+    } else if (comparator == bridge.search_compare_length) {
+        if (!compare_descriptor(uc, left, right, 0, result)) return 0;
+    } else if (comparator == bridge.search_compare_lexical) {
+        if (!compare_descriptor(uc, left, right, 1, result)) return 0;
+    } else return 0;
+    return 1;
+}
+
+static void search_adapter_hook(void *uc, uint64_t address, size_t size,
+                                void *user) {
+    uint32_t object, key_index, item_index, lr;
+    int32_t result;
+    (void)address; (void)size; (void)user;
+    if (!read_reg(uc, bridge.r0, &object) ||
+        !read_reg(uc, bridge.r1, &key_index) ||
+        !read_reg(uc, bridge.r2, &item_index) ||
+        !read_reg(uc, bridge.lr, &lr) ||
+        !search_compare(uc, object, key_index, item_index, &result))
+        goto fallback;
+    bridge.reg_write(uc, bridge.r0, &result);
+    bridge.reg_write(uc, bridge.pc, &lr);
+    bridge.search_native_calls++;
+    return;
+fallback:
+    bridge.search_fallback_calls++;
+}
+
+static int swap_items(void *uc, uint32_t object, uint32_t first,
+                      uint32_t second, uint8_t *a, uint8_t *b,
+                      uint32_t capacity) {
+    uint32_t base, element_size;
+    if (!guest_read(uc, object + 4, &base, 4) ||
+        !guest_read(uc, object + 8, &element_size, 4) ||
+        !element_size || element_size > capacity) return 0;
+    first = base + first * element_size;
+    second = base + second * element_size;
+    if (!guest_read(uc, first, a, element_size) ||
+        !guest_read(uc, second, b, element_size) ||
+        !guest_write(uc, first, b, element_size) ||
+        !guest_write(uc, second, a, element_size)) return 0;
+    return 1;
+}
+
+/* Symbian's non-recursive quicksort partition.  Its only callbacks in these
+   builds are the verified adapter above and the byte-array swap adapter. */
+static void partition_hook(void *uc, uint64_t address, size_t size,
+                           void *user) {
+    uint32_t count, low, compare_object, swap_object, lr, element_size;
+    int32_t i, j, high, pivot, value;
+    uint8_t *a = NULL, *b = NULL;
+    (void)address; (void)size; (void)user;
+    if (!read_reg(uc, bridge.r0, &count) ||
+        !read_reg(uc, bridge.r1, &low) ||
+        !read_reg(uc, bridge.r2, &compare_object) ||
+        !read_reg(uc, bridge.r3, &swap_object) ||
+        !read_reg(uc, bridge.lr, &lr) || !count || count > 0x100000 ||
+        !guest_read(uc, swap_object + 8, &element_size, 4) ||
+        !element_size || element_size > 0x10000 ||
+        !search_compare(uc, compare_object, low, low, &value)) goto fallback;
+    a = (uint8_t *)malloc(element_size);
+    b = (uint8_t *)malloc(element_size);
+    if (!a || !b) goto fallback;
+    i = (int32_t)low - 1;
+    high = i + (int32_t)count;
+    pivot = (high + (int32_t)low) >> 1;
+    if (!swap_items(uc, swap_object, (uint32_t)pivot, (uint32_t)high,
+                    a, b, element_size)) goto fallback;
+    j = high;
+    do {
+        do {
+            ++i;
+            if (!search_compare(uc, compare_object, (uint32_t)i,
+                                (uint32_t)pivot, &value)) goto fallback;
+        } while (value < 0);
+        do {
+            --j;
+            if (!search_compare(uc, compare_object, (uint32_t)j,
+                                (uint32_t)pivot,
+                                &value)) goto fallback;
+        } while (value > 0);
+        if (i < j && !swap_items(uc, swap_object, (uint32_t)i,
+                                (uint32_t)j, a, b, element_size))
+            goto fallback;
+    } while (i < j);
+    if (!swap_items(uc, swap_object, (uint32_t)i, (uint32_t)high,
+                    a, b, element_size)) goto fallback;
+    bridge.reg_write(uc, bridge.r0, &i);
+    bridge.reg_write(uc, bridge.pc, &lr);
+    bridge.partition_native_calls++;
+    free(a); free(b);
+    return;
+fallback:
+    bridge.partition_fallback_calls++;
+    free(a); free(b);
+}
+
 static void klatt_hook(void *uc, uint64_t address, size_t size, void *user) {
     uint32_t r[4], sp, lr, cpsr, gain, caller_after[5];
     uint8_t parameters[122], state[564];
@@ -582,6 +892,31 @@ NOKIA_EXPORT int nokia_install_resampler_hook(uint64_t entry,
                            (void *)resampler_hook, NULL, entry, entry) == 0;
 }
 
+NOKIA_EXPORT int nokia_install_full_frontend_hook(
+    uint64_t entry, uint64_t callback_return, const int register_ids[17]) {
+    unsigned i;
+    if (!bridge.uc || !bridge.hook_add || !entry || !callback_return ||
+        !register_ids || bridge.full_frontend_hook) return 0;
+    bridge.full_heap = (uint8_t *)calloc(1, 0x100000u);
+    bridge.full_vtable = (uint8_t *)calloc(1, 0x1000u);
+    bridge.full_traps = (uint8_t *)calloc(1, 0x10000u);
+    bridge.full_pool = (uint8_t *)calloc(1, 0x800000u);
+    bridge.full_stack = (uint8_t *)calloc(1, 0x100000u);
+    if (!bridge.full_heap || !bridge.full_vtable || !bridge.full_traps ||
+        !bridge.full_pool || !bridge.full_stack) return 0;
+    for (i = 0; i < 17; ++i) bridge.full_frontend_regs[i] = register_ids[i];
+    if (bridge.hook_add(bridge.uc, &bridge.full_frontend_hook, 4,
+                        (void *)full_frontend_entry_hook, NULL,
+                        entry, entry) != 0 ||
+        bridge.hook_add(bridge.uc, &bridge.full_frontend_return_hook, 4,
+                        (void *)full_frontend_return_hook, NULL,
+                        callback_return, callback_return) != 0)
+        return 0;
+    bridge.full_frontend_native_calls = 0;
+    bridge.full_frontend_fallback_calls = 0;
+    return 1;
+}
+
 NOKIA_EXPORT int nokia_install_frontend_lookup_hook(
     uint64_t entry, uint32_t count, uint32_t table, uint32_t values) {
     if (!bridge.uc || !bridge.hook_add || !count || !table || !values)
@@ -591,6 +926,29 @@ NOKIA_EXPORT int nokia_install_frontend_lookup_hook(
     bridge.frontend_values = values;
     return bridge.hook_add(bridge.uc, &bridge.frontend_hook, 4,
                            (void *)frontend_lookup_hook, NULL,
+                           entry, entry) == 0;
+}
+
+NOKIA_EXPORT int nokia_install_search_adapter_hook(
+    uint64_t entry, uint32_t getter, uint32_t compare_u16,
+    uint32_t compare_length, uint32_t compare_lexical) {
+    if (!bridge.uc || !bridge.hook_add || !entry || !getter || !compare_u16 ||
+        !compare_length || !compare_lexical) return 0;
+    bridge.search_getter = getter & ~1u;
+    bridge.search_compare_u16 = compare_u16 & ~1u;
+    bridge.search_compare_length = compare_length & ~1u;
+    bridge.search_compare_lexical = compare_lexical & ~1u;
+    bridge.search_native_calls = bridge.search_fallback_calls = 0;
+    return bridge.hook_add(bridge.uc, &bridge.search_hook, 4,
+                           (void *)search_adapter_hook, NULL,
+                           entry, entry) == 0;
+}
+
+NOKIA_EXPORT int nokia_install_partition_hook(uint64_t entry) {
+    if (!bridge.uc || !bridge.hook_add || !entry) return 0;
+    bridge.partition_native_calls = bridge.partition_fallback_calls = 0;
+    return bridge.hook_add(bridge.uc, &bridge.partition_hook, 4,
+                           (void *)partition_hook, NULL,
                            entry, entry) == 0;
 }
 
@@ -665,6 +1023,14 @@ NOKIA_EXPORT void nokia_heap_free(uint32_t address) {
     heap_free(address);
 }
 
+NOKIA_EXPORT uint32_t nokia_heap_realloc(uint32_t address, uint32_t size) {
+    return heap_realloc(address, size);
+}
+
+NOKIA_EXPORT uint32_t nokia_heap_size(uint32_t address) {
+    return heap_size(address);
+}
+
 NOKIA_EXPORT uint32_t nokia_heap_position(void) {
     return bridge.heap_next;
 }
@@ -715,6 +1081,21 @@ NOKIA_EXPORT void nokia_frontend_lookup_hook_counters(uint64_t out[2]) {
     out[1] = bridge.frontend_fallback_calls;
 }
 
+NOKIA_EXPORT void nokia_full_frontend_hook_counters(uint64_t out[2]) {
+    out[0] = bridge.full_frontend_native_calls;
+    out[1] = bridge.full_frontend_fallback_calls;
+}
+
+NOKIA_EXPORT void nokia_search_adapter_hook_counters(uint64_t out[2]) {
+    out[0] = bridge.search_native_calls;
+    out[1] = bridge.search_fallback_calls;
+}
+
+NOKIA_EXPORT void nokia_partition_hook_counters(uint64_t out[2]) {
+    out[0] = bridge.partition_native_calls;
+    out[1] = bridge.partition_fallback_calls;
+}
+
 NOKIA_EXPORT void nokia_prosody_duration_hook_counters(uint64_t out[2]) {
     out[0] = bridge.prosody_native_calls;
     out[1] = bridge.prosody_fallback_calls;
@@ -731,6 +1112,14 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
         bridge.hook_del(bridge.uc, bridge.resampler_hook);
     if (bridge.uc && bridge.frontend_hook)
         bridge.hook_del(bridge.uc, bridge.frontend_hook);
+    if (bridge.uc && bridge.search_hook)
+        bridge.hook_del(bridge.uc, bridge.search_hook);
+    if (bridge.uc && bridge.partition_hook)
+        bridge.hook_del(bridge.uc, bridge.partition_hook);
+    if (bridge.uc && bridge.full_frontend_hook)
+        bridge.hook_del(bridge.uc, bridge.full_frontend_hook);
+    if (bridge.uc && bridge.full_frontend_return_hook)
+        bridge.hook_del(bridge.uc, bridge.full_frontend_return_hook);
     for (int i = 0; i < 2; ++i)
         if (bridge.uc && bridge.prosody_hook[i])
             bridge.hook_del(bridge.uc, bridge.prosody_hook[i]);
@@ -743,12 +1132,19 @@ NOKIA_EXPORT void nokia_remove_klatt_hook(void) {
     bridge.hook = 0;
     bridge.resampler_hook = 0;
     bridge.frontend_hook = 0;
+    bridge.search_hook = 0;
+    bridge.partition_hook = 0;
+    bridge.full_frontend_hook = bridge.full_frontend_return_hook = 0;
     bridge.prosody_hook[0] = bridge.prosody_hook[1] = 0;
     memset(bridge.heap_hook, 0, sizeof(bridge.heap_hook));
     memset(bridge.executive_hook, 0, sizeof(bridge.executive_hook));
     free(heap_blocks);
     heap_blocks = NULL;
     heap_count = heap_capacity = 0;
+    free(bridge.full_heap); free(bridge.full_vtable);
+    free(bridge.full_traps); free(bridge.full_pool); free(bridge.full_stack);
+    bridge.full_heap = bridge.full_vtable = bridge.full_traps = NULL;
+    bridge.full_pool = bridge.full_stack = NULL;
 }
 
 NOKIA_EXPORT void nokia_klatt_hook_counters(uint64_t out[2]) {
