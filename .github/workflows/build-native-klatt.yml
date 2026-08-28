@@ -10,6 +10,7 @@ on:
       - "tools/extend_prime_aot.py"
       - "tools/instrument_frontend_yields.py"
       - "tools/report_frontend_yields.py"
+      - "tools/inspect_frontend_addresses.py"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-klatt.yml"
 
@@ -38,6 +39,13 @@ jobs:
           gzip -dk native/generated/*.c.gz
           python tools/split_frontend_aot.py native/generated/nokia_frontend_5320.c
           python tools/instrument_frontend_yields.py native/generated/nokia_frontend_5320.c
+
+      - name: Inspect 5320 fault path
+        shell: bash
+        run: |
+          python tools/inspect_frontend_addresses.py \
+            native/generated/nokia_frontend_5320.c \
+            0x801a0688 0x830e0b6a 0x830e0b6b 0x830e1d96
 
       - name: Report remaining 5320 frontend yield islands
         shell: bash
