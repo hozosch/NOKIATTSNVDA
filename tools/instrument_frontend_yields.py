@@ -33,9 +33,18 @@ def instrument(source: str) -> str:
     )
     source = source.replace(signature, telemetry + signature, 1)
 
-    replacements = {
-        "    case 0x52000224u: goto yielded;":
+    # Older generated frontends deliberately yielded for the observer/config
+    # callback.  Keep its diagnostic label when present, but do not require it:
+    # the native config registry handles this callback in newer builds.
+    observer_old = "    case 0x52000224u: goto yielded;"
+    if observer_old in source:
+        source = source.replace(
+            observer_old,
             "    case 0x52000224u: nokia_frontend_record_yield(0x52000224u,1u); goto yielded;",
+            1,
+        )
+
+    replacements = {
         "      if(lo>=sizeof(nokia_frontend_chunks)/sizeof(nokia_frontend_chunks[0]))goto yielded;":
             "      if(lo>=sizeof(nokia_frontend_chunks)/sizeof(nokia_frontend_chunks[0])){nokia_frontend_record_yield(pc,2u);goto yielded;}",
         "      if(result==NOKIA_FRONTEND_YIELDED)goto yielded;":
