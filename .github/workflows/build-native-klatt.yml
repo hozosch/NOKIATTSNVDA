@@ -33,20 +33,18 @@ jobs:
         shell: bash
         run: |
           python -m pip install --disable-pip-version-check pypcode
-          curl -L --fail --retry 3 \
-            -o build-5320.rom \
-            https://raw.githubusercontent.com/djgraco/nokiaKlatt/main/addon/roms/5320/SYM.ROM
           mkdir -p build/native
+
+          # Build-time only. The preservation project contains both the known-
+          # good harness and its matching 5320 ROM, so use one checkout for
+          # both instead of downloading the 67 MB ROM separately.
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          cp build/upstream/addon/roms/5320/SYM.ROM build-5320.rom
+
           python tools/collect_hot_frontend_trace.py \
             build-5320.rom build/native/frontend-hot-trace.json
           python tools/collect_5320_dsp_wrapper_trace.py \
             build-5320.rom build/native/dsp-wrapper-trace.json
-
-          # Build-time only: run the preservation harness once to learn every
-          # ROM instruction needed for construct -> speak -> stop -> close.
-          # The resulting AOT corpus is what lets the shipped add-on omit
-          # Unicorn and the bundled helper Python runtime.
-          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
           python tools/collect_5320_full_lifecycle_trace.py \
             build/upstream build/native/full-lifecycle-trace.json \
             --language 3 --voice DefaultMale \
