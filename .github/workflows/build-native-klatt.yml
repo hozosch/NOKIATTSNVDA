@@ -7,6 +7,8 @@ on:
       - "native/generated/**"
       - "native/nokia_klatt_bridge.c"
       - "native/nokia_config_blobs.c"
+      - "native/nokia_runtime.c"
+      - "native/nokia_runtime.h"
       - "tools/split_frontend_aot.py"
       - "tools/optimise_frontend_memory.py"
       - "tools/extend_prime_aot.py"
@@ -34,13 +36,8 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pypcode
           mkdir -p build/native
-
-          # Build-time only. The preservation project contains both the known-
-          # good harness and its matching 5320 ROM, so use one checkout for
-          # both instead of downloading the 67 MB ROM separately.
           git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
           cp build/upstream/addon/roms/5320/SYM.ROM build-5320.rom
-
           python tools/collect_hot_frontend_trace.py \
             build-5320.rom build/native/frontend-hot-trace.json
           python tools/collect_5320_dsp_wrapper_trace.py \
@@ -150,6 +147,19 @@ jobs:
           if ($hotTrace) { Copy-Item $hotTrace.FullName "build/native/frontend-hot-trace.json" -Force }
           if ($lifeTrace) { Copy-Item $lifeTrace.FullName "build/native/full-lifecycle-trace.json" -Force }
 
+      - name: Build standalone runtime shell
+        shell: pwsh
+        run: |
+          & .github/scripts/enter-msvc.ps1 -Arch '${{ matrix.arch }}'
+          New-Item -ItemType Directory -Force build/native | Out-Null
+          cl /nologo /O2 /Gy /GL /Gw /LD native/nokia_runtime.c /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+          if ($LASTEXITCODE -ne 0) { throw "Standalone runtime build failed" }
+          $imports = dumpbin /imports "build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+          $imports | Select-String -Pattern "DLL name"
+          if ($imports -match "unicorn" -or $imports -match "python3") {
+            throw "Standalone runtime unexpectedly imports Unicorn or Python"
+          }
+
       - name: Build profile DLLs
         shell: pwsh
         run: |
@@ -177,6 +187,7 @@ jobs:
           name: nokia-klatt-${{ matrix.suffix }}
           path: |
             build/native/nokia_klatt_*_${{ matrix.suffix }}.dll
+            build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll
             build/native/frontend-yields-${{ matrix.suffix }}.json
             build/native/frontend-hot-trace.json
             build/native/full-lifecycle-trace.json
