@@ -41,14 +41,15 @@ jobs:
           python tools/split_frontend_aot.py native/generated/nokia_frontend_5320.c
           python tools/instrument_frontend_yields.py native/generated/nokia_frontend_5320.c
 
-      - name: Inspect 5320 fault path
+      - name: Inspect 5320 hot yield paths
         shell: bash
         run: |
           python tools/inspect_frontend_addresses.py \
             native/generated/nokia_frontend_5320.c \
-            0x801a0688 0x830e0b6a 0x830e0b6b 0x830e1d96
+            0x827fd6fe 0x52000224 0x801a73d2 0x830f7bce 0x801a3756 0x801ae76a \
+            0x830ea2de 0x801a3786 0x801a3736 0x801ae7fa 0x801af2e4 0x827fb74c
 
-      - name: Decode missing 5320 AOT gap
+      - name: Decode missing 5320 hot paths
         if: matrix.suffix == 'x64'
         shell: bash
         run: |
@@ -57,7 +58,11 @@ jobs:
             -o build-5320.rom \
             https://raw.githubusercontent.com/djgraco/nokiaKlatt/main/addon/roms/5320/SYM.ROM
           python tools/decode_5320_rom_addresses.py build-5320.rom \
-            0x801a0684 0x801a0688 0x801a068c 0x801a0690
+            0x827fd6fa 0x827fd6fc 0x827fd6fe 0x827fd700 \
+            0x801a73ce 0x801a73d0 0x801a73d2 0x801a73d4 \
+            0x830f7bca 0x830f7bcc 0x830f7bce 0x830f7bd0 \
+            0x801a3752 0x801a3754 0x801a3756 0x801a3758 \
+            0x801ae766 0x801ae768 0x801ae76a 0x801ae76c
 
       - name: Report remaining 5320 frontend yield islands
         shell: bash
