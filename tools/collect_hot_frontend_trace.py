@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Collect bounded hot 5320 frontend paths for AOT extension.
 
-This targets Unicorn yield PCs observed in NVDA that are still ordinary
-frontend/runtime ARM code. Local branches are followed fully; direct calls are
-followed only to a small bounded depth so the trace grows by hot helpers rather
-than whole ROM subsystems. The still-emulated Nokia DSP range remains excluded
-here and is handled separately from the frontend runtime.
+This targets the dominant ordinary frontend/runtime ARM paths observed in NVDA.
+Local branches are followed fully; direct calls are followed only to a small
+bounded depth. The still-emulated Nokia DSP range remains excluded and is
+handled separately from the frontend runtime.
 """
 from __future__ import annotations
 
@@ -21,23 +20,13 @@ ROM_LIMIT = 0x90000000
 DSP_START = 0x830F7A48
 DSP_END = 0x83102E00
 HOT_ENTRIES = (
-    # Former dominant paths, retained so the generated corpus is reproducible.
     (0x827FD6FE, True),
     (0x801A73D2, True),
     (0x801A3756, True),
     (0x801AE76A, True),
-    # Rare non-DSP paths observed after the dominant hot paths were ported.
-    (0x830EA2DE, True),
-    (0x801A3786, True),
-    (0x801A3736, True),
-    (0x801AE7FA, True),
-    (0x801AF2E4, True),
-    (0x827FB74C, True),
-    (0x827FCF54, True),
-    (0x827FD6FA, True),
 )
 MAX_CALL_DEPTH = 2
-MAX_TOTAL_INSTRUCTIONS = 8192
+MAX_TOTAL_INSTRUCTIONS = 4096
 
 
 def direct_target(varnode) -> int:
@@ -91,8 +80,6 @@ def collect_function(rom: bytes, entry: int, thumb: bool, depth: int,
         local_seen.add(address)
         key = (address, thumb)
         previous_depth = best_depth.get(key)
-        # A smaller depth has more remaining call-follow budget. Revisit only
-        # when this path can therefore discover something new.
         if previous_depth is not None and previous_depth <= depth:
             continue
         best_depth[key] = depth
