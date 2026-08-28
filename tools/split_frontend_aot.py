@@ -103,7 +103,28 @@ def split_source(source: str) -> str:
         raise ValueError("generated frontend memory-store helper was not recognised")
     prefix = prefix.replace(old_store, new_store)
 
-    out = [prefix.rstrip(), "", "typedef struct {"]
+    # Nokia's first observer-vtable entry (0x52000224) supplies one of the
+    # bundled srsf_<type>_<id>.bin resources. Keep that callback inside the AOT
+    # state model: crossing into Unicorn here used to account for three yields
+    # per PrimeSynthesisL call. The registry owns the bytes; the frontend host
+    # allocator owns the guest-visible copy.
+    config_helper = """
+extern int nokia_find_config_blob(uint32_t type,uint32_t id,
+                                  const uint8_t **data,uint32_t *size);
+static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
+ const NokiaFrontendHost*host,uint32_t type,uint32_t id,uint32_t start,uint32_t end){
+    const uint8_t*data=NULL;uint32_t size=0,offset=0,count,address;uint8_t*p;
+    if(!host||!host->alloc||!nokia_find_config_blob(type,id,&data,&size))return 0;
+    if(end&&end>start){offset=start<size?start:size;end=end<size?end:size;count=end>offset?end-offset:0;}
+    else{offset=0;count=size;}
+    address=host->alloc(host->context,count+8u);if(!address)return 0;
+    p=segment(m,address,count+8u);if(!p)return 0;
+    nokia_frontend_dirty_mask|=nokia_dirty_segment(address);
+    memcpy(p,&count,4);if(count)memcpy(p+4,data+offset,count);return address;
+}
+"""
+
+    out = [prefix.rstrip(), config_helper.rstrip(), "", "typedef struct {"]
     out.extend(f"    uint64_t {name};" for name in variable_names)
     out.extend(["} NokiaFrontendState;",
                 "enum { NOKIA_FRONTEND_UNSUPPORTED=0, NOKIA_FRONTEND_YIELDED=2, NOKIA_FRONTEND_CONTINUE=3 };"])
@@ -160,7 +181,7 @@ def split_source(source: str) -> str:
                 "    case 0x52000008u: if(!host||!host->realloc)goto unsupported; reg_r0=host->realloc(host->context,(uint32_t)reg_r1,(uint32_t)reg_r2);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x5200000cu: if(!host||!host->length)goto unsupported; reg_r0=host->length(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x52000180u: if(!host||!host->alloc)goto unsupported; reg_r0=host->alloc(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;",
-                "    case 0x52000224u: goto yielded;",
+                "    case 0x52000224u: { uint32_t end=(uint32_t)nokia_mem_load(&machine,reg_sp,4); reg_r0=nokia_frontend_config_blob(&machine,host,(uint32_t)reg_r1,(uint32_t)reg_r2,(uint32_t)reg_r3,end); reg_pc=reg_lr; goto dispatch; }",
                 "    case 0x8019db50u: reg_r0=nokia_mem_load(&machine,0x53000010u,4);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db88u: reg_r0=nokia_mem_load(&machine,0x53000018u,4);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db70u: reg_r0=nokia_mem_load(&machine,0x53000014u,4);reg_pc=reg_lr;goto dispatch;",
