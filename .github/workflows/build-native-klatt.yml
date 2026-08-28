@@ -8,6 +8,7 @@ on:
       - "native/nokia_klatt_bridge.c"
       - "tools/split_frontend_aot.py"
       - "tools/extend_prime_aot.py"
+      - "tools/collect_hot_frontend_trace.py"
       - "tools/instrument_frontend_yields.py"
       - "tools/report_frontend_yields.py"
       - "tools/inspect_frontend_addresses.py"
@@ -34,10 +35,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Collect hot 5320 frontend AOT trace
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pypcode
+          curl -L --fail --retry 3 \
+            -o build-5320.rom \
+            https://raw.githubusercontent.com/djgraco/nokiaKlatt/main/addon/roms/5320/SYM.ROM
+          mkdir -p build/native
+          python tools/collect_hot_frontend_trace.py \
+            build-5320.rom build/native/frontend-hot-trace.json
+
       - name: Expand generated sources
         shell: bash
         run: |
-          gzip -dk native/generated/*.c.gz
+          gzip -dk native/generated/nokia_klatt_*.c.gz
+          python tools/extend_prime_aot.py \
+            --source native/generated/nokia_frontend_5320.c.gz \
+            --trace build/native/frontend-hot-trace.json \
+            --rom build-5320.rom \
+            --output native/generated/nokia_frontend_5320.c \
+            --repair-fallthroughs
           python tools/split_frontend_aot.py native/generated/nokia_frontend_5320.c
           python tools/instrument_frontend_yields.py native/generated/nokia_frontend_5320.c
 
@@ -53,10 +71,6 @@ jobs:
         if: matrix.suffix == 'x64'
         shell: bash
         run: |
-          python -m pip install --disable-pip-version-check pypcode
-          curl -L --fail --retry 3 \
-            -o build-5320.rom \
-            https://raw.githubusercontent.com/djgraco/nokiaKlatt/main/addon/roms/5320/SYM.ROM
           python tools/decode_5320_rom_addresses.py build-5320.rom \
             0x827fd6fa 0x827fd6fc 0x827fd6fe 0x827fd700 \
             0x801a73ce 0x801a73d0 0x801a73d2 0x801a73d4 \
@@ -67,7 +81,6 @@ jobs:
       - name: Report remaining 5320 frontend yield islands
         shell: bash
         run: |
-          mkdir -p build/native
           python tools/report_frontend_yields.py \
             native/generated/nokia_frontend_5320.c \
             --json build/native/frontend-yields-${{ matrix.suffix }}.json
@@ -99,4 +112,5 @@ jobs:
           path: |
             build/native/nokia_klatt_*_${{ matrix.suffix }}.dll
             build/native/frontend-yields-${{ matrix.suffix }}.json
+            build/native/frontend-hot-trace.json
           if-no-files-found: error
