@@ -80,7 +80,8 @@ def translate_one(rom: bytes, address: int, thumb: bool):
 
 
 def collect_function(rom: bytes, entry: int, thumb: bool, depth: int,
-                     result: dict[tuple[int, bool], int]) -> None:
+                     result: dict[tuple[int, bool], int],
+                     best_depth: dict[tuple[int, bool], int]) -> None:
     pending = [entry]
     local_seen: set[int] = set()
     while pending:
@@ -88,8 +89,15 @@ def collect_function(rom: bytes, entry: int, thumb: bool, depth: int,
         if address in local_seen or not in_allowed_rom(address):
             continue
         local_seen.add(address)
+        key = (address, thumb)
+        previous_depth = best_depth.get(key)
+        # A smaller depth has more remaining call-follow budget. Revisit only
+        # when this path can therefore discover something new.
+        if previous_depth is not None and previous_depth <= depth:
+            continue
+        best_depth[key] = depth
         operations, size = translate_one(rom, address, thumb)
-        result[(address, thumb)] = size
+        result[key] = size
         if len(result) > MAX_TOTAL_INSTRUCTIONS:
             raise ValueError("hot AOT trace exceeded bounded instruction budget")
 
@@ -107,7 +115,8 @@ def collect_function(rom: bytes, entry: int, thumb: bool, depth: int,
                     target = direct_target(operation.inputs[0])
                     if in_allowed_rom(target):
                         collect_function(
-                            rom, target, call_mode(operations, thumb), depth + 1, result
+                            rom, target, call_mode(operations, thumb), depth + 1,
+                            result, best_depth
                         )
             elif name in ("BRANCHIND", "CALLIND", "RETURN"):
                 falls_through = False
@@ -123,8 +132,9 @@ def main() -> None:
 
     rom = args.rom.read_bytes()
     result: dict[tuple[int, bool], int] = {}
+    best_depth: dict[tuple[int, bool], int] = {}
     for entry, thumb in HOT_ENTRIES:
-        collect_function(rom, entry, thumb, 0, result)
+        collect_function(rom, entry, thumb, 0, result, best_depth)
 
     instructions = [
         {"address": address, "size": size, "thumb": thumb}
