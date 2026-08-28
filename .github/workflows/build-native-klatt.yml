@@ -11,6 +11,7 @@ on:
       - "tools/instrument_frontend_yields.py"
       - "tools/report_frontend_yields.py"
       - "tools/inspect_frontend_addresses.py"
+      - "tools/decode_5320_rom_addresses.py"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-klatt.yml"
 
@@ -46,6 +47,17 @@ jobs:
           python tools/inspect_frontend_addresses.py \
             native/generated/nokia_frontend_5320.c \
             0x801a0688 0x830e0b6a 0x830e0b6b 0x830e1d96
+
+      - name: Decode missing 5320 AOT gap
+        if: matrix.suffix == 'x64'
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pypcode
+          curl -L --fail --retry 3 \
+            -o build-5320.rom \
+            https://raw.githubusercontent.com/djgraco/nokiaKlatt/main/addon/roms/5320/SYM.ROM
+          python tools/decode_5320_rom_addresses.py build-5320.rom \
+            0x801a0684 0x801a0688 0x801a068c 0x801a0690
 
       - name: Report remaining 5320 frontend yield islands
         shell: bash
