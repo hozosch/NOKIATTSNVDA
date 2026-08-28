@@ -12,6 +12,7 @@ on:
       - "tools/extend_prime_aot.py"
       - "tools/collect_hot_frontend_trace.py"
       - "tools/collect_5320_dsp_wrapper_trace.py"
+      - "tools/collect_5320_full_lifecycle_trace.py"
       - "tools/instrument_frontend_yields.py"
       - "tools/report_frontend_yields.py"
       - "tools/inspect_frontend_addresses.py"
@@ -28,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Collect hot 5320 frontend AOT trace
+      - name: Collect 5320 native migration traces
         shell: bash
         run: |
           python -m pip install --disable-pip-version-check pypcode
@@ -40,6 +41,16 @@ jobs:
             build-5320.rom build/native/frontend-hot-trace.json
           python tools/collect_5320_dsp_wrapper_trace.py \
             build-5320.rom build/native/dsp-wrapper-trace.json
+
+          # Build-time only: run the preservation harness once to learn every
+          # ROM instruction needed for construct -> speak -> stop -> close.
+          # The resulting AOT corpus is what lets the shipped add-on omit
+          # Unicorn and the bundled helper Python runtime.
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/native/full-lifecycle-trace.json \
+            --language 3 --voice DefaultMale \
+            --text "Hallo Welt 123 dies ist ein kompletter nativer Lebenszyklus"
 
       - name: Generate expanded 5320 frontend sources
         shell: bash
@@ -62,6 +73,13 @@ jobs:
             0x827fd6fe 0x52000224 0x801a73d2 0x830f7bce 0x801a3756 0x801ae76a \
             0x830ea2de 0x801a3786 0x801a3736 0x801ae7fa 0x801af2e4 0x827fb74c
           cat build/native/dsp-wrapper-trace.json
+          python - <<'PY'
+          import json
+          p=json.load(open('build/native/full-lifecycle-trace.json', encoding='utf-8'))
+          print('full lifecycle unique instructions:', p['instruction_count'])
+          print('full lifecycle phases:', p['phase_counts'])
+          print('full lifecycle audio bytes:', p['audio_bytes'])
+          PY
 
       - name: Decode missing 5320 hot paths
         shell: bash
@@ -90,6 +108,7 @@ jobs:
             build/native/frontend-yields.json
             build/native/frontend-hot-trace.json
             build/native/dsp-wrapper-trace.json
+            build/native/full-lifecycle-trace.json
           if-no-files-found: error
 
   build:
@@ -127,9 +146,11 @@ jobs:
           }
           $yieldReport = Get-ChildItem -Recurse build/frontend-artifact -Filter "frontend-yields.json" | Select-Object -First 1
           $hotTrace = Get-ChildItem -Recurse build/frontend-artifact -Filter "frontend-hot-trace.json" | Select-Object -First 1
+          $lifeTrace = Get-ChildItem -Recurse build/frontend-artifact -Filter "full-lifecycle-trace.json" | Select-Object -First 1
           New-Item -ItemType Directory -Force build/native | Out-Null
           if ($yieldReport) { Copy-Item $yieldReport.FullName "build/native/frontend-yields-${{ matrix.suffix }}.json" -Force }
           if ($hotTrace) { Copy-Item $hotTrace.FullName "build/native/frontend-hot-trace.json" -Force }
+          if ($lifeTrace) { Copy-Item $lifeTrace.FullName "build/native/full-lifecycle-trace.json" -Force }
 
       - name: Build profile DLLs
         shell: pwsh
@@ -145,7 +166,7 @@ jobs:
             } else {
               $sources += "native/nokia_frontend_stub.c"
             }
-            cl /nologo /O2 /Gy /LD $sources /link "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
+            cl /nologo /O2 /Gy /GL /Gw /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native/nokia_klatt_${profile}_${{ matrix.suffix }}.dll"
             if ($LASTEXITCODE -ne 0) { throw "Klatt build failed for $profile" }
           }
           Get-ChildItem build/native/*.dll | ForEach-Object {
@@ -160,4 +181,5 @@ jobs:
             build/native/nokia_klatt_*_${{ matrix.suffix }}.dll
             build/native/frontend-yields-${{ matrix.suffix }}.json
             build/native/frontend-hot-trace.json
+            build/native/full-lifecycle-trace.json
           if-no-files-found: error
