@@ -56,16 +56,33 @@ def split_source(source: str) -> str:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(label_text)
         blocks[int(match.group(1), 16)] = label_text[match.start():end].rstrip().splitlines()
 
+    # PrimeSynthesisL can return through 0x801a0684 into this two-instruction
+    # ARM byte-copy gap.  It was absent from the original trace, causing one
+    # AOT->Unicorn yield per copied byte.  The ROM bytes decode as:
+    #   e4d1c001  LDRB r12,[r1],#1
+    #   e4c3c001  STRB r12,[r3],#1
+    # Keep the tiny loop native so r1/r3/r12 remain in one state model.
+    blocks.setdefault(0x801A0688, [
+        "L_801a0688:",
+        "    nokia_frontend_last_pc=0x801a0688u;",
+        "    reg_r12 = ((uint64_t)(nokia_mem_load(&machine, (reg_r1 & UINT64_C(0xffffffff)), 1))) & UINT64_C(0xffffffff);",
+        "    reg_r1 = ((uint64_t)((reg_r1 & UINT64_C(0xffffffff)) + UINT64_C(1))) & UINT64_C(0xffffffff);",
+        "    goto L_801a068c;",
+    ])
+    blocks.setdefault(0x801A068C, [
+        "L_801a068c:",
+        "    nokia_frontend_last_pc=0x801a068cu;",
+        "    if (!nokia_mem_store(&machine, (reg_r3 & UINT64_C(0xffffffff)), (reg_r12 & UINT64_C(0xff)), 1)) goto unsupported;",
+        "    reg_r3 = ((uint64_t)((reg_r3 & UINT64_C(0xffffffff)) + UINT64_C(1))) & UINT64_C(0xffffffff);",
+        "    goto L_801a0690;",
+    ])
+
     addresses = sorted(set(blocks) - EXECUTIVE)
     resume_addresses = sorted({int(value) & ~1 for value in
                                re.findall(r"reg_lr=UINT64_C\((\d+)\)",
                                           label_text)})
     chunks = [addresses[index:index + CHUNK_SIZE]
               for index in range(0, len(addresses), CHUNK_SIZE)]
-    # The bridge keeps the large, normally immutable guest regions cached.
-    # Record which shadow segments the generated code actually changed so it
-    # only copies dirty bytes back through Unicorn's comparatively expensive
-    # uc_mem_write API.  The mask is reset for every resumable AOT slice.
     old_store = (
         "static int nokia_mem_store(NokiaFrontendMachine*m,uint64_t address,uint64_t value,unsigned size) "
         "{ uint8_t*p=segment(m,(uint32_t)address,size);if(!p){if(!m->bad_address)m->bad_address=(uint32_t)address;"
