@@ -2,9 +2,10 @@
 """Collect the small 5320 DSP wrapper path before the native Klatt entry.
 
 The regular frontend AOT deliberately excludes the DSP range. This trace starts
-at the remaining hot yield 0x830f7bce and follows only local control flow and a
-small call closure inside the wrapper. The already-native Klatt entry at
-0x830f9db0 is treated as a terminal host boundary rather than translated again.
+at the remaining hot yield 0x830f7bce and follows local control flow plus a
+bounded direct-call closure inside the wrapper. The already-native Klatt entry
+at 0x830f9db0 is treated as a terminal host boundary rather than translated
+again.
 """
 from __future__ import annotations
 
@@ -20,8 +21,8 @@ DSP_START = 0x830F7A48
 DSP_END = 0x83102E00
 ENTRY = 0x830F7BCE
 NATIVE_KLATT_ENTRY = 0x830F9DB0
-MAX_CALL_DEPTH = 3
-MAX_INSTRUCTIONS = 2048
+MAX_CALL_DEPTH = 6
+MAX_INSTRUCTIONS = 4096
 
 
 def direct_target(varnode) -> int:
