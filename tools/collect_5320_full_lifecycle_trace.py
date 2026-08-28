@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Record every ROM instruction used by one complete Nokia 5320 utterance.
 
-This is a build-time migration tool.  It intentionally runs the known-good
+This is a build-time migration tool. It intentionally runs the known-good
 Unicorn implementation once in CI so the resulting instruction corpus can be
 translated ahead of time and Unicorn can disappear from the shipped add-on.
 The hook is installed immediately after Epoc creates/maps Unicorn, before
-CDevTTS construction and runtime bootstrap execute.
+CDevTTS construction and speech work execute.
 """
 from __future__ import annotations
 
@@ -28,11 +28,15 @@ def main() -> None:
     addon = args.upstream / "addon"
     sys.path.insert(0, str(addon / "synthDrivers"))
 
+    # Importing the harness package first is intentional: its __init__ adds the
+    # vendored Unicorn bindings/native DLL directory to sys.path/environment.
+    import _nokia.harness  # noqa: F401
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_CPSR
     from _nokia.harness import epoc as epoc_module
 
     executed: dict[tuple[int, bool], int] = {}
+    addresses_seen: set[int] = set()
     phase = {"name": "epoc"}
     first_phase: dict[tuple[int, bool], str] = {}
     original_init = epoc_module.Epoc.__init__
@@ -45,14 +49,13 @@ def main() -> None:
             # synthetic heap and stack are represented by native runtime data.
             if not (self.rom_base <= address < self.rom_base + len(self.blob)):
                 return
-            # CPSR is read only the first time an address is encountered. This
-            # keeps the one-time migration trace affordable even in tight loops.
-            known_modes = [key for key in executed if key[0] == address]
-            if known_modes:
+            address = int(address) & ~1
+            if address in addresses_seen:
                 return
+            addresses_seen.add(address)
             cpsr = int(uc.reg_read(UC_ARM_REG_CPSR))
             thumb = bool(cpsr & (1 << 5))
-            key = (int(address) & ~1, thumb)
+            key = (address, thumb)
             executed[key] = int(size)
             first_phase[key] = phase["name"]
 
