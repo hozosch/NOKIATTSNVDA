@@ -8,6 +8,7 @@ on:
       - "native/nokia_klatt_bridge.c"
       - "tools/split_frontend_aot.py"
       - "tools/extend_prime_aot.py"
+      - "tools/instrument_frontend_yields.py"
       - "tools/report_frontend_yields.py"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-klatt.yml"
@@ -36,6 +37,7 @@ jobs:
         run: |
           gzip -dk native/generated/*.c.gz
           python tools/split_frontend_aot.py native/generated/nokia_frontend_5320.c
+          python tools/instrument_frontend_yields.py native/generated/nokia_frontend_5320.c
 
       - name: Report remaining 5320 frontend yield islands
         shell: bash
