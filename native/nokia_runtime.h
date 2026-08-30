@@ -27,27 +27,27 @@ typedef struct {
     void *user;
 } NokiaRuntimeCallbacks;
 
-/*
- * Standalone runtime contract. These entry points intentionally contain no
- * Unicorn types and no Python ABI. The NVDA SynthDriver will call them via
- * ctypes from NVDA's own Python process once the 5320 lifecycle is fully AOT.
- */
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320(
     const uint8_t *rom, size_t rom_size,
     const char *resource_root_utf8,
     uint32_t language_id, uint32_t voice_id);
-NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *runtime);
 
+/* Preferred native-only constructor. The snapshot is produced at build time
+   after CDevTTS, scheduler and style construction. No emulator is involved
+   while this function restores it. */
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *snapshot, size_t snapshot_size);
+
+NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT int nokia_runtime_set_rate(
     NokiaRuntime *runtime, double factor);
 NOKIA_RUNTIME_EXPORT int nokia_runtime_set_pitch(
     NokiaRuntime *runtime, double factor);
-
 NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     NokiaRuntime *runtime, const uint16_t *text, uint32_t text_length,
     const NokiaRuntimeCallbacks *callbacks);
 NOKIA_RUNTIME_EXPORT void nokia_runtime_cancel(NokiaRuntime *runtime);
-
 NOKIA_RUNTIME_EXPORT int nokia_runtime_last_error(
     const NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_frontend_ticks(
