@@ -1,0 +1,104 @@
+name: Build native-only Nokia 5320 runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "native/**"
+      - "tools/**"
+      - ".github/workflows/build-native-only-5320.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+            suffix: x64
+          - runner: windows-11-arm
+            arch: arm64
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Generate full lifecycle AOT on x64
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pypcode
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          cp build/upstream/addon/roms/5320/SYM.ROM build-5320.rom
+          mkdir -p build/native native/generated/full
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/native/full-lifecycle-trace.json \
+            --language 3 --voice DefaultMale \
+            --text "Hallo Welt 123 dies ist ein kompletter nativer Lebenszyklus"
+          python tools/extend_prime_aot.py \
+            --source native/generated/nokia_frontend_5320.c.gz \
+            --trace build/native/full-lifecycle-trace.json \
+            --rom build-5320.rom \
+            --output native/generated/full/nokia_frontend_5320_full.c \
+            --repair-fallthroughs
+          python tools/split_frontend_aot.py native/generated/full/nokia_frontend_5320_full.c
+          python tools/optimise_frontend_memory.py native/generated/full/nokia_frontend_5320_full.c
+          python tools/instrument_frontend_yields.py native/generated/full/nokia_frontend_5320_full.c
+
+      - name: Upload full lifecycle AOT
+        if: matrix.arch == 'x64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: nokia-5320-full-aot
+          path: |
+            native/generated/full/nokia_frontend_5320_full*.c
+            build/native/full-lifecycle-trace.json
+          if-no-files-found: error
+
+      - name: Download full lifecycle AOT
+        if: matrix.arch == 'arm64'
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-full-aot
+          path: build/full-aot
+
+      - name: Install generated source
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force native/generated/full | Out-Null
+          Get-ChildItem -Recurse build/full-aot -Filter "nokia_frontend_5320_full*.c" | ForEach-Object {
+            Copy-Item $_.FullName native/generated/full/ -Force
+          }
+
+      - name: Expand Klatt source
+        shell: bash
+        run: gzip -dk native/generated/nokia_klatt_5320.c.gz
+
+      - name: Build native-only linked runtime
+        shell: pwsh
+        run: |
+          & .github/scripts/enter-msvc.ps1 -Arch '${{ matrix.arch }}'
+          New-Item -ItemType Directory -Force build/native | Out-Null
+          $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
+          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD \
+            native/nokia_runtime.c native/nokia_config_blobs.c \
+            native/generated/nokia_klatt_5320.c $front \
+            /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+          if ($LASTEXITCODE -ne 0) { throw "native-only runtime link failed" }
+          $imports = dumpbin /imports "build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+          if ($imports -match "unicorn" -or $imports -match "python3") {
+            throw "native-only runtime imports Unicorn or Python"
+          }
+          dumpbin /exports "build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+
+      - name: Upload runtime
+        uses: actions/upload-artifact@v6
+        with:
+          name: nokia-runtime-5320-${{ matrix.suffix }}
+          path: build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll
+          if-no-files-found: error
