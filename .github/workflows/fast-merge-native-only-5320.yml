@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/fast-merge-native-only-5320.yml"
       - ".github/scripts/patch_5320_prime_iterator.py"
+      - ".github/scripts/patch_5320_prime_counterloop.py"
       - "tools/instrument_5320_native_smoke.py"
       - "tools/patch_5320_prime_hotloop.py"
       - "tools/smoke_native_5320_runtime.py"
@@ -43,6 +44,10 @@ jobs:
       - name: Optimise verified Prime iterator
         shell: bash
         run: python .github/scripts/patch_5320_prime_iterator.py build/merged/nokia_frontend_5320_full.c
+
+      - name: Optimise verified Prime counter loop
+        shell: bash
+        run: python .github/scripts/patch_5320_prime_counterloop.py build/merged/nokia_frontend_5320_full.c
 
       - name: Prepare bounded debug sources
         shell: bash
