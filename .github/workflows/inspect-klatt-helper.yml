@@ -1,0 +1,19 @@
+name: Inspect native Klatt helper
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/inspect-klatt-helper.yml"
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show helper and dispatcher
+        shell: bash
+        run: |
+          gzip -dc native/generated/nokia_klatt_5320.c.gz > /tmp/klatt.c
+          grep -n -B 25 -A 80 -i '8310188c' /tmp/klatt.c || true
+          grep -n -B 10 -A 80 'nokia_klatt_generate_aot' /tmp/klatt.c || true
