@@ -141,6 +141,17 @@ jobs:
           }
           dumpbin /exports "build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
 
+      - name: Smoke test native synthesis
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/smoke-upstream
+          python tools/smoke_native_5320_runtime.py \
+            build/native/nokia_runtime_5320_x64.dll \
+            build/smoke-upstream/addon/roms/5320/SYM.ROM \
+            build/native/5320-de-male.snapshot \
+            build/smoke-upstream/addon/roms/5320/files/system/data
+
       - name: Upload runtime
         uses: actions/upload-artifact@v6
         with:
