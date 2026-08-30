@@ -39,6 +39,26 @@ jobs:
           import re
 
           src = Path('native/nokia_runtime.c').read_text(encoding='utf-8')
+          replacements = {
+              'if(!native_call_l(r,r->pt_new,a,3,&pt)||!pt)goto failed;':
+                  'if(!native_call_l(r,r->pt_new,a,3,&pt)||!pt){r->last_error=-3101;goto failed;}',
+              'if(!native_call(r,r->seg_set_style_id,a,2,&res))goto failed;':
+                  'if(!native_call(r,r->seg_set_style_id,a,2,&res)){r->last_error=-3102;goto failed;}',
+              'if(!native_call(r,r->seg_set_text_ptr,a,2,&res))goto failed;':
+                  'if(!native_call(r,r->seg_set_text_ptr,a,2,&res)){r->last_error=-3103;goto failed;}',
+              'if(!native_call_l(r,r->pt_add_segment,a,3,&res))goto failed;':
+                  'if(!native_call_l(r,r->pt_add_segment,a,3,&res)){r->last_error=-3104;goto failed;}',
+              'if(!native_call_l(r,r->dev_prime,a,2,&res))goto failed;':
+                  'if(!native_call_l(r,r->dev_prime,a,2,&res)){r->last_error=-3105;goto failed;}',
+              'if(!native_call_l(r,r->dev_synthesize,a,2,&res))goto failed;':
+                  'if(!native_call_l(r,r->dev_synthesize,a,2,&res)){r->last_error=-3106;goto failed;}',
+              'if(!native_call(r,r->run_if_ready,a,2,&res))goto failed;':
+                  'if(!native_call(r,r->run_if_ready,a,2,&res)){r->last_error=-3107;goto failed;}',
+          }
+          for old, new in replacements.items():
+              if old not in src:
+                  raise SystemExit(f'lifecycle stage marker not found: {old}')
+              src = src.replace(old, new, 1)
           old = 'if(++loops>100000u){r->last_error=-3004;goto failed;}'
           new = 'if(++loops>2000u){r->last_error=-3004;goto failed;}'
           if old not in src:
@@ -61,17 +81,15 @@ jobs:
           aot, count = pat.subn(r'\1 if(!nokia_frontend_debug_budget--) return NOKIA_FRONTEND_YIELDED;', aot)
           if count < 1000:
               raise SystemExit(f'unexpectedly few AOT labels instrumented: {count}')
-
           old_yield = 'if(result==NOKIA_FRONTEND_YIELDED){nokia_frontend_record_yield(pc,3u);goto yielded;}'
           new_yield = 'if(result==NOKIA_FRONTEND_YIELDED){nokia_frontend_record_yield(nokia_frontend_last_pc,3u);goto yielded;}'
           if old_yield not in aot:
               raise SystemExit('chunk yield recorder marker not found')
           aot = aot.replace(old_yield, new_yield, 1)
-
           aot_path.write_text(aot, encoding='utf-8', newline='\n')
+          print('lifecycle failures tagged -3101..-3107')
           print('fast smoke scheduler pump limit: 2000')
           print('AOT per-call label budget: 500000; instrumented labels:', count)
-          print('budget yields report exact nokia_frontend_last_pc')
 
       - name: Build x64 native-only runtime fast
         shell: pwsh
