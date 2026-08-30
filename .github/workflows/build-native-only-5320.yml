@@ -42,17 +42,18 @@ jobs:
             native/generated/nokia_klatt_5320.c.gz \
             build/native/native-lifecycle-trace.json
 
-          # One indirect ROM veneer used by the initialized snapshot reaches
-          # this helper even though the original one-shot lifecycle trace did
-          # not record it. Pull its bounded direct-call closure in statically.
+          # The initialized snapshot reaches this Thumb DSP helper through one
+          # of the standalone ROM veneers. The original one-shot lifecycle
+          # trace did not record the dynamic target, so pull its bounded
+          # direct-call closure in statically from the actual function entry.
           python tools/collect_5320_dsp_wrapper_trace.py \
-            build-5320.rom build/native/dsp-helper-ae42.json \
-            --entry 0x830fae42
+            build-5320.rom build/native/dsp-helper-ae3c.json \
+            --entry 0x830fae3c
           python - <<'PY'
           import json
           from pathlib import Path
           base=Path('build/native/native-lifecycle-trace.json')
-          helper=Path('build/native/dsp-helper-ae42.json')
+          helper=Path('build/native/dsp-helper-ae3c.json')
           p=json.loads(base.read_text(encoding='utf-8'))
           h=json.loads(helper.read_text(encoding='utf-8'))
           by_key={(int(i['address']),bool(i.get('thumb',False))):i for i in p['instructions']}
@@ -61,6 +62,7 @@ jobs:
           p['instructions']=sorted(by_key.values(),key=lambda i:(int(i['address']),bool(i.get('thumb',False))))
           p['instruction_count']=len(p['instructions'])
           p['extra_dsp_helper_count']=h['instruction_count']
+          p['extra_dsp_helper_entry']='0x830fae3c'
           base.write_text(json.dumps(p,indent=2)+'\n',encoding='utf-8')
           print('merged DSP helper instructions:',h['instruction_count'])
           print('native lifecycle instructions after merge:',p['instruction_count'])
@@ -111,6 +113,7 @@ jobs:
               labels += len(re.findall(r'(?m)^L_[0-9a-f]{8}:$', p.read_text(encoding='utf-8')))
           print('full lifecycle instructions:', full['instruction_count'])
           print('native lifecycle after Klatt/helper merge:', native['instruction_count'])
+          print('extra DSP helper entry:', native.get('extra_dsp_helper_entry'))
           print('extra DSP helper instructions:', native.get('extra_dsp_helper_count'))
           print('translated labels:', labels)
           print('snapshot bytes:', Path('build/native/5320-de-male.snapshot').stat().st_size)
@@ -124,7 +127,7 @@ jobs:
             native/generated/full/nokia_frontend_5320_full*.c
             build/native/full-lifecycle-trace.json
             build/native/native-lifecycle-trace.json
-            build/native/dsp-helper-ae42.json
+            build/native/dsp-helper-ae3c.json
             build/native/full-frontend-yields.json
             build/native/5320-de-male.snapshot
           if-no-files-found: error
