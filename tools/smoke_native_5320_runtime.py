@@ -27,6 +27,24 @@ def blob_arg(data: bytes):
     return array, ctypes.cast(array, ctypes.POINTER(ctypes.c_uint8))
 
 
+def optional_u32(dll, name):
+    fn = getattr(dll, name, None)
+    if fn is None:
+        return None
+    fn.argtypes = []
+    fn.restype = ctypes.c_uint32
+    return fn
+
+
+def optional_u64(dll, name):
+    fn = getattr(dll, name, None)
+    if fn is None:
+        return None
+    fn.argtypes = []
+    fn.restype = ctypes.c_uint64
+    return fn
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument('dll', type=Path)
@@ -50,6 +68,12 @@ def main() -> None:
     dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_last_error.restype = ctypes.c_int
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
+
+    last_pc = optional_u32(dll, 'nokia_frontend_last_pc_value')
+    bad_address = optional_u32(dll, 'nokia_frontend_bad_address_value')
+    yield_pc = optional_u32(dll, 'nokia_frontend_yield_pc_value')
+    yield_reason = optional_u32(dll, 'nokia_frontend_yield_reason_value')
+    yield_count = optional_u64(dll, 'nokia_frontend_yield_count_value')
 
     held = []
     for path in sorted(args.data_dir.glob('srsf_*_*.bin')):
@@ -92,10 +116,24 @@ def main() -> None:
         ok = dll.nokia_runtime_speak_utf16(runtime, words, len(words),
                                             ctypes.byref(callbacks))
         error = dll.nokia_runtime_last_error(runtime)
+        diagnostics = []
+        if last_pc:
+            diagnostics.append(f'lastPc={last_pc():#x}')
+        if bad_address:
+            diagnostics.append(f'badAddress={bad_address():#x}')
+        if yield_pc:
+            diagnostics.append(f'yieldPc={yield_pc():#x}')
+        if yield_reason:
+            diagnostics.append(f'yieldReason={yield_reason()}')
+        if yield_count:
+            diagnostics.append(f'yields={yield_count()}')
         print('native speak result:', ok, 'error:', error,
-              'pcm callbacks:', calls[0], 'samples:', samples[0])
+              'pcm callbacks:', calls[0], 'samples:', samples[0],
+              ' '.join(diagnostics))
         if not ok or samples[0] <= 0:
-            raise SystemExit(f'native synthesis failed: error={error}, samples={samples[0]}')
+            raise SystemExit(
+                f'native synthesis failed: error={error}, samples={samples[0]}, '
+                + ', '.join(diagnostics))
     finally:
         dll.nokia_runtime_destroy(runtime)
 
