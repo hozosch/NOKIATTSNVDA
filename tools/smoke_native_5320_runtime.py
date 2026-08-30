@@ -69,6 +69,7 @@ def main() -> None:
     dll.nokia_runtime_last_error.restype = ctypes.c_int
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
 
+    first_unsupported = optional_u32(dll, 'nokia_frontend_first_unsupported_pc_value')
     last_pc = optional_u32(dll, 'nokia_frontend_last_pc_value')
     bad_address = optional_u32(dll, 'nokia_frontend_bad_address_value')
     yield_pc = optional_u32(dll, 'nokia_frontend_yield_pc_value')
@@ -117,6 +118,8 @@ def main() -> None:
                                             ctypes.byref(callbacks))
         error = dll.nokia_runtime_last_error(runtime)
         diagnostics = []
+        if first_unsupported:
+            diagnostics.append(f'firstUnsupported={first_unsupported():#x}')
         if last_pc:
             diagnostics.append(f'lastPc={last_pc():#x}')
         if bad_address:
