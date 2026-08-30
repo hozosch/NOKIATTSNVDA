@@ -50,9 +50,8 @@ jobs:
           p=next(Path('native/generated/full').glob('nokia_frontend_5320_full*.c'))
           s=p.read_text(encoding='utf-8')
 
-          # The old Prime corpus captured 0x801a05b4 before its BHI target was
-          # covered, so the conditional destination was left as unsupported.
-          # The complete lifecycle trace contains 0x801a05b8; route it there.
+          # Repair an old conditional branch whose destination is present in
+          # the complete lifecycle corpus but was absent in the original Prime corpus.
           b0=s.index('L_801a05b4:')
           b1=s.index('\nL_', b0+1)
           block=s[b0:b1]
@@ -62,6 +61,18 @@ jobs:
           if old not in block:
               raise SystemExit('stale 0x801a05b4 branch not found')
           s=s[:b0]+block.replace(old,new,1)+s[b1:]
+
+          # 0x8310188c is a tiny ROM veneer used separately from the main
+          # Klatt entry. It loads the real target pointer at 0x83101890.
+          # It was filtered merely because the Klatt AOT also contains it.
+          klatt_case='    case 0x830f9db0u: {'
+          veneer=('    case 0x8310188cu: {\n'
+                  '        uint32_t veneer=(uint32_t)nokia_mem_load(&machine,UINT64_C(0x83101890),4);\n'
+                  '        reg_TB=(veneer&1u)!=0; reg_pc=veneer&~1u; goto dispatch;\n'
+                  '    }\n')
+          if klatt_case not in s:
+              raise SystemExit('native Klatt dispatcher case not found')
+          s=s.replace(klatt_case,veneer+klatt_case,1)
 
           marker='static uint32_t nokia_frontend_last_pc,nokia_frontend_bad_address;'
           repl=(marker+'\nstatic uint32_t nokia_frontend_first_unsupported_pc;\n'
