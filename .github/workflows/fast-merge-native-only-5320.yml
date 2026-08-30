@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - ".github/workflows/fast-merge-native-only-5320.yml"
+      - "tools/smoke_native_5320_runtime.py"
 
 permissions:
   contents: read
@@ -72,13 +73,41 @@ jobs:
           chunk0 = 'static int nokia_frontend_chunk_0('
           if chunk0 not in aot:
               raise SystemExit('first AOT chunk marker not found')
-          aot = aot.replace(chunk0, 'static uint32_t nokia_frontend_debug_budget;\n\n' + chunk0, 1)
+          debug_decl = '''static uint32_t nokia_frontend_debug_budget;
+static uint32_t nokia_frontend_debug_r0,nokia_frontend_debug_r1,nokia_frontend_debug_r2,nokia_frontend_debug_r3;
+static uint32_t nokia_frontend_debug_r4,nokia_frontend_debug_r5,nokia_frontend_debug_r6,nokia_frontend_debug_r7,nokia_frontend_debug_sp;
+static uint32_t nokia_frontend_debug_s0,nokia_frontend_debug_s2,nokia_frontend_debug_s4;
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r0_value(void){return nokia_frontend_debug_r0;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r1_value(void){return nokia_frontend_debug_r1;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r2_value(void){return nokia_frontend_debug_r2;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r3_value(void){return nokia_frontend_debug_r3;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r4_value(void){return nokia_frontend_debug_r4;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r5_value(void){return nokia_frontend_debug_r5;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r6_value(void){return nokia_frontend_debug_r6;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_r7_value(void){return nokia_frontend_debug_r7;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_sp_value(void){return nokia_frontend_debug_sp;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_s0_value(void){return nokia_frontend_debug_s0;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_s2_value(void){return nokia_frontend_debug_s2;}
+NOKIA_EXPORT uint32_t nokia_frontend_debug_s4_value(void){return nokia_frontend_debug_s4;}
+
+'''
+          aot = aot.replace(chunk0, debug_decl + chunk0, 1)
           reset = '    nokia_frontend_dirty_mask=0;'
           if reset not in aot:
               raise SystemExit('AOT call reset marker not found')
           aot = aot.replace(reset, reset + '\n    nokia_frontend_debug_budget=500000u;', 1)
           pat = re.compile(r'(nokia_frontend_last_pc=0x[0-9a-f]+u;)')
-          aot, count = pat.subn(r'\1 if(!nokia_frontend_debug_budget--) return NOKIA_FRONTEND_YIELDED;', aot)
+          capture = (r'\1 if(!nokia_frontend_debug_budget--){'
+                     r'nokia_frontend_debug_r0=(uint32_t)reg_r0;nokia_frontend_debug_r1=(uint32_t)reg_r1;'
+                     r'nokia_frontend_debug_r2=(uint32_t)reg_r2;nokia_frontend_debug_r3=(uint32_t)reg_r3;'
+                     r'nokia_frontend_debug_r4=(uint32_t)reg_r4;nokia_frontend_debug_r5=(uint32_t)reg_r5;'
+                     r'nokia_frontend_debug_r6=(uint32_t)reg_r6;nokia_frontend_debug_r7=(uint32_t)reg_r7;'
+                     r'nokia_frontend_debug_sp=(uint32_t)reg_sp;'
+                     r'nokia_frontend_debug_s0=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4,2);'
+                     r'nokia_frontend_debug_s2=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4+2u,2);'
+                     r'nokia_frontend_debug_s4=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4+4u,4);'
+                     r'return NOKIA_FRONTEND_YIELDED;}')
+          aot, count = pat.subn(capture, aot)
           if count < 1000:
               raise SystemExit(f'unexpectedly few AOT labels instrumented: {count}')
           old_yield = 'if(result==NOKIA_FRONTEND_YIELDED){nokia_frontend_record_yield(pc,3u);goto yielded;}'
@@ -89,7 +118,7 @@ jobs:
           aot_path.write_text(aot, encoding='utf-8', newline='\n')
           print('lifecycle failures tagged -3101..-3107')
           print('fast smoke scheduler pump limit: 2000')
-          print('AOT per-call label budget: 500000; instrumented labels:', count)
+          print('AOT per-call label budget: 500000; register/structure capture enabled; labels:', count)
 
       - name: Build x64 native-only runtime fast
         shell: pwsh
