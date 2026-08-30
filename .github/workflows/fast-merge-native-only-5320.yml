@@ -57,7 +57,7 @@ jobs:
           $sources = @('build/nokia_runtime_fast.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c','build/merged/nokia_frontend_5320_full.c')
           # Debug iteration: keep O2, but deliberately skip /GL + /LTCG.
           # Release builds will still use whole-program optimization.
-          cl /nologo /O2 /Ob2 /Oi /Ot /Gy /Gw /LD $sources /link /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_x64.dll"
+          cl /nologo /I native /O2 /Ob2 /Oi /Ot /Gy /Gw /LD $sources /link /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_x64.dll"
           if ($LASTEXITCODE -ne 0) { throw 'fast native-only runtime link failed' }
           $imports = dumpbin /imports "build/native/nokia_runtime_5320_x64.dll"
           if ($imports -match 'unicorn' -or $imports -match 'python3') {
