@@ -17,17 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Generate native-only lifecycle AOT and snapshot
+      - name: Download frozen full lifecycle trace
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-frontend-generated
+          path: build/frozen-trace
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33188121016
+          github-token: ${{ github.token }}
+
+      - name: Generate native-only AOT and snapshot
         shell: bash
         run: |
           python -m pip install --disable-pip-version-check pypcode
           git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
           cp build/upstream/addon/roms/5320/SYM.ROM build-5320.rom
           mkdir -p build/native native/generated/full
-          python tools/collect_5320_full_lifecycle_trace.py \
-            build/upstream build/native/full-lifecycle-trace.json \
-            --language 3 --voice DefaultMale \
-            --text "Hallo Welt 123 dies ist ein kompletter nativer Lebenszyklus"
+          cp build/frozen-trace/build/native/full-lifecycle-trace.json build/native/full-lifecycle-trace.json
           python tools/build_5320_native_snapshot.py \
             build/upstream build/native/5320-de-male.snapshot \
             --language 3 --voice DefaultMale
