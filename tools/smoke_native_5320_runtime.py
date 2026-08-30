@@ -77,7 +77,7 @@ def main() -> None:
     yield_count = optional_u64(dll, 'nokia_frontend_yield_count_value')
     debug_values = []
     for label in ('r0','r1','r2','r3','r4','r5','r6','r7','sp',
-                  's0','s2','s4'):
+                  's0','s2','s4','pc'):
         fn = optional_u32(dll, f'nokia_frontend_debug_{label}_value')
         if fn:
             debug_values.append((label, fn))
