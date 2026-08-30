@@ -1,0 +1,214 @@
+name: Fast merge native-only Nokia 5320 runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/fast-merge-native-only-5320.yml"
+
+permissions:
+  contents: read
+
+env:
+  AE42_RUN: "33324006225"
+  AE3C_RUN: "33332959000"
+
+jobs:
+  merge:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download ae42 AOT corpus
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-full-aot
+          path: build/ae42
+          github-token: ${{ github.token }}
+          repository: hozosch/NOKIATTSNVDA
+          run-id: ${{ env.AE42_RUN }}
+      - name: Download ae3c AOT corpus
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-full-aot
+          path: build/ae3c
+          github-token: ${{ github.token }}
+          repository: hozosch/NOKIATTSNVDA
+          run-id: ${{ env.AE3C_RUN }}
+      - name: Merge complementary split AOT helpers
+        shell: bash
+        run: |
+          mkdir -p build/merged
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+
+          oldp=next(Path('build/ae42').rglob('nokia_frontend_5320_full*.c'))
+          newp=next(Path('build/ae3c').rglob('nokia_frontend_5320_full*.c'))
+          oldjp=next(Path('build/ae42').rglob('dsp-helper-ae42.json'))
+          newjp=next(Path('build/ae3c').rglob('dsp-helper-ae3c.json'))
+          old=oldp.read_text(encoding='utf-8')
+          new=newp.read_text(encoding='utf-8')
+          oldj=json.loads(oldjp.read_text(encoding='utf-8'))
+          newj=json.loads(newjp.read_text(encoding='utf-8'))
+          newaddrs={int(i['address']) for i in newj['instructions']}
+          missing=sorted({int(i['address']) for i in oldj['instructions']
+                          if int(i['address']) not in newaddrs})
+          print('merging ae42-only addresses:', ', '.join(hex(x) for x in missing))
+
+          def chunk_of(source,pos):
+              matches=list(re.finditer(
+                  r'(?m)^static int nokia_frontend_chunk_(\d+)\(',source[:pos]))
+              if not matches:
+                  raise RuntimeError('no chunk before helper block')
+              return int(matches[-1].group(1))
+
+          def label_block(source,address):
+              m=re.search(
+                  rf'(?ms)^L_{address:08x}:\n.*?'
+                  rf'(?=^L_[0-9a-f]{{8}}:|^\}}\n\n'
+                  rf'(?:static int nokia_frontend_chunk_|typedef int \(\*NokiaFrontendChunk))',
+                  source)
+              if not m:
+                  raise RuntimeError(f'no source block for {address:#x}')
+              return m.group(0)
+
+          bychunk={}
+          for address in missing:
+              pos=old.find(f'L_{address:08x}:')
+              if pos < 0:
+                  raise RuntimeError(f'old AOT label missing: {address:#x}')
+              bychunk.setdefault(chunk_of(old,pos),[]).append(address)
+
+          # Work from later chunks backwards so replacements do not disturb
+          # positions of chunks that have not been processed yet.
+          for chunk_no,addresses in sorted(bychunk.items(),reverse=True):
+              start_match=re.search(
+                  rf'(?m)^static int nokia_frontend_chunk_{chunk_no}\(',new)
+              if not start_match:
+                  raise RuntimeError(f'target chunk {chunk_no} missing')
+              next_match=re.search(
+                  r'(?m)^static int nokia_frontend_chunk_\d+\(',
+                  new[start_match.end():])
+              if next_match:
+                  end=start_match.end()+next_match.start()
+              else:
+                  end=new.index('\ntypedef int (*NokiaFrontendChunk)',start_match.end())
+              chunk=new[start_match.start():end]
+              default='    default: return NOKIA_FRONTEND_YIELDED;'
+              at=chunk.find(default)
+              if at < 0:
+                  raise RuntimeError(f'chunk {chunk_no} dispatch default missing')
+              cases=''.join(
+                  f'    case 0x{a:08x}u: goto L_{a:08x};\n' for a in addresses)
+              chunk=chunk[:at]+cases+chunk[at:]
+              close=chunk.rfind('\n}\n')
+              if close < 0:
+                  raise RuntimeError(f'chunk {chunk_no} closing brace missing')
+              blocks=''.join(label_block(old,a) for a in addresses)
+              chunk=chunk[:close]+'\n'+blocks+chunk[close:]
+              new=new[:start_match.start()]+chunk+new[end:]
+
+          # Literal veneers are cheap and deterministic. Dispatch them at the
+          # outer level so they can never become an AOT/Unicorn-style yield.
+          anchor='    case 0x830f9db0u: {'
+          if anchor not in new:
+              raise RuntimeError('native Klatt boundary case missing')
+          veneers={
+              0x8310182c:0x83101830,
+              0x83101854:0x83101858,
+              0x8310188c:0x83101890,
+              0x83105f48:0x83105f4c,
+              0x83105f50:0x83105f54,
+              0x83105f58:0x83105f5c,
+          }
+          for pc,slot in veneers.items():
+              code=(f'    case 0x{pc:08x}u: {{\n'
+                    f'        uint32_t veneer=(uint32_t)nokia_mem_load(&machine,UINT64_C(0x{slot:08x}),4);\n'
+                    '        reg_TB=(veneer&1u)!=0;reg_pc=veneer&~1u;goto dispatch;\n'
+                    '    }\n')
+              new=new.replace(anchor,code+anchor,1)
+
+          required=(0x830fae3c,0x830fae42,0x830fb186,0x830fb19e)
+          for address in required:
+              if len(re.findall(rf'(?m)^L_{address:08x}:$',new)) != 1:
+                  raise RuntimeError(f'bad merged label count for {address:#x}')
+          for pc in veneers:
+              if new.count(f'case 0x{pc:08x}u: {{') != 1:
+                  raise RuntimeError(f'bad direct veneer count for {pc:#x}')
+
+          out=Path('build/merged/nokia_frontend_5320_full.c')
+          out.write_text(new,encoding='utf-8',newline='\n')
+          snapshot=next(Path('build/ae3c').rglob('5320-de-male.snapshot'))
+          Path('build/merged/5320-de-male.snapshot').write_bytes(snapshot.read_bytes())
+          print('merged helper blocks:',len(missing))
+          print('merged AOT bytes:',out.stat().st_size)
+          PY
+      - name: Upload merged AOT
+        uses: actions/upload-artifact@v6
+        with:
+          name: nokia-5320-merged-aot
+          path: build/merged/*
+          if-no-files-found: error
+
+  build:
+    needs: merge
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+            suffix: x64
+          - runner: windows-11-arm
+            arch: arm64
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download merged AOT
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-merged-aot
+          path: build/merged
+      - name: Expand Klatt source
+        shell: bash
+        run: gzip -dk native/generated/nokia_klatt_5320.c.gz
+      - name: Build native-only runtime
+        shell: pwsh
+        run: |
+          & .github/scripts/enter-msvc.ps1 -Arch '${{ matrix.arch }}'
+          New-Item -ItemType Directory -Force build/native | Out-Null
+          $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c','build/merged/nokia_frontend_5320_full.c')
+          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'native-only runtime link failed' }
+          $imports = dumpbin /imports "build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll"
+          if ($imports -match 'unicorn' -or $imports -match 'python3') {
+            throw 'native-only runtime imports Unicorn or Python'
+          }
+      - name: Smoke test native synthesis
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/smoke-upstream
+          cp build/merged/5320-de-male.snapshot build/native/5320-de-male.snapshot
+          python tools/smoke_native_5320_runtime.py \
+            build/native/nokia_runtime_5320_x64.dll \
+            build/smoke-upstream/addon/roms/5320/SYM.ROM \
+            build/native/5320-de-male.snapshot \
+            build/smoke-upstream/addon/roms/5320/files/system/data
+      - name: Package runtime files
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path "build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll") {
+            Copy-Item build/merged/5320-de-male.snapshot build/native/5320-de-male.snapshot -Force
+          }
+      - name: Upload runtime
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nokia-runtime-5320-fast-${{ matrix.suffix }}
+          path: |
+            build/native/nokia_runtime_5320_${{ matrix.suffix }}.dll
+            build/native/5320-de-male.snapshot
+          if-no-files-found: warn
