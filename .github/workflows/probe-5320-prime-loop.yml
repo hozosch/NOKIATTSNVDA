@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - ".github/workflows/probe-5320-prime-loop.yml"
-      - "tools/probe_5320_prime_loop.py"
+      - ".github/scripts/probe_5320_hotspot.py"
 
 permissions:
   contents: read
@@ -20,4 +20,4 @@ jobs:
         shell: bash
         run: |
           git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
-          python tools/probe_5320_prime_loop.py build/upstream --text "Hallo Welt"
+          python .github/scripts/probe_5320_hotspot.py build/upstream --text "Hallo Welt"
