@@ -14,6 +14,11 @@ import re
 from pathlib import Path
 
 KLATT_ENTRY = 0x830F9DB0
+# These addresses also occur in the specialised Klatt corpus, but they are
+# standalone ROM veneers used by the surrounding DSP/frontend path.  Removing
+# them from the lifecycle corpus leaves an otherwise-native call stranded at a
+# dispatcher yield, so keep them in the standalone frontend AOT.
+KEEP_LIFECYCLE = {0x8310182C, 0x83101854, 0x8310188C}
 
 
 def read_text(path: Path) -> str:
@@ -38,7 +43,10 @@ def main() -> None:
     kept = []
     for item in payload['instructions']:
         address = int(item['address']) & ~1
-        if address in klatt or address == KLATT_ENTRY:
+        if address == KLATT_ENTRY:
+            removed += 1
+            continue
+        if address in klatt and address not in KEEP_LIFECYCLE:
             removed += 1
             continue
         kept.append(item)
@@ -46,6 +54,10 @@ def main() -> None:
     payload['instruction_count'] = len(kept)
     payload['klatt_labels_removed'] = removed
     payload['native_klatt_entry'] = f'0x{KLATT_ENTRY:08x}'
+    payload['lifecycle_klatt_overlap_kept'] = [
+        f'0x{x:08x}' for x in sorted(KEEP_LIFECYCLE)
+        if any((int(i['address']) & ~1) == x for i in kept)
+    ]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
     dsp = sum(1 for x in kept if 0x830F7A48 <= int(x['address']) < 0x83102E00)
@@ -53,6 +65,7 @@ def main() -> None:
     print('already-native Klatt instructions removed:', removed)
     print('remaining instructions:', len(kept))
     print('remaining DSP-wrapper instructions:', dsp)
+    print('kept standalone DSP veneers:', ', '.join(payload['lifecycle_klatt_overlap_kept']))
 
 
 if __name__ == '__main__':
