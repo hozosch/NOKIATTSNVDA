@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - ".github/workflows/fast-merge-native-only-5320.yml"
+      - "tools/patch_5320_rounded_div.py"
 
 permissions:
   contents: read
@@ -124,23 +125,6 @@ jobs:
                     '    }\n')
               new=new.replace(anchor,code+anchor,1)
 
-          # 0x830f9d60 is Nokia's tiny rounded signed-division helper just
-          # before the Klatt entry. Thumb code computes half=divisor/2 with
-          # truncation toward zero, biases the numerator away from zero, then
-          # calls __aeabi_idiv through veneer 0x8310182c. Replace the whole
-          # helper by equivalent host C: fewer dispatches and no yield island.
-          rounded_div='''    case 0x830f9d60u: {
-        int32_t a=(int32_t)(uint32_t)reg_r0;
-        int32_t b=(int32_t)(uint32_t)reg_r1;
-        if(!b)goto unsupported;
-        int32_t half=b/2;
-        int32_t biased=(a>0)?(a+half):(a-half);
-        reg_r0=(uint32_t)(biased/b);
-        reg_pc=reg_lr;goto dispatch;
-    }
-'''
-          new=new.replace(anchor,rounded_div+anchor,1)
-
           required=(0x830fae3c,0x830fae42,0x830fb186,0x830fb19e)
           for address in required:
               if len(re.findall(rf'(?m)^L_{address:08x}:$',new)) != 1:
@@ -148,17 +132,17 @@ jobs:
           for pc in veneers:
               if new.count(f'case 0x{pc:08x}u: {{') != 1:
                   raise RuntimeError(f'bad direct veneer count for {pc:#x}')
-          if new.count('case 0x830f9d60u: {') != 1:
-              raise RuntimeError('rounded divide helper case missing or duplicated')
 
           out=Path('build/merged/nokia_frontend_5320_full.c')
           out.write_text(new,encoding='utf-8',newline='\n')
           snapshot=next(Path('build/ae3c').rglob('5320-de-male.snapshot'))
           Path('build/merged/5320-de-male.snapshot').write_bytes(snapshot.read_bytes())
           print('merged helper blocks:',len(missing))
-          print('added native rounded-div helper at 0x830f9d60')
           print('merged AOT bytes:',out.stat().st_size)
           PY
+      - name: Native optimise pre-Klatt rounded division
+        shell: bash
+        run: python tools/patch_5320_rounded_div.py build/merged/nokia_frontend_5320_full.c
       - name: Upload merged AOT
         uses: actions/upload-artifact@v6
         with:
