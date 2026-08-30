@@ -6,7 +6,13 @@ from pathlib import Path
 START='L_830e1952:'
 END='L_830e195e:'
 
-REPLACEMENT=r'''L_830e1952:
+REPLACEMENT=r'''L_830e1954:
+L_830e1956:
+L_830e1958:
+L_830e195a:
+L_830e195c:
+    goto L_830e1952;
+L_830e1952:
     nokia_frontend_last_pc=0x830e1952u;
     {
         uint32_t off=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4,4);
@@ -38,5 +44,5 @@ def main():
     if i<0 or j<0: raise SystemExit('Prime iterator labels not found')
     s=s[:i]+REPLACEMENT+s[j:]
     a.file.write_text(s,encoding='utf-8',newline='\n')
-    print('native Prime iterator installed: 0x830e1952 -> return')
+    print('native Prime iterator installed with resume aliases: 0x830e1952 -> return')
 if __name__=='__main__': main()
