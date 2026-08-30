@@ -8,13 +8,16 @@ permissions:
   contents: read
 jobs:
   inspect:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Show helper and dispatcher
+      - name: Decode helper
         shell: bash
         run: |
-          gzip -dc native/generated/nokia_klatt_5320.c.gz > /tmp/klatt.c
-          grep -n -B 20 -A 120 'L_830fae42:' /tmp/klatt.c || true
-          grep -n -B 8 -A 12 'goto L_830fae42' /tmp/klatt.c || true
-          grep -n -B 4 -A 8 'case 0x830fae42u' /tmp/klatt.c || true
+          python -m pip install --disable-pip-version-check pypcode
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          cp build/upstream/addon/roms/5320/SYM.ROM build-5320.rom
+          python tools/decode_5320_rom_addresses.py build-5320.rom \
+            0x8310188c 0x83101890 \
+            0x830fae3e 0x830fae40 0x830fae42 0x830fae44 0x830fae46 0x830fae48 \
+            0x830fae4a 0x830fae4c 0x830fae4e 0x830fae50 0x830fae52 0x830fae54
