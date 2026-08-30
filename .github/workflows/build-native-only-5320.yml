@@ -44,12 +44,13 @@ jobs:
               raise SystemExit('DSP exclusion expression not found in lifter')
           Path('build/extend_native_lifecycle.py').write_text(src.replace(old,new,1), encoding='utf-8')
           PY
-          python build/extend_native_lifecycle.py \
+          python tools/extend_aot_in_batches.py \
+            --lifter build/extend_native_lifecycle.py \
             --source native/generated/nokia_frontend_5320.c.gz \
             --trace build/native/native-lifecycle-trace.json \
             --rom build-5320.rom \
             --output native/generated/full/nokia_frontend_5320_full.c \
-            --repair-fallthroughs
+            --batch-size 600 --repair-fallthroughs
           python tools/split_frontend_aot.py native/generated/full/nokia_frontend_5320_full.c
           python tools/add_5320_native_klatt_boundary.py native/generated/full/nokia_frontend_5320_full.c
           python tools/optimise_frontend_memory.py native/generated/full/nokia_frontend_5320_full.c
