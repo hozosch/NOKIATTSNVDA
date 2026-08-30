@@ -7,9 +7,9 @@ on:
       - ".github/workflows/fast-merge-native-only-5320.yml"
       - ".github/scripts/patch_5320_prime_iterator.py"
       - ".github/scripts/patch_5320_prime_counterloop.py"
+      - ".github/scripts/smoke_fast_native_5320_runtime.py"
       - "tools/instrument_5320_native_smoke.py"
       - "tools/patch_5320_prime_hotloop.py"
-      - "tools/smoke_native_5320_runtime.py"
 
 permissions:
   contents: read
@@ -76,7 +76,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/smoke-upstream
           cp build/merged/5320-de-male.snapshot build/native/5320-de-male.snapshot
-          python tools/smoke_native_5320_runtime.py \
+          python .github/scripts/smoke_fast_native_5320_runtime.py \
             build/native/nokia_runtime_5320_x64.dll \
             build/smoke-upstream/addon/roms/5320/SYM.ROM \
             build/native/5320-de-male.snapshot \
