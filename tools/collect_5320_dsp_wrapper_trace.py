@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Collect the small 5320 DSP wrapper path before the native Klatt entry.
+"""Collect bounded 5320 DSP wrapper/helper paths before native Klatt.
 
-The regular frontend AOT deliberately excludes the DSP range. This trace starts
-at the remaining hot yield 0x830f7bce and follows local control flow plus a
-bounded direct-call closure inside the wrapper. The already-native Klatt entry
-at 0x830f9db0 is treated as a terminal host boundary rather than translated
-again.
+By default this starts at the historical wrapper entry 0x830f7bce.  --entry
+allows migration of additional dynamically reached helpers while keeping the
+same bounded direct-call closure and treating the native Klatt generator entry
+as a terminal host boundary.
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ import pypcode
 ROM_BASE = 0x80000000
 DSP_START = 0x830F7A48
 DSP_END = 0x83102E00
-ENTRY = 0x830F7BCE
+DEFAULT_ENTRY = 0x830F7BCE
 NATIVE_KLATT_ENTRY = 0x830F9DB0
 MAX_CALL_DEPTH = 6
 MAX_INSTRUCTIONS = 4096
@@ -85,7 +84,7 @@ def collect(rom: bytes, entry: int, thumb: bool, depth: int,
         ops, size = translate(rom, address, thumb)
         result[key] = size
         if len(result) > MAX_INSTRUCTIONS:
-            raise ValueError("DSP wrapper trace exceeded instruction budget")
+            raise ValueError("DSP helper trace exceeded instruction budget")
 
         falls_through = True
         for op in ops:
@@ -119,16 +118,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("rom", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--entry", type=lambda x: int(x, 0), default=DEFAULT_ENTRY)
+    parser.add_argument("--arm", action="store_true",
+                        help="start entry in ARM instead of Thumb mode")
     args = parser.parse_args()
 
     rom = args.rom.read_bytes()
     result: dict[tuple[int, bool], int] = {}
     best_depth: dict[tuple[int, bool], int] = {}
     terminals: set[int] = set()
-    collect(rom, ENTRY, True, 0, result, best_depth, terminals)
+    collect(rom, args.entry & ~1, not args.arm, 0,
+            result, best_depth, terminals)
 
     payload = {
-        "entry": f"0x{ENTRY:08x}",
+        "entry": f"0x{args.entry & ~1:08x}",
         "native_klatt_entry": f"0x{NATIVE_KLATT_ENTRY:08x}",
         "instruction_count": len(result),
         "instructions": [
@@ -140,7 +143,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + "\n",
                            encoding="utf-8")
-    print(f"collected {len(result)} DSP wrapper instructions")
+    print(f"collected {len(result)} DSP helper instructions from {args.entry:#x}")
     print("terminals:", ", ".join(payload["terminals"]))
 
 
