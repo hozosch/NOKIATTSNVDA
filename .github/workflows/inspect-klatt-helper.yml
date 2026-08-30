@@ -15,9 +15,6 @@ jobs:
         shell: bash
         run: |
           gzip -dc native/generated/nokia_klatt_5320.c.gz > /tmp/klatt.c
-          grep -n -B 20 -A 30 'goto helper_idiv' /tmp/klatt.c || true
-          grep -n -B 20 -A 30 'goto helper_udivmod' /tmp/klatt.c || true
-          grep -n -B 10 -A 40 '^dispatch:' /tmp/klatt.c || true
-          grep -n -B 10 -A 25 'L_8310182c:' /tmp/klatt.c || true
-          grep -n -B 10 -A 25 'L_83101854:' /tmp/klatt.c || true
-          grep -n -B 10 -A 25 'L_8310188c:' /tmp/klatt.c || true
+          grep -n -B 20 -A 120 'L_830fae42:' /tmp/klatt.c || true
+          grep -n -B 8 -A 12 'goto L_830fae42' /tmp/klatt.c || true
+          grep -n -B 4 -A 8 'case 0x830fae42u' /tmp/klatt.c || true
