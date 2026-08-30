@@ -4,8 +4,8 @@ import argparse, sys
 from collections import deque
 from pathlib import Path
 
-TARGET = 0x830E1952
-MATCH_R0 = 0x1C8E
+TARGET = 0x830DBAFE
+MATCH_R0 = 0x276
 
 
 def main():
@@ -52,7 +52,7 @@ def main():
             print(tag+':')
             for row in rows:
                 hit,*v=row; print('hit',hit,' '.join(f'{n}={x:#x}' for n,x in zip(names,v)))
-        show('first',first); show('periodic',periodic); show('exact-r0-1c8e',matches); show('tail',list(tail))
+        show('first',first); show('periodic',periodic); show('exact-r0-276',matches); show('tail',list(tail))
     finally:
         if e is not None: e.close()
         epoc_module.Epoc.__init__=original
