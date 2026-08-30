@@ -1,0 +1,23 @@
+name: Probe known-good 5320 Prime loop
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/probe-5320-prime-loop.yml"
+      - "tools/probe_5320_prime_loop.py"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run known-good Unicorn probe
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          python tools/probe_5320_prime_loop.py build/upstream --text "Hallo Welt"
