@@ -44,8 +44,9 @@ def patch_aot(aot: str) -> tuple[str, int]:
         'static uint32_t nokia_frontend_debug_r0,nokia_frontend_debug_r1,nokia_frontend_debug_r2,nokia_frontend_debug_r3;',
         'static uint32_t nokia_frontend_debug_r4,nokia_frontend_debug_r5,nokia_frontend_debug_r6,nokia_frontend_debug_r7,nokia_frontend_debug_sp;',
         'static uint32_t nokia_frontend_debug_s0,nokia_frontend_debug_s2,nokia_frontend_debug_s4;',
+        'static uint32_t nokia_frontend_debug_pc;',
     ]
-    for label in ('r0','r1','r2','r3','r4','r5','r6','r7','sp','s0','s2','s4'):
+    for label in ('r0','r1','r2','r3','r4','r5','r6','r7','sp','s0','s2','s4','pc'):
         decl_lines.append(
             f'NOKIA_EXPORT uint32_t nokia_frontend_debug_{label}_value(void)'
             f'{{return nokia_frontend_debug_{label};}}'
@@ -56,7 +57,12 @@ def patch_aot(aot: str) -> tuple[str, int]:
     reset = '    nokia_frontend_dirty_mask=0;'
     if reset not in aot:
         raise SystemExit('AOT call reset marker not found')
-    aot = aot.replace(reset, reset + '\n    nokia_frontend_debug_budget=500000u;', 1)
+    aot = aot.replace(
+        reset,
+        reset + '\n    nokia_frontend_debug_budget=500000u;'
+                '\n    nokia_frontend_debug_pc=0u;',
+        1,
+    )
 
     pat = re.compile(r'(nokia_frontend_last_pc=0x[0-9a-f]+u;)')
     capture = (
@@ -65,7 +71,7 @@ def patch_aot(aot: str) -> tuple[str, int]:
         r'nokia_frontend_debug_r2=(uint32_t)reg_r2;nokia_frontend_debug_r3=(uint32_t)reg_r3;'
         r'nokia_frontend_debug_r4=(uint32_t)reg_r4;nokia_frontend_debug_r5=(uint32_t)reg_r5;'
         r'nokia_frontend_debug_r6=(uint32_t)reg_r6;nokia_frontend_debug_r7=(uint32_t)reg_r7;'
-        r'nokia_frontend_debug_sp=(uint32_t)reg_sp;'
+        r'nokia_frontend_debug_sp=(uint32_t)reg_sp;nokia_frontend_debug_pc=(uint32_t)reg_pc;'
         r'nokia_frontend_debug_s0=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4,2);'
         r'nokia_frontend_debug_s2=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4+2u,2);'
         r'nokia_frontend_debug_s4=(uint32_t)nokia_mem_load(&machine,(uint32_t)reg_r4+4u,4);'
@@ -79,7 +85,14 @@ def patch_aot(aot: str) -> tuple[str, int]:
     new_yield = 'if(result==NOKIA_FRONTEND_YIELDED){nokia_frontend_record_yield(nokia_frontend_last_pc,3u);goto yielded;}'
     if old_yield not in aot:
         raise SystemExit('chunk yield recorder marker not found')
-    return aot.replace(old_yield, new_yield, 1), count
+    aot = aot.replace(old_yield, new_yield, 1)
+
+    unsupported = 'unsupported:\n    nokia_frontend_bad_address=machine.bad_address;'
+    if unsupported not in aot:
+        raise SystemExit('unsupported block marker not found')
+    unsupported_debug = '''unsupported:\n    nokia_frontend_bad_address=machine.bad_address;\n    nokia_frontend_debug_r0=(uint32_t)reg_r0;nokia_frontend_debug_r1=(uint32_t)reg_r1;\n    nokia_frontend_debug_r2=(uint32_t)reg_r2;nokia_frontend_debug_r3=(uint32_t)reg_r3;\n    nokia_frontend_debug_r4=(uint32_t)reg_r4;nokia_frontend_debug_r5=(uint32_t)reg_r5;\n    nokia_frontend_debug_r6=(uint32_t)reg_r6;nokia_frontend_debug_r7=(uint32_t)reg_r7;\n    nokia_frontend_debug_sp=(uint32_t)reg_sp;nokia_frontend_debug_pc=(uint32_t)reg_pc;\n'''
+    aot = aot.replace(unsupported, unsupported_debug, 1)
+    return aot, count
 
 
 def main() -> None:
@@ -97,7 +110,7 @@ def main() -> None:
     args.aot.write_text(aot, encoding='utf-8', newline='\n')
     print('lifecycle failures tagged -3101..-3107')
     print('fast smoke scheduler pump limit: 2000')
-    print('AOT per-call label budget: 500000; register capture enabled; labels:', count)
+    print('AOT per-call label budget: 500000; budget/unsupported register capture enabled; labels:', count)
 
 
 if __name__ == '__main__':
