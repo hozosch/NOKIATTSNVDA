@@ -42,6 +42,35 @@ jobs:
           New-Item -ItemType Directory -Force build/native | Out-Null
           Copy-Item $snapshot.FullName build/native/5320-de-male.snapshot -Force
 
+      - name: Extend frozen AOT with actual DSP helper
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pypcode
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          cp build/upstream/addon/roms/5320/SYM.ROM build-5320.rom
+          python tools/collect_5320_dsp_wrapper_trace.py \
+            build-5320.rom build/native/dsp-helper-ae3c.json \
+            --entry 0x830fae3c
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('tools/extend_prime_aot.py').read_text(encoding='utf-8')
+          old='''                 not (0x830F7A48 <= item["address"] < 0x83102E00)]'''
+          if old not in src:
+              raise SystemExit('DSP exclusion expression not found')
+          src=src.replace(old,'''                 True]''',1)
+          # Repair old branches against the complete known corpus.
+          src=src.replace('if target not in lifted:\n                continue',
+                          'if target not in known:\n                continue')
+          Path('build/extend-debug-dsp.py').write_text(src,encoding='utf-8')
+          PY
+          python build/extend-debug-dsp.py \
+            --source native/generated/full/nokia_frontend_5320_full.c \
+            --trace build/native/dsp-helper-ae3c.json \
+            --rom build-5320.rom \
+            --output build/native/nokia_frontend_5320_extended.c \
+            --repair-fallthroughs
+          mv build/native/nokia_frontend_5320_extended.c native/generated/full/nokia_frontend_5320_full.c
+
       - name: Restore standalone DSP veneers and diagnostics
         shell: bash
         run: |
@@ -57,7 +86,6 @@ jobs:
               0x83101854:0x83101858,
               0x8310188c:0x83101890,
           }
-          inserted=[]
           for pc,slot in veneers.items():
               case=f'    case 0x{pc:08x}u:'
               if case in s:
@@ -67,8 +95,6 @@ jobs:
                     '        reg_TB=(veneer&1u)!=0; reg_pc=veneer&~1u; goto dispatch;\n'
                     '    }\n')
               s=s.replace(anchor,code+anchor,1)
-              inserted.append(hex(pc))
-
           marker='static uint32_t nokia_frontend_last_pc,nokia_frontend_bad_address;'
           if 'nokia_frontend_first_unsupported_pc_value' not in s:
               repl=(marker+'\nstatic uint32_t nokia_frontend_first_unsupported_pc;\n'
@@ -84,8 +110,8 @@ jobs:
                   raise SystemExit('AOT unsupported label not found')
               s=s.replace(target,replacement,1)
           p.write_text(s,encoding='utf-8')
-          print('helper label present:', 'L_830fae42:' in s)
-          print('inserted veneers:', inserted)
+          print('actual helper entry present:', 'L_830fae3c:' in s)
+          print('callee 0x830fb186 present:', 'L_830fb186:' in s)
           for pc in veneers:
               print(hex(pc), 'case present:', f'case 0x{pc:08x}u:' in s)
           PY
@@ -110,12 +136,11 @@ jobs:
       - name: Smoke test current runtime
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/smoke-upstream
           python tools/smoke_native_5320_runtime.py \
             build/native/nokia_runtime_5320_x64.dll \
-            build/smoke-upstream/addon/roms/5320/SYM.ROM \
+            build/upstream/addon/roms/5320/SYM.ROM \
             build/native/5320-de-male.snapshot \
-            build/smoke-upstream/addon/roms/5320/files/system/data
+            build/upstream/addon/roms/5320/files/system/data
 
       - name: Upload debug runtime
         if: always()
