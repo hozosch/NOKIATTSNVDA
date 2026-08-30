@@ -41,7 +41,6 @@ jobs:
           from pathlib import Path
           import re
 
-          # Bound the outer scheduler pump for the debug smoke only.
           src = Path('native/nokia_runtime.c').read_text(encoding='utf-8')
           old = 'if(++loops>100000u){r->last_error=-3004;goto failed;}'
           new = 'if(++loops>2000u){r->last_error=-3004;goto failed;}'
@@ -51,15 +50,12 @@ jobs:
           Path('build').mkdir(exist_ok=True)
           Path('build/nokia_runtime_fast.c').write_text(src, encoding='utf-8', newline='\n')
 
-          # More importantly, bound a *single* translated Nokia call. Every
-          # AOT label already updates nokia_frontend_last_pc, so an internal
-          # scheduler loop can be stopped while preserving its exact PC.
           aot_path = Path('build/merged/nokia_frontend_5320_full.c')
           aot = aot_path.read_text(encoding='utf-8')
-          decl = 'static uint32_t nokia_frontend_yield_pc;'
-          if decl not in aot:
-              raise SystemExit('AOT yield declaration marker not found')
-          aot = aot.replace(decl, decl + '\nstatic uint32_t nokia_frontend_debug_budget;', 1)
+          chunk0 = 'static int nokia_frontend_chunk_0('
+          if chunk0 not in aot:
+              raise SystemExit('first AOT chunk marker not found')
+          aot = aot.replace(chunk0, 'static uint32_t nokia_frontend_debug_budget;\n\n' + chunk0, 1)
           reset = '    nokia_frontend_dirty_mask=0;'
           if reset not in aot:
               raise SystemExit('AOT call reset marker not found')
@@ -78,8 +74,6 @@ jobs:
           & .github/scripts/enter-msvc.ps1 -Arch 'x64'
           New-Item -ItemType Directory -Force build/native | Out-Null
           $sources = @('build/nokia_runtime_fast.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c','build/merged/nokia_frontend_5320_full.c')
-          # Debug iteration: keep O2, but deliberately skip /GL + /LTCG.
-          # Release builds will still use whole-program optimization.
           cl /nologo /I native /O2 /Ob2 /Oi /Ot /Gy /Gw /LD $sources /link /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_x64.dll"
           if ($LASTEXITCODE -ne 0) { throw 'fast native-only runtime link failed' }
           $imports = dumpbin /imports "build/native/nokia_runtime_5320_x64.dll"
