@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
-"""Add the standalone 5320 native Klatt boundary to a split frontend source."""
+"""Add standalone 5320 native DSP boundaries and ROM veneers."""
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
 ENTRY = 0x830F9DB0
+# Small ARM literal veneers that may be called independently of the specialised
+# Klatt entry. They only load a ROM function pointer and dispatch to it. Keeping
+# them here avoids turning them back into AOT yields when their labels overlap
+# code that is deliberately removed from the lifecycle trace.
+VENEERS = {
+    0x8310182C: 0x83101830,
+    0x83101854: 0x83101858,
+    0x8310188C: 0x83101890,
+    0x83105F48: 0x83105F4C,
+    0x83105F50: 0x83105F54,
+    0x83105F58: 0x83105F5C,
+}
 
 
 def main() -> None:
@@ -24,7 +36,14 @@ def main() -> None:
 
     anchor = ('    case 0x5200022cu: if(!host||!host->process)goto unsupported; '
               'reg_r0=host->process(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;')
-    block = anchor + '''
+    veneer_cases = ''
+    for pc, slot in VENEERS.items():
+        veneer_cases += f'''
+    case 0x{pc:08x}u: {{
+        uint32_t veneer=(uint32_t)nokia_mem_load(&machine,UINT64_C(0x{slot:08x}),4);
+        reg_TB=(veneer&1u)!=0;reg_pc=veneer&~1u;goto dispatch;
+    }}'''
+    block = anchor + veneer_cases + '''
     case 0x830f9db0u: {
         uint32_t kr[17]={(uint32_t)reg_r0,(uint32_t)reg_r1,(uint32_t)reg_r2,(uint32_t)reg_r3,
             (uint32_t)reg_r4,(uint32_t)reg_r5,(uint32_t)reg_r6,(uint32_t)reg_r7,
@@ -45,6 +64,7 @@ def main() -> None:
     text = text.replace(anchor, block, 1)
     args.source.write_text(text, encoding='utf-8', newline='\n')
     print(f'added native Klatt host boundary at {ENTRY:#x}')
+    print('added standalone ROM veneers:', ', '.join(f'{pc:#x}' for pc in VENEERS))
 
 
 if __name__ == '__main__':
