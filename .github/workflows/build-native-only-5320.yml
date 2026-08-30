@@ -41,6 +41,31 @@ jobs:
             build/native/full-lifecycle-trace.json \
             native/generated/nokia_klatt_5320.c.gz \
             build/native/native-lifecycle-trace.json
+
+          # One indirect ROM veneer used by the initialized snapshot reaches
+          # this helper even though the original one-shot lifecycle trace did
+          # not record it. Pull its bounded direct-call closure in statically.
+          python tools/collect_5320_dsp_wrapper_trace.py \
+            build-5320.rom build/native/dsp-helper-ae42.json \
+            --entry 0x830fae42
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('build/native/native-lifecycle-trace.json')
+          helper=Path('build/native/dsp-helper-ae42.json')
+          p=json.loads(base.read_text(encoding='utf-8'))
+          h=json.loads(helper.read_text(encoding='utf-8'))
+          by_key={(int(i['address']),bool(i.get('thumb',False))):i for i in p['instructions']}
+          for item in h['instructions']:
+              by_key[(int(item['address']),bool(item.get('thumb',False)))]=item
+          p['instructions']=sorted(by_key.values(),key=lambda i:(int(i['address']),bool(i.get('thumb',False))))
+          p['instruction_count']=len(p['instructions'])
+          p['extra_dsp_helper_count']=h['instruction_count']
+          base.write_text(json.dumps(p,indent=2)+'\n',encoding='utf-8')
+          print('merged DSP helper instructions:',h['instruction_count'])
+          print('native lifecycle instructions after merge:',p['instruction_count'])
+          PY
+
           python - <<'PY'
           from pathlib import Path
           src=Path('tools/extend_prime_aot.py').read_text(encoding='utf-8')
@@ -48,7 +73,15 @@ jobs:
           new='''                 True]'''
           if old not in src:
               raise SystemExit('DSP exclusion expression not found in lifter')
-          Path('build/extend_native_lifecycle.py').write_text(src.replace(old,new,1), encoding='utf-8')
+          src=src.replace(old,new,1)
+          # Old corpus branches may target labels that already existed before
+          # the current batch. Repair against the whole known corpus, not only
+          # labels lifted by this one invocation.
+          src=src.replace('if target not in lifted:\n                continue',
+                          'if target not in known:\n                continue')
+          src=src.replace('address + item["size"] not in lifted',
+                          'address + item["size"] not in known')
+          Path('build/extend_native_lifecycle.py').write_text(src,encoding='utf-8')
           PY
           python tools/extend_aot_in_batches.py \
             --lifter build/extend_native_lifecycle.py \
@@ -77,8 +110,8 @@ jobs:
           for p in Path('native/generated/full').glob('nokia_frontend_5320_full*.c'):
               labels += len(re.findall(r'(?m)^L_[0-9a-f]{8}:$', p.read_text(encoding='utf-8')))
           print('full lifecycle instructions:', full['instruction_count'])
-          print('AOT lifecycle after Klatt removal:', native['instruction_count'])
-          print('Klatt labels removed:', native.get('klatt_labels_removed'))
+          print('native lifecycle after Klatt/helper merge:', native['instruction_count'])
+          print('extra DSP helper instructions:', native.get('extra_dsp_helper_count'))
           print('translated labels:', labels)
           print('snapshot bytes:', Path('build/native/5320-de-male.snapshot').stat().st_size)
           PY
@@ -91,6 +124,7 @@ jobs:
             native/generated/full/nokia_frontend_5320_full*.c
             build/native/full-lifecycle-trace.json
             build/native/native-lifecycle-trace.json
+            build/native/dsp-helper-ae42.json
             build/native/full-frontend-yields.json
             build/native/5320-de-male.snapshot
           if-no-files-found: error
