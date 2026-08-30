@@ -14,8 +14,6 @@ permissions:
   contents: read
 
 env:
-  # This run already contains the statically collected 0x830fae42 DSP helper.
-  # Reuse it while iterating on the tiny missing veneer/runtime glue.
   FROZEN_AOT_RUN: "33324006225"
 
 jobs:
@@ -44,27 +42,32 @@ jobs:
           New-Item -ItemType Directory -Force build/native | Out-Null
           Copy-Item $snapshot.FullName build/native/5320-de-male.snapshot -Force
 
-      - name: Restore missing DSP veneer and diagnostics
+      - name: Restore standalone DSP veneers and diagnostics
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           p=next(Path('native/generated/full').glob('nokia_frontend_5320_full*.c'))
           s=p.read_text(encoding='utf-8')
-
-          # The latest frozen corpus already contains the real helper at
-          # 0x830fae42. The lifecycle filter still removed this small veneer
-          # because it overlaps the specialised Klatt corpus. Restore only the
-          # veneer so execution reaches the helper without Unicorn.
-          if 'case 0x8310188cu:' not in s:
-              anchor='    case 0x830f9db0u: {'
-              veneer=('    case 0x8310188cu: {\n'
-                      '        uint32_t veneer=(uint32_t)nokia_mem_load(&machine,UINT64_C(0x83101890),4);\n'
-                      '        reg_TB=(veneer&1u)!=0; reg_pc=veneer&~1u; goto dispatch;\n'
-                      '    }\n')
-              if anchor not in s:
-                  raise SystemExit('native Klatt dispatcher case not found')
-              s=s.replace(anchor,veneer+anchor,1)
+          anchor='    case 0x830f9db0u: {'
+          if anchor not in s:
+              raise SystemExit('native Klatt dispatcher case not found')
+          veneers={
+              0x8310182c:0x83101830,
+              0x83101854:0x83101858,
+              0x8310188c:0x83101890,
+          }
+          inserted=[]
+          for pc,slot in veneers.items():
+              case=f'    case 0x{pc:08x}u:'
+              if case in s:
+                  continue
+              code=(f'    case 0x{pc:08x}u: {{\n'
+                    f'        uint32_t veneer=(uint32_t)nokia_mem_load(&machine,UINT64_C(0x{slot:08x}),4);\n'
+                    '        reg_TB=(veneer&1u)!=0; reg_pc=veneer&~1u; goto dispatch;\n'
+                    '    }\n')
+              s=s.replace(anchor,code+anchor,1)
+              inserted.append(hex(pc))
 
           marker='static uint32_t nokia_frontend_last_pc,nokia_frontend_bad_address;'
           if 'nokia_frontend_first_unsupported_pc_value' not in s:
@@ -82,7 +85,9 @@ jobs:
               s=s.replace(target,replacement,1)
           p.write_text(s,encoding='utf-8')
           print('helper label present:', 'L_830fae42:' in s)
-          print('veneer case present:', 'case 0x8310188cu:' in s)
+          print('inserted veneers:', inserted)
+          for pc in veneers:
+              print(hex(pc), 'case present:', f'case 0x{pc:08x}u:' in s)
           PY
 
       - name: Expand Klatt source
