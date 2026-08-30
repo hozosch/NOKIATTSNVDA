@@ -45,6 +45,28 @@ def split_source(source: str) -> str:
     if not first_label or not finished or finished.start() <= first_label.start():
         raise ValueError("generated frontend layout was not recognised")
 
+    # Extend the generated host ABI with the two remaining DevTTS observer
+    # callbacks. Existing callers that do not execute these slots are
+    # unaffected; the standalone runtime supplies both fields.
+    old_host = """typedef struct {
+    void *context;
+    uint32_t (*alloc)(void *, uint32_t);
+    void (*free)(void *, uint32_t);
+    uint32_t (*realloc)(void *, uint32_t, uint32_t);
+    uint32_t (*length)(void *, uint32_t);
+} NokiaFrontendHost;"""
+    new_host = """typedef struct {
+    void *context;
+    uint32_t (*alloc)(void *, uint32_t);
+    void (*free)(void *, uint32_t);
+    uint32_t (*realloc)(void *, uint32_t, uint32_t);
+    uint32_t (*length)(void *, uint32_t);
+    uint32_t (*event)(void *, uint32_t, uint32_t);
+    uint32_t (*process)(void *, uint32_t);
+} NokiaFrontendHost;"""
+    if old_host in prefix:
+        prefix = prefix.replace(old_host, new_host, 1)
+
     prologue = body[:first_label.start()]
     variable_names = re.findall(r"(?m)^    uint64_t ([A-Za-z0-9_]+)=0;$", prologue)
     if not variable_names:
@@ -56,12 +78,6 @@ def split_source(source: str) -> str:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(label_text)
         blocks[int(match.group(1), 16)] = label_text[match.start():end].rstrip().splitlines()
 
-    # PrimeSynthesisL can return through 0x801a0684 into this two-instruction
-    # ARM byte-copy gap.  It was absent from the original trace, causing one
-    # AOT->Unicorn yield per copied byte.  The ROM bytes decode as:
-    #   e4d1c001  LDRB r12,[r1],#1
-    #   e4c3c001  STRB r12,[r3],#1
-    # Keep the tiny loop native so r1/r3/r12 remain in one state model.
     blocks.setdefault(0x801A0688, [
         "L_801a0688:",
         "    nokia_frontend_last_pc=0x801a0688u;",
@@ -79,8 +95,7 @@ def split_source(source: str) -> str:
 
     addresses = sorted(set(blocks) - EXECUTIVE)
     resume_addresses = sorted({int(value) & ~1 for value in
-                               re.findall(r"reg_lr=UINT64_C\((\d+)\)",
-                                          label_text)})
+                               re.findall(r"reg_lr=UINT64_C\((\d+)\)", label_text)})
     chunks = [addresses[index:index + CHUNK_SIZE]
               for index in range(0, len(addresses), CHUNK_SIZE)]
     old_store = (
@@ -103,11 +118,6 @@ def split_source(source: str) -> str:
         raise ValueError("generated frontend memory-store helper was not recognised")
     prefix = prefix.replace(old_store, new_store)
 
-    # Nokia's first observer-vtable entry (0x52000224) supplies one of the
-    # bundled srsf_<type>_<id>.bin resources. Keep that callback inside the AOT
-    # state model: crossing into Unicorn here used to account for three yields
-    # per PrimeSynthesisL call. The registry owns the bytes; the frontend host
-    # allocator owns the guest-visible copy.
     config_helper = """
 extern int nokia_find_config_blob(uint32_t type,uint32_t id,
                                   const uint8_t **data,uint32_t *size);
@@ -133,19 +143,16 @@ static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
 
     for chunk_index, chunk in enumerate(chunks):
         local = set(chunk)
-        out.extend(["",
-                    f"static int nokia_frontend_chunk_{chunk_index}(NokiaFrontendState*state,",
+        out.extend(["", f"static int nokia_frontend_chunk_{chunk_index}(NokiaFrontendState*state,",
                     " NokiaFrontendMachine*machine_ptr,const NokiaFrontendHost*host){",
                     "    switch((uint32_t)reg_pc&~1u){"])
-        out.extend(f"    case 0x{address:08x}u: goto L_{address:08x};"
-                   for address in chunk)
+        out.extend(f"    case 0x{address:08x}u: goto L_{address:08x};" for address in chunk)
         out.extend(["    default: return NOKIA_FRONTEND_YIELDED;", "    }"])
         for address in chunk:
             out.extend(route(line, local) for line in blocks[address])
         out.append("}")
 
-    out.extend(["",
-                "typedef int (*NokiaFrontendChunk)(NokiaFrontendState*,NokiaFrontendMachine*,const NokiaFrontendHost*);",
+    out.extend(["", "typedef int (*NokiaFrontendChunk)(NokiaFrontendState*,NokiaFrontendMachine*,const NokiaFrontendHost*);",
                 "static NokiaFrontendChunk nokia_frontend_chunks[]={"])
     out.extend(f"    nokia_frontend_chunk_{index}," for index in range(len(chunks)))
     out.extend(["};", "static const uint32_t nokia_frontend_chunk_limits[]={"])
@@ -155,8 +162,7 @@ static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
     out.extend(["};",
                 "NOKIA_EXPORT uint32_t nokia_frontend_resume_count(void){return (uint32_t)(sizeof(nokia_frontend_resumes)/sizeof(nokia_frontend_resumes[0]));}",
                 "NOKIA_EXPORT uint32_t nokia_frontend_resume_address(uint32_t index){return index<nokia_frontend_resume_count()?nokia_frontend_resumes[index]:0;}",
-                "",
-                "NOKIA_EXPORT int nokia_frontend_aot(uint8_t*heap,uint8_t*vtable,uint8_t*traps,",
+                "", "NOKIA_EXPORT int nokia_frontend_aot(uint8_t*heap,uint8_t*vtable,uint8_t*traps,",
                 " uint8_t*pool,uint8_t*stack,const uint8_t*rom,uint32_t rom_base,size_t rom_size,",
                 " uint32_t regs[17],uint32_t return_address,const NokiaFrontendHost*host){",
                 "    NokiaFrontendState state_storage={0},*state=&state_storage;",
@@ -165,15 +171,13 @@ static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
                 "    nokia_frontend_dirty_mask=0;"])
     register_order = ("r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
                       "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc")
-    out.extend(f"    reg_{name}=regs[{index}];"
-               for index, name in enumerate(register_order))
+    out.extend(f"    reg_{name}=regs[{index}];" for index, name in enumerate(register_order))
     entry = re.search(r"if\(!reg_pc\)reg_pc=UINT64_C\((\d+)\);", prologue)
     if not entry:
         raise ValueError("frontend entry point was not found")
     out.extend(["    reg_NG=(regs[16]>>31)&1; reg_ZR=(regs[16]>>30)&1;",
                 "    reg_CY=(regs[16]>>29)&1; reg_OV=(regs[16]>>28)&1;",
-                f"    if(!reg_pc)reg_pc=UINT64_C({entry.group(1)});",
-                "dispatch:",
+                f"    if(!reg_pc)reg_pc=UINT64_C({entry.group(1)});", "dispatch:",
                 "    if(((uint32_t)reg_pc&~1u)==(return_address&~1u))goto finished;",
                 "    switch((uint32_t)reg_pc&~1u){",
                 "    case 0x52000000u: if(!host||!host->alloc)goto unsupported; reg_r0=host->alloc(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;",
@@ -182,6 +186,8 @@ static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
                 "    case 0x5200000cu: if(!host||!host->length)goto unsupported; reg_r0=host->length(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x52000180u: if(!host||!host->alloc)goto unsupported; reg_r0=host->alloc(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x52000224u: { uint32_t end=(uint32_t)nokia_mem_load(&machine,reg_sp,4); reg_r0=nokia_frontend_config_blob(&machine,host,(uint32_t)reg_r1,(uint32_t)reg_r2,(uint32_t)reg_r3,end); reg_pc=reg_lr; goto dispatch; }",
+                "    case 0x52000228u: if(!host||!host->event)goto unsupported; reg_r0=host->event(host->context,(uint32_t)reg_r1,(uint32_t)reg_r2);reg_pc=reg_lr;goto dispatch;",
+                "    case 0x5200022cu: if(!host||!host->process)goto unsupported; reg_r0=host->process(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db50u: reg_r0=nokia_mem_load(&machine,0x53000010u,4);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db88u: reg_r0=nokia_mem_load(&machine,0x53000018u,4);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db70u: reg_r0=nokia_mem_load(&machine,0x53000014u,4);reg_pc=reg_lr;goto dispatch;",
