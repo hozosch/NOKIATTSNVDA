@@ -74,7 +74,9 @@ jobs:
           & .github/scripts/enter-msvc.ps1 -Arch 'x64'
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
           $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
-          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_x64.dll"
+          # Debug iterations deliberately skip /GL and /LTCG; the release
+          # workflow keeps full LTO. This makes fault-address iterations much faster.
+          cl /nologo /O1 /Ob1 /Oi /Gy /Gw /LD $sources /link /OPT:REF /OPT:ICF "/OUT:build/native/nokia_runtime_5320_x64.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native-only runtime link failed' }
           $imports = dumpbin /imports build/native/nokia_runtime_5320_x64.dll
           if ($imports -match 'unicorn' -or $imports -match 'python3') {
