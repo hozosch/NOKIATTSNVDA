@@ -42,29 +42,41 @@ jobs:
             native/generated/nokia_klatt_5320.c.gz \
             build/native/native-lifecycle-trace.json
 
-          # The initialized snapshot reaches this Thumb DSP helper through one
-          # of the standalone ROM veneers. The original one-shot lifecycle
-          # trace did not record the dynamic target, so pull its bounded
-          # direct-call closure in statically from the actual function entry.
+          # The initialized snapshot reaches two different direct entry points
+          # in the same small Thumb DSP helper family. 0x830fae3c calls
+          # 0x830fb186 and skips over 0x830fae42; a separate veneer enters
+          # directly at 0x830fae42 and calls 0x830fb19e. Collect both closures.
           python tools/collect_5320_dsp_wrapper_trace.py \
             build-5320.rom build/native/dsp-helper-ae3c.json \
             --entry 0x830fae3c
+          python tools/collect_5320_dsp_wrapper_trace.py \
+            build-5320.rom build/native/dsp-helper-ae42.json \
+            --entry 0x830fae42
           python - <<'PY'
           import json
           from pathlib import Path
           base=Path('build/native/native-lifecycle-trace.json')
-          helper=Path('build/native/dsp-helper-ae3c.json')
+          helper_paths=[
+              Path('build/native/dsp-helper-ae3c.json'),
+              Path('build/native/dsp-helper-ae42.json'),
+          ]
           p=json.loads(base.read_text(encoding='utf-8'))
-          h=json.loads(helper.read_text(encoding='utf-8'))
           by_key={(int(i['address']),bool(i.get('thumb',False))):i for i in p['instructions']}
-          for item in h['instructions']:
-              by_key[(int(item['address']),bool(item.get('thumb',False)))]=item
+          counts={}
+          for helper in helper_paths:
+              h=json.loads(helper.read_text(encoding='utf-8'))
+              counts[h['entry']]=h['instruction_count']
+              for item in h['instructions']:
+                  by_key[(int(item['address']),bool(item.get('thumb',False)))]=item
           p['instructions']=sorted(by_key.values(),key=lambda i:(int(i['address']),bool(i.get('thumb',False))))
           p['instruction_count']=len(p['instructions'])
-          p['extra_dsp_helper_count']=h['instruction_count']
-          p['extra_dsp_helper_entry']='0x830fae3c'
+          p['extra_dsp_helper_entries']=['0x830fae3c','0x830fae42']
+          p['extra_dsp_helper_counts']=counts
           base.write_text(json.dumps(p,indent=2)+'\n',encoding='utf-8')
-          print('merged DSP helper instructions:',h['instruction_count'])
+          print('merged DSP helper entries:',p['extra_dsp_helper_entries'])
+          print('DSP helper closure counts:',counts)
+          print('0x830fae3c present:',any(int(i['address'])==0x830fae3c for i in p['instructions']))
+          print('0x830fae42 present:',any(int(i['address'])==0x830fae42 for i in p['instructions']))
           print('native lifecycle instructions after merge:',p['instruction_count'])
           PY
 
@@ -109,13 +121,17 @@ jobs:
           full=json.load(open('build/native/full-lifecycle-trace.json', encoding='utf-8'))
           native=json.load(open('build/native/native-lifecycle-trace.json', encoding='utf-8'))
           labels=0
-          for p in Path('native/generated/full').glob('nokia_frontend_5320_full*.c'):
-              labels += len(re.findall(r'(?m)^L_[0-9a-f]{8}:$', p.read_text(encoding='utf-8')))
+          corpus='\n'.join(p.read_text(encoding='utf-8') for p in Path('native/generated/full').glob('nokia_frontend_5320_full*.c'))
+          labels=len(re.findall(r'(?m)^L_[0-9a-f]{8}:$',corpus))
           print('full lifecycle instructions:', full['instruction_count'])
           print('native lifecycle after Klatt/helper merge:', native['instruction_count'])
-          print('extra DSP helper entry:', native.get('extra_dsp_helper_entry'))
-          print('extra DSP helper instructions:', native.get('extra_dsp_helper_count'))
+          print('extra DSP helper entries:', native.get('extra_dsp_helper_entries'))
+          print('extra DSP helper counts:', native.get('extra_dsp_helper_counts'))
           print('translated labels:', labels)
+          print('label 0x830fae3c:', 'L_830fae3c:' in corpus)
+          print('label 0x830fae42:', 'L_830fae42:' in corpus)
+          if 'L_830fae3c:' not in corpus or 'L_830fae42:' not in corpus:
+              raise SystemExit('required DSP helper entry label missing from final AOT corpus')
           print('snapshot bytes:', Path('build/native/5320-de-male.snapshot').stat().st_size)
           PY
 
@@ -128,6 +144,7 @@ jobs:
             build/native/full-lifecycle-trace.json
             build/native/native-lifecycle-trace.json
             build/native/dsp-helper-ae3c.json
+            build/native/dsp-helper-ae42.json
             build/native/full-frontend-yields.json
             build/native/5320-de-male.snapshot
           if-no-files-found: error
