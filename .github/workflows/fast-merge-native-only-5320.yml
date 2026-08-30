@@ -10,9 +10,6 @@ permissions:
   contents: read
 
 env:
-  # Fast merge #5 already produced a valid merged AOT corpus before its
-  # synthesis smoke test entered the scheduler loop. Reuse that corpus so
-  # debug iterations do not repeat pypcode lifting or AOT merging.
   BASE_RUN: "33335391941"
 
 jobs:
@@ -64,9 +61,17 @@ jobs:
           aot, count = pat.subn(r'\1 if(!nokia_frontend_debug_budget--) return NOKIA_FRONTEND_YIELDED;', aot)
           if count < 1000:
               raise SystemExit(f'unexpectedly few AOT labels instrumented: {count}')
+
+          old_yield = 'if(result==NOKIA_FRONTEND_YIELDED){nokia_frontend_record_yield(pc,3u);goto yielded;}'
+          new_yield = 'if(result==NOKIA_FRONTEND_YIELDED){nokia_frontend_record_yield(nokia_frontend_last_pc,3u);goto yielded;}'
+          if old_yield not in aot:
+              raise SystemExit('chunk yield recorder marker not found')
+          aot = aot.replace(old_yield, new_yield, 1)
+
           aot_path.write_text(aot, encoding='utf-8', newline='\n')
           print('fast smoke scheduler pump limit: 2000')
           print('AOT per-call label budget: 500000; instrumented labels:', count)
+          print('budget yields report exact nokia_frontend_last_pc')
 
       - name: Build x64 native-only runtime fast
         shell: pwsh
