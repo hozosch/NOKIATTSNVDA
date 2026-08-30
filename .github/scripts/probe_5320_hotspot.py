@@ -5,6 +5,7 @@ from collections import deque
 from pathlib import Path
 
 TARGET = 0x830E1952
+MATCH_R0 = 0x1C8E
 
 
 def main():
@@ -19,7 +20,7 @@ def main():
     from unicorn.arm_const import (UC_ARM_REG_R0,UC_ARM_REG_R1,UC_ARM_REG_R2,UC_ARM_REG_R3,UC_ARM_REG_R4,UC_ARM_REG_R5,UC_ARM_REG_R6,UC_ARM_REG_R7,UC_ARM_REG_SP)
     from _nokia.harness import epoc as epoc_module
     regs_const=[UC_ARM_REG_R0,UC_ARM_REG_R1,UC_ARM_REG_R2,UC_ARM_REG_R3,UC_ARM_REG_R4,UC_ARM_REG_R5,UC_ARM_REG_R6,UC_ARM_REG_R7]
-    hits=[0]; first=[]; periodic=[]; tail=deque(maxlen=12)
+    hits=[0]; first=[]; periodic=[]; matches=[]; tail=deque(maxlen=12)
     original=epoc_module.Epoc.__init__
     def install(self,*a,**kw):
         original(self,*a,**kw)
@@ -36,6 +37,7 @@ def main():
             row=(hits[0],*regs,sp,s0,s2,s4)
             if len(first)<8: first.append(row)
             if hits[0]%500==0: periodic.append(row)
+            if regs[0] == MATCH_R0: matches.append(row)
             tail.append(row)
         self._hotspot_probe=self.uc.hook_add(UC_HOOK_CODE,on_code)
     epoc_module.Epoc.__init__=install
@@ -50,7 +52,7 @@ def main():
             print(tag+':')
             for row in rows:
                 hit,*v=row; print('hit',hit,' '.join(f'{n}={x:#x}' for n,x in zip(names,v)))
-        show('first',first); show('periodic',periodic); show('tail',list(tail))
+        show('first',first); show('periodic',periodic); show('exact-r0-1c8e',matches); show('tail',list(tail))
     finally:
         if e is not None: e.close()
         epoc_module.Epoc.__init__=original
