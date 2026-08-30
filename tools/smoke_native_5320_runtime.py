@@ -75,6 +75,12 @@ def main() -> None:
     yield_pc = optional_u32(dll, 'nokia_frontend_yield_pc_value')
     yield_reason = optional_u32(dll, 'nokia_frontend_yield_reason_value')
     yield_count = optional_u64(dll, 'nokia_frontend_yield_count_value')
+    debug_values = []
+    for label in ('r0','r1','r2','r3','r4','r5','r6','r7','sp',
+                  's0','s2','s4'):
+        fn = optional_u32(dll, f'nokia_frontend_debug_{label}_value')
+        if fn:
+            debug_values.append((label, fn))
 
     held = []
     for path in sorted(args.data_dir.glob('srsf_*_*.bin')):
@@ -130,6 +136,8 @@ def main() -> None:
             diagnostics.append(f'yieldReason={yield_reason()}')
         if yield_count:
             diagnostics.append(f'yields={yield_count()}')
+        for label, fn in debug_values:
+            diagnostics.append(f'{label}={fn():#x}')
         print('native speak result:', ok, 'error:', error,
               'pcm callbacks:', calls[0], 'samples:', samples[0],
               ' '.join(diagnostics))
