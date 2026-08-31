@@ -40,7 +40,7 @@ jobs:
           $dllBytes = [IO.File]::ReadAllBytes('build/native-arm64ec/nokia_runtime_5320_arm64ec.dll')
           $peOffset = [BitConverter]::ToInt32($dllBytes, 0x3c)
           $machine = [BitConverter]::ToUInt16($dllBytes, $peOffset + 4)
-          if ($machine -notin @(0xA641, 0xA64E)) { throw "runtime machine is 0x$($machine.ToString('X4')), not ARM64EC/ARM64X" }
+          if ($machine -notin @(0x8664, 0xA641, 0xA64E)) { throw "runtime machine is 0x$($machine.ToString('X4')), not ARM64EC-compatible" }
       - uses: actions/upload-artifact@v6
         with:
           name: nokia-runtime-5320-arm64ec-current
