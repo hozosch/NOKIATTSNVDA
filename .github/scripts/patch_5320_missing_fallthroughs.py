@@ -53,4 +53,27 @@ L_830ea39c:
 if source.count(old_path) != 1:
 	raise SystemExit("missing or ambiguous 0x830ea396 fallthrough marker")
 source = source.replace(old_path, new_path, 1)
+
+old_yield_case = """    case 0x830ea3ceu: goto L_830ea3ce;
+    case 0x830ea3d2u: goto L_830ea3d2;
+"""
+new_yield_case = """    case 0x830ea3ceu: goto L_830ea3ce;
+    case 0x830ea3d0u: goto L_830ea3d0;
+    case 0x830ea3d2u: goto L_830ea3d2;
+"""
+if source.count(old_yield_case) != 1:
+	raise SystemExit("missing or ambiguous 0x830ea3d0 dispatch marker")
+source = source.replace(old_yield_case, new_yield_case, 1)
+
+old_yield_target = """L_830ea3d2:
+"""
+new_yield_target = """L_830ea3d0:
+    nokia_frontend_last_pc=0x830ea3d0u;
+    goto L_830ea1aa;
+L_830ea3d2:
+"""
+if source.count(old_yield_target) != 1:
+	raise SystemExit("missing or ambiguous 0x830ea3d0 branch marker")
+source = source.replace(old_yield_target, new_yield_target, 1)
+
 path.write_text(source, encoding="utf-8", newline="\n")
