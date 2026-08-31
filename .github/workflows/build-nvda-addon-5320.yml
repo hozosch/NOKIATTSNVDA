@@ -41,6 +41,20 @@ jobs:
           $peOffset = [BitConverter]::ToInt32($dllBytes, 0x3c)
           $machine = [BitConverter]::ToUInt16($dllBytes, $peOffset + 4)
           if ($machine -notin @(0x8664, 0xA641, 0xA64E)) { throw "runtime machine is 0x$($machine.ToString('X4')), not ARM64EC-compatible" }
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          architecture: x64
+      - name: Smoke-test ARM64EC synthesis
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/smoke-upstream
+          snapshot=$(find build/full-aot -name '5320-de-male.snapshot' -print -quit)
+          python tools/smoke_native_5320_runtime.py \
+            build/native-arm64ec/nokia_runtime_5320_arm64ec.dll \
+            build/smoke-upstream/addon/roms/5320/SYM.ROM \
+            "$snapshot" \
+            build/smoke-upstream/addon/roms/5320/files/system/data
       - uses: actions/upload-artifact@v6
         with:
           name: nokia-runtime-5320-arm64ec-current
@@ -112,8 +126,8 @@ jobs:
           Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
           Copy-Item build/upstream/addon/roms/5320/files/system/data/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test6.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test6.zip build/nokiaNative5320-0.1.0-test6.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test7.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test7.zip build/nokiaNative5320-0.1.0-test7.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -134,11 +148,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test6.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test7.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test6
-          path: build/nokiaNative5320-0.1.0-test6.nvda-addon
+          name: nokiaNative5320-0.1.0-test7
+          path: build/nokiaNative5320-0.1.0-test7.nvda-addon
           if-no-files-found: error
