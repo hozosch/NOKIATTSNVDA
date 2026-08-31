@@ -7,6 +7,7 @@ on:
       - "addon/**"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/scripts/instrument_runtime_lifecycle.py"
+      - ".github/scripts/patch_5320_missing_fallthroughs.py"
       - ".github/workflows/build-nvda-addon-5320.yml"
 
 permissions:
@@ -36,6 +37,7 @@ jobs:
           gzip -dk native/generated/nokia_klatt_5320.c.gz
           python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
+          $front | ForEach-Object { python .github/scripts/patch_5320_missing_fallthroughs.py $_ }
           $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
           cl /nologo /arm64EC /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /MACHINE:ARM64EC /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-arm64ec/nokia_runtime_5320_arm64ec.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native ARM64EC runtime link failed' }
@@ -109,6 +111,7 @@ jobs:
           gzip -dk native/generated/nokia_klatt_5320.c.gz
           python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
+          $front | ForEach-Object { python .github/scripts/patch_5320_missing_fallthroughs.py $_ }
           $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
           cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-x86/nokia_runtime_5320_x86.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native x86 runtime link failed' }
@@ -129,8 +132,8 @@ jobs:
           Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
           Copy-Item build/upstream/addon/roms/5320/files/system/data/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test11.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test11.zip build/nokiaNative5320-0.1.0-test11.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test12.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test12.zip build/nokiaNative5320-0.1.0-test12.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -151,11 +154,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test11.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test12.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test11
-          path: build/nokiaNative5320-0.1.0-test11.nvda-addon
+          name: nokiaNative5320-0.1.0-test12
+          path: build/nokiaNative5320-0.1.0-test12.nvda-addon
           if-no-files-found: error
