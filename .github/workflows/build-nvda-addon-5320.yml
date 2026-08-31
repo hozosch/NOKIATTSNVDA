@@ -1,0 +1,69 @@
+name: Build experimental native Nokia 5320 NVDA add-on
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "addon/**"
+      - ".github/workflows/build-nvda-addon-5320.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download successful Run 39 runtimes
+        uses: actions/download-artifact@v7
+        with:
+          pattern: nokia-runtime-5320-*
+          path: build/runtime
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33378032381
+          github-token: ${{ github.token }}
+
+      - name: Fetch the matching Nokia 5320 data image
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+
+      - name: Assemble NVDA add-on
+        shell: pwsh
+        run: |
+          $stage = 'build/addon'
+          New-Item -ItemType Directory -Force "$stage/bin/x64", "$stage/bin/arm64", "$stage/data", "$stage/synthDrivers" | Out-Null
+          Copy-Item addon/manifest.ini "$stage/manifest.ini"
+          Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
+          Copy-Item build/runtime/nokia-runtime-5320-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
+          Copy-Item build/runtime/nokia-runtime-5320-arm64/nokia_runtime_5320_arm64.dll "$stage/bin/arm64/"
+          Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
+          Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test1.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test1.zip build/nokiaNative5320-0.1.0-test1.nvda-addon
+
+      - name: Verify package contents
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/addon/manifest.ini',
+            'build/addon/synthDrivers/nokiaNative5320.py',
+            'build/addon/bin/x64/nokia_runtime_5320_x64.dll',
+            'build/addon/bin/arm64/nokia_runtime_5320_arm64.dll',
+            'build/addon/data/5320-de-male.snapshot',
+            'build/addon/data/SYM.ROM'
+          )
+          foreach ($path in $required) {
+            if (!(Test-Path $path)) { throw "Missing package file: $path" }
+          }
+          Get-Item build/nokiaNative5320-0.1.0-test1.nvda-addon | Format-List Name,Length
+
+      - name: Upload NVDA add-on
+        uses: actions/upload-artifact@v6
+        with:
+          name: nokiaNative5320-0.1.0-test1
+          path: build/nokiaNative5320-0.1.0-test1.nvda-addon
+          if-no-files-found: error
