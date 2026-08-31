@@ -176,6 +176,10 @@ class SynthDriver(BaseSynthDriver):
 		self._diagnosticFunctions = {}
 		for label, export in (
 			("lastPc", "nokia_frontend_last_pc_value"),
+			("failedPc", "nokia_runtime_failed_pc_value"),
+			("failedLr", "nokia_runtime_failed_lr_value"),
+			("failedSp", "nokia_runtime_failed_sp_value"),
+			("failedCpsr", "nokia_runtime_failed_cpsr_value"),
 			("badAddress", "nokia_frontend_bad_address_value"),
 			("yieldPc", "nokia_frontend_yield_pc_value"),
 			("yieldReason", "nokia_frontend_yield_reason_value"),
