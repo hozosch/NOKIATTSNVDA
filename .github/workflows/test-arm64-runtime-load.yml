@@ -22,6 +22,14 @@ jobs:
           repository: hozosch/NOKIATTSNVDA
           run-id: 33378032381
           github-token: ${{ github.token }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          architecture: arm64
+      - name: Load through native ARM64 Python ctypes
+        shell: pwsh
+        run: |
+          python -c "import ctypes, pathlib, platform, struct; p=next(pathlib.Path('build/runtime').glob('*.dll')); print(platform.machine(), struct.calcsize('P')*8, p); d=ctypes.CDLL(str(p.resolve())); print(d.nokia_runtime_create_5320_snapshot)"
       - name: Build and run native ARM64 loader
         shell: pwsh
         run: |
