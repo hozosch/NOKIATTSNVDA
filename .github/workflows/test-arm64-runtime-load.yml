@@ -1,0 +1,54 @@
+name: Test ARM64 native runtime loading
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-arm64-runtime-load.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  load:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: nokia-runtime-5320-arm64
+          path: build/runtime
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33378032381
+          github-token: ${{ github.token }}
+      - name: Build and run native ARM64 loader
+        shell: pwsh
+        run: |
+          & .github/scripts/enter-msvc.ps1 -Arch arm64
+          @'
+          #include <windows.h>
+          #include <stdio.h>
+          int wmain(int argc, wchar_t **argv) {
+              HMODULE module;
+              FARPROC createRuntime;
+              if (argc != 2) return 10;
+              SetLastError(0);
+              module = LoadLibraryExW(argv[1], NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+              if (!module) {
+                  wprintf(L"LoadLibraryExW failed: %lu\n", GetLastError());
+                  return 11;
+              }
+              createRuntime = GetProcAddress(module, "nokia_runtime_create_5320_snapshot");
+              if (!createRuntime) {
+                  wprintf(L"GetProcAddress failed: %lu\n", GetLastError());
+                  return 12;
+              }
+              wprintf(L"ARM64 runtime loaded and export resolved\n");
+              FreeLibrary(module);
+              return 0;
+          }
+          '@ | Set-Content -Encoding utf8 build/loadtest.c
+          cl /nologo /O2 build/loadtest.c /link /OUT:build/loadtest.exe
+          & build/loadtest.exe (Resolve-Path build/runtime/nokia_runtime_5320_arm64.dll)
+          if ($LASTEXITCODE -ne 0) { throw "ARM64 runtime loader test failed: $LASTEXITCODE" }
