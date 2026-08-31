@@ -59,7 +59,10 @@ class SynthDriver(BaseSynthDriver):
 		self._pitch = 50
 		self._root = Path(__file__).resolve().parent.parent
 		machine = platform.machine().lower()
-		arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
+		if ctypes.sizeof(ctypes.c_void_p) == 4:
+			arch = "x86"
+		else:
+			arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
 		self._dll = ctypes.CDLL(
 			str(self._root / "bin" / arch / f"nokia_runtime_5320_{arch}.dll")
 		)
@@ -227,4 +230,3 @@ class SynthDriver(BaseSynthDriver):
 				if self._activeRuntime == runtime:
 					self._activeRuntime = None
 			self._dll.nokia_runtime_destroy(runtime)
-
