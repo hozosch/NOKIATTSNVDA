@@ -63,7 +63,8 @@ class SynthDriver(BaseSynthDriver):
 			self._dll = ctypes.CDLL(str(dllPath))
 		except OSError as error:
 			raise OSError(
-				f"Could not load the {arch} Nokia runtime for this NVDA process: {dllPath}"
+				f"Could not load the {arch} Nokia runtime for this NVDA process: {dllPath}; "
+				f"original loader error: {error!r}; winerror={getattr(error, 'winerror', None)}"
 			) from error
 		self._bindApi()
 		self._romBytes = (self._root / "data" / "SYM.ROM").read_bytes()
