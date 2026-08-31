@@ -175,16 +175,20 @@ class SynthDriver(BaseSynthDriver):
 		self._dll.nokia_runtime_last_error.restype = ctypes.c_int
 		self._diagnosticFunctions = {}
 		for label, export in (
-			("lastPc", "nokia_frontend_last_pc_value"),
+			("failedLastPc", "nokia_runtime_failed_last_pc_value"),
 			("failedPc", "nokia_runtime_failed_pc_value"),
 			("failedLr", "nokia_runtime_failed_lr_value"),
 			("failedSp", "nokia_runtime_failed_sp_value"),
-			("failedCpsr", "nokia_runtime_failed_cpsr_value"),
-			("badAddress", "nokia_frontend_bad_address_value"),
-			("yieldPc", "nokia_frontend_yield_pc_value"),
-			("yieldReason", "nokia_frontend_yield_reason_value"),
+			("failedFlags", "nokia_runtime_failed_cpsr_value"),
+			("failedBadAddress", "nokia_runtime_failed_bad_address_value"),
+			("failedYieldPc", "nokia_runtime_failed_yield_pc_value"),
+			("failedYieldReason", "nokia_runtime_failed_yield_reason_value"),
 			("failedEntry", "nokia_runtime_last_entry_value"),
 			("failedStage", "nokia_runtime_last_stage_value"),
+			("finalLastPc", "nokia_frontend_last_pc_value"),
+			("finalBadAddress", "nokia_frontend_bad_address_value"),
+			("finalYieldPc", "nokia_frontend_yield_pc_value"),
+			("finalYieldReason", "nokia_frontend_yield_reason_value"),
 		):
 			function = getattr(self._dll, export, None)
 			if function:

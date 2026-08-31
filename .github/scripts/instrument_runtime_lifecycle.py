@@ -10,14 +10,27 @@ marker = "static int native_call(NokiaRuntime *r, uint32_t entry,"
 if marker not in source:
 	raise SystemExit("native_call marker not found")
 
-diagnostics = """static uint32_t nokia_runtime_last_entry_value_storage;
+diagnostics = """extern uint32_t nokia_frontend_last_pc_value(void);
+extern uint32_t nokia_frontend_bad_address_value(void);
+extern uint32_t nokia_frontend_yield_pc_value(void);
+extern uint32_t nokia_frontend_yield_reason_value(void);
+
+static uint32_t nokia_runtime_last_entry_value_storage;
 static uint32_t nokia_runtime_last_stage_value_storage;
+static uint32_t nokia_runtime_failed_last_pc_value_storage;
+static uint32_t nokia_runtime_failed_bad_address_value_storage;
+static uint32_t nokia_runtime_failed_yield_pc_value_storage;
+static uint32_t nokia_runtime_failed_yield_reason_value_storage;
 static uint32_t nokia_runtime_failed_pc_value_storage;
 static uint32_t nokia_runtime_failed_lr_value_storage;
 static uint32_t nokia_runtime_failed_sp_value_storage;
 static uint32_t nokia_runtime_failed_cpsr_value_storage;
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_last_entry_value(void){return nokia_runtime_last_entry_value_storage;}
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_last_stage_value(void){return nokia_runtime_last_stage_value_storage;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_last_pc_value(void){return nokia_runtime_failed_last_pc_value_storage;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_bad_address_value(void){return nokia_runtime_failed_bad_address_value_storage;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_yield_pc_value(void){return nokia_runtime_failed_yield_pc_value_storage;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_yield_reason_value(void){return nokia_runtime_failed_yield_reason_value_storage;}
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_pc_value(void){return nokia_runtime_failed_pc_value_storage;}
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_lr_value(void){return nokia_runtime_failed_lr_value_storage;}
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_failed_sp_value(void){return nokia_runtime_failed_sp_value_storage;}
@@ -41,6 +54,10 @@ old = """    if (status != 1) { r->last_error = status == 2 ? -2002 : -2001; ret
 new = """    if (status != 1) {
         if(!nokia_runtime_last_stage_value_storage){
             nokia_runtime_last_entry_value_storage=entry;
+            nokia_runtime_failed_last_pc_value_storage=nokia_frontend_last_pc_value();
+            nokia_runtime_failed_bad_address_value_storage=nokia_frontend_bad_address_value();
+            nokia_runtime_failed_yield_pc_value_storage=nokia_frontend_yield_pc_value();
+            nokia_runtime_failed_yield_reason_value_storage=nokia_frontend_yield_reason_value();
             nokia_runtime_failed_pc_value_storage=regs[15];
             nokia_runtime_failed_lr_value_storage=regs[14];
             nokia_runtime_failed_sp_value_storage=regs[13];
@@ -71,6 +88,8 @@ old = """    r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last
 """
 new = """    r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
     nokia_runtime_last_entry_value_storage=0u;nokia_runtime_last_stage_value_storage=0u;
+    nokia_runtime_failed_last_pc_value_storage=0u;nokia_runtime_failed_bad_address_value_storage=0u;
+    nokia_runtime_failed_yield_pc_value_storage=0u;nokia_runtime_failed_yield_reason_value_storage=0u;
     nokia_runtime_failed_pc_value_storage=0u;nokia_runtime_failed_lr_value_storage=0u;
     nokia_runtime_failed_sp_value_storage=0u;nokia_runtime_failed_cpsr_value_storage=0u;
 """
