@@ -23,24 +23,45 @@ old = """    uint32_t regs[17] = {0}, i, sp = STACK_BASE + STACK_SIZE - 0x1000u;
 """
 new = """    uint32_t regs[17] = {0}, i, sp = STACK_BASE + STACK_SIZE - 0x1000u;
     int status;
-    nokia_runtime_last_entry_value_storage=entry;
-    if(entry==r->seg_set_style_id)nokia_runtime_last_stage_value_storage=1u;
-    else if(entry==r->seg_set_text_ptr)nokia_runtime_last_stage_value_storage=2u;
-    else if(entry==r->pt_add_segment)nokia_runtime_last_stage_value_storage=3u;
-    else if(entry==r->pt_new)nokia_runtime_last_stage_value_storage=4u;
-    else if(entry==r->dev_prime)nokia_runtime_last_stage_value_storage=5u;
-    else if(entry==r->dev_synthesize)nokia_runtime_last_stage_value_storage=6u;
-    else if(entry==r->dev_buffer_processed)nokia_runtime_last_stage_value_storage=7u;
-    else if(entry==r->run_if_ready)nokia_runtime_last_stage_value_storage=8u;
-    else if(entry==r->dev_stop)nokia_runtime_last_stage_value_storage=9u;
-    else if(entry==r->pt_delete)nokia_runtime_last_stage_value_storage=10u;
-    else if(entry==r->cleanup_next)nokia_runtime_last_stage_value_storage=11u;
-    else if(entry==r->cleanup_pop)nokia_runtime_last_stage_value_storage=12u;
-    else if(entry==r->cleanup_prev)nokia_runtime_last_stage_value_storage=13u;
-    else nokia_runtime_last_stage_value_storage=255u;
 """
 if old not in source:
 	raise SystemExit("native_call body marker not found")
+source = source.replace(old, new, 1)
+
+old = """    if (status != 1) { r->last_error = status == 2 ? -2002 : -2001; return 0; }
+"""
+new = """    if (status != 1) {
+        if(!nokia_runtime_last_stage_value_storage){
+            nokia_runtime_last_entry_value_storage=entry;
+            if(entry==r->seg_set_style_id)nokia_runtime_last_stage_value_storage=1u;
+            else if(entry==r->seg_set_text_ptr)nokia_runtime_last_stage_value_storage=2u;
+            else if(entry==r->pt_add_segment)nokia_runtime_last_stage_value_storage=3u;
+            else if(entry==r->pt_new)nokia_runtime_last_stage_value_storage=4u;
+            else if(entry==r->dev_prime)nokia_runtime_last_stage_value_storage=5u;
+            else if(entry==r->dev_synthesize)nokia_runtime_last_stage_value_storage=6u;
+            else if(entry==r->dev_buffer_processed)nokia_runtime_last_stage_value_storage=7u;
+            else if(entry==r->run_if_ready)nokia_runtime_last_stage_value_storage=8u;
+            else if(entry==r->dev_stop)nokia_runtime_last_stage_value_storage=9u;
+            else if(entry==r->pt_delete)nokia_runtime_last_stage_value_storage=10u;
+            else if(entry==r->cleanup_next)nokia_runtime_last_stage_value_storage=11u;
+            else if(entry==r->cleanup_pop)nokia_runtime_last_stage_value_storage=12u;
+            else if(entry==r->cleanup_prev)nokia_runtime_last_stage_value_storage=13u;
+            else nokia_runtime_last_stage_value_storage=255u;
+        }
+        r->last_error = status == 2 ? -2002 : -2001; return 0;
+    }
+"""
+if old not in source:
+	raise SystemExit("native_call failure marker not found")
+source = source.replace(old, new, 1)
+
+old = """    r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
+"""
+new = """    r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
+    nokia_runtime_last_entry_value_storage=0u;nokia_runtime_last_stage_value_storage=0u;
+"""
+if old not in source:
+	raise SystemExit("speak reset marker not found")
 source = source.replace(old, new, 1)
 path.write_text(source, encoding="utf-8", newline="\n")
 
