@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ctypes
 import os
-import platform
 import queue
 import threading
 from pathlib import Path
@@ -58,14 +57,14 @@ class SynthDriver(BaseSynthDriver):
 	def __init__(self):
 		self._pitch = 50
 		self._root = Path(__file__).resolve().parent.parent
-		machine = platform.machine().lower()
-		if ctypes.sizeof(ctypes.c_void_p) == 4:
-			arch = "x86"
-		else:
-			arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
-		self._dll = ctypes.CDLL(
-			str(self._root / "bin" / arch / f"nokia_runtime_5320_{arch}.dll")
-		)
+		arch = self._getProcessArchitecture()
+		dllPath = self._root / "bin" / arch / f"nokia_runtime_5320_{arch}.dll"
+		try:
+			self._dll = ctypes.CDLL(str(dllPath))
+		except OSError as error:
+			raise OSError(
+				f"Could not load the {arch} Nokia runtime for this NVDA process: {dllPath}"
+			) from error
 		self._bindApi()
 		self._romBytes = (self._root / "data" / "SYM.ROM").read_bytes()
 		self._snapshotBytes = (self._root / "data" / "5320-de-male.snapshot").read_bytes()
@@ -90,6 +89,33 @@ class SynthDriver(BaseSynthDriver):
 			daemon=True,
 		)
 		self._thread.start()
+
+	@staticmethod
+	def _getProcessArchitecture():
+		"""Return the architecture of NVDA itself, not that of the host OS."""
+		if ctypes.sizeof(ctypes.c_void_p) == 4:
+			return "x86"
+		processMachine = ctypes.c_ushort()
+		nativeMachine = ctypes.c_ushort()
+		isWow64Process2 = ctypes.windll.kernel32.IsWow64Process2
+		isWow64Process2.argtypes = [
+			ctypes.c_void_p,
+			ctypes.POINTER(ctypes.c_ushort),
+			ctypes.POINTER(ctypes.c_ushort),
+		]
+		isWow64Process2.restype = ctypes.c_int
+		if not isWow64Process2(
+			ctypes.windll.kernel32.GetCurrentProcess(),
+			ctypes.byref(processMachine),
+			ctypes.byref(nativeMachine),
+		):
+			raise ctypes.WinError()
+		machine = processMachine.value or nativeMachine.value
+		if machine == 0x8664:
+			return "x64"
+		if machine == 0xAA64:
+			return "arm64"
+		raise RuntimeError(f"Unsupported NVDA process architecture: 0x{machine:04x}")
 
 	def _bindApi(self):
 		self._dll.nokia_runtime_create_5320_snapshot.argtypes = [
