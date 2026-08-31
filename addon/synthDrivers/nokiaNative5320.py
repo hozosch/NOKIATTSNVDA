@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import os
 import queue
+import re
 import struct
 import sys
 import threading
@@ -69,6 +70,7 @@ class SynthDriver(BaseSynthDriver):
 				f"original loader error: {error!r}; winerror={getattr(error, 'winerror', None)}"
 			) from error
 		self._bindApi()
+		self._registerConfigBlobs()
 		self._romBytes = (self._root / "data" / "SYM.ROM").read_bytes()
 		self._snapshotBytes = (self._root / "data" / "5320-de-male.snapshot").read_bytes()
 		self._rom = (ctypes.c_uint8 * len(self._romBytes)).from_buffer_copy(self._romBytes)
@@ -143,6 +145,14 @@ class SynthDriver(BaseSynthDriver):
 		raise RuntimeError(f"Unsupported NVDA process architecture: 0x{machine:04x}")
 
 	def _bindApi(self):
+		self._dll.nokia_register_config_blob.argtypes = [
+			ctypes.c_uint32,
+			ctypes.c_uint32,
+			ctypes.c_void_p,
+			ctypes.c_uint32,
+		]
+		self._dll.nokia_register_config_blob.restype = ctypes.c_int
+		self._dll.nokia_clear_config_blobs.argtypes = []
 		self._dll.nokia_runtime_create_5320_snapshot.argtypes = [
 			ctypes.POINTER(ctypes.c_uint8),
 			ctypes.c_size_t,
@@ -163,6 +173,25 @@ class SynthDriver(BaseSynthDriver):
 		self._dll.nokia_runtime_cancel.argtypes = [ctypes.c_void_p]
 		self._dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
 		self._dll.nokia_runtime_last_error.restype = ctypes.c_int
+
+	def _registerConfigBlobs(self):
+		count = 0
+		for path in sorted((self._root / "data" / "config").glob("srsf_*_*.bin")):
+			match = re.fullmatch(r"srsf_(\d+)_(\d+)\.bin", path.name, re.IGNORECASE)
+			if not match:
+				continue
+			data = path.read_bytes()
+			buffer = ctypes.create_string_buffer(data)
+			if not self._dll.nokia_register_config_blob(
+				int(match.group(1)),
+				int(match.group(2)),
+				buffer,
+				len(data),
+			):
+				raise RuntimeError(f"Could not register Nokia configuration {path.name}")
+			count += 1
+		if not count:
+			raise RuntimeError("No Nokia srsf configuration blobs were packaged")
 
 	def _get_pitch(self):
 		return self._pitch
@@ -215,6 +244,7 @@ class SynthDriver(BaseSynthDriver):
 		self._requests.put(None)
 		self._thread.join(timeout=3)
 		self._player.close()
+		self._dll.nokia_clear_config_blobs()
 
 	def _worker(self):
 		while not self._stopEvent.is_set():
