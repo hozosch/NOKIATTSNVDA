@@ -27,10 +27,7 @@ jobs:
       - name: Build ARM64EC runtime
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
-          if (!$installation) { throw 'Visual Studio ARM64 tools were not found' }
-          & (Join-Path $installation 'Common7\Tools\Launch-VsDevShell.ps1') -Arch arm64ec -HostArch amd64 -SkipAutomaticLocation
+          & .github/scripts/enter-msvc.ps1 -Arch arm64
           New-Item -ItemType Directory -Force native/generated/full, build/native-arm64ec | Out-Null
           Get-ChildItem -Recurse build/full-aot -Filter "nokia_frontend_5320_full*.c" | ForEach-Object {
             Copy-Item $_.FullName native/generated/full/ -Force
@@ -38,7 +35,7 @@ jobs:
           gzip -dk native/generated/nokia_klatt_5320.c.gz
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
           $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
-          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-arm64ec/nokia_runtime_5320_arm64ec.dll"
+          cl /nologo /arm64EC /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /MACHINE:ARM64EC /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-arm64ec/nokia_runtime_5320_arm64ec.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native ARM64EC runtime link failed' }
           $dllBytes = [IO.File]::ReadAllBytes('build/native-arm64ec/nokia_runtime_5320_arm64ec.dll')
           $peOffset = [BitConverter]::ToInt32($dllBytes, 0x3c)
