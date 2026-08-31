@@ -59,7 +59,7 @@ def patch_aot(aot: str) -> tuple[str, int]:
         raise SystemExit('AOT call reset marker not found')
     aot = aot.replace(
         reset,
-        reset + '\n    nokia_frontend_debug_budget=500000u;'
+        reset + '\n    nokia_frontend_debug_budget=5000000u;'
                 '\n    nokia_frontend_debug_pc=0u;',
         1,
     )
@@ -110,7 +110,7 @@ def main() -> None:
     args.aot.write_text(aot, encoding='utf-8', newline='\n')
     print('lifecycle failures tagged -3101..-3107')
     print('fast smoke scheduler pump limit: 2000')
-    print('AOT per-call label budget: 500000; budget/unsupported register capture enabled; labels:', count)
+    print('AOT per-call label budget: 5000000; budget/unsupported register capture enabled; labels:', count)
 
 
 if __name__ == '__main__':
