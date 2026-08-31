@@ -98,20 +98,15 @@ class SynthDriver(BaseSynthDriver):
 		"""Return the architecture of NVDA itself, not that of the host OS."""
 		# ARM64EC and ARM64X are deliberately distinguished from pure ARM64:
 		# they use the x64-compatible ABI and cannot load a plain ARM64 DLL.
+		imageMachine = None
 		try:
 			with open(sys.executable, "rb") as executable:
 				executable.seek(0x3C)
 				peOffset = struct.unpack("<I", executable.read(4))[0]
 				executable.seek(peOffset + 4)
 				imageMachine = struct.unpack("<H", executable.read(2))[0]
-			if imageMachine in {0xA641, 0xA64E}:
-				return "arm64ec"
-			if imageMachine == 0x8664:
-				return "x64"
-			if imageMachine == 0x014C:
-				return "x86"
 		except (OSError, EOFError, struct.error):
-			pass
+			imageMachine = None
 		if ctypes.sizeof(ctypes.c_void_p) == 4:
 			return "x86"
 		processMachine = ctypes.c_ushort()
@@ -130,7 +125,18 @@ class SynthDriver(BaseSynthDriver):
 		):
 			raise ctypes.WinError()
 		machine = processMachine.value or nativeMachine.value
-		if machine == 0x8664:
+		if imageMachine in {0xA641, 0xA64E}:
+			return "arm64ec"
+		# Final ARM64EC images intentionally use the AMD64 PE machine value.
+		# A native ARM process with an AMD64 image is therefore ARM64EC;
+		# an emulated x64 process reports AMD64 in processMachine instead.
+		if (
+			imageMachine == 0x8664
+			and processMachine.value == 0
+			and nativeMachine.value == 0xAA64
+		):
+			return "arm64ec"
+		if imageMachine == 0x8664 or machine == 0x8664:
 			return "x64"
 		if machine == 0xAA64:
 			return "arm64"
