@@ -7,6 +7,7 @@ on:
       - ".github/workflows/fast-merge-native-only-5320.yml"
       - ".github/scripts/patch_5320_prime_iterator.py"
       - ".github/scripts/patch_5320_prime_counterloop.py"
+      - ".github/scripts/patch_5320_exclusive_clear.py"
       - ".github/scripts/smoke_fast_native_5320_runtime.py"
       - "tools/instrument_5320_native_smoke.py"
       - "tools/patch_5320_prime_hotloop.py"
@@ -48,6 +49,10 @@ jobs:
       - name: Optimise verified Prime counter loop
         shell: bash
         run: python .github/scripts/patch_5320_prime_counterloop.py build/merged/nokia_frontend_5320_full.c
+
+      - name: Repair single-threaded exclusive clear
+        shell: bash
+        run: python .github/scripts/patch_5320_exclusive_clear.py build/merged/nokia_frontend_5320_full.c
 
       - name: Prepare bounded debug sources
         shell: bash
