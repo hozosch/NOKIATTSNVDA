@@ -9,6 +9,7 @@ on:
       - ".github/scripts/patch_5320_prime_iterator.py"
       - ".github/scripts/patch_5320_prime_counterloop.py"
       - ".github/scripts/patch_5320_exclusive_clear.py"
+      - ".github/scripts/patch_5320_zero_veneer.py"
       - ".github/workflows/build-native-only-5320.yml"
 
 permissions:
@@ -118,6 +119,7 @@ jobs:
           python .github/scripts/patch_5320_prime_iterator.py native/generated/full/nokia_frontend_5320_full.c
           python .github/scripts/patch_5320_prime_counterloop.py native/generated/full/nokia_frontend_5320_full.c
           python .github/scripts/patch_5320_exclusive_clear.py native/generated/full/nokia_frontend_5320_full.c
+          python .github/scripts/patch_5320_zero_veneer.py native/generated/full/nokia_frontend_5320_full.c
           python tools/instrument_frontend_yields.py native/generated/full/nokia_frontend_5320_full.c
           python tools/report_frontend_yields.py \
             native/generated/full/nokia_frontend_5320_full.c \
