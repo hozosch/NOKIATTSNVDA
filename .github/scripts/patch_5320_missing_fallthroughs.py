@@ -130,4 +130,40 @@ if source.count(old_loop_path) != 1:
 	raise SystemExit("missing or ambiguous 0x830eccd2 fallthrough marker")
 source = source.replace(old_loop_path, new_loop_path, 1)
 
+old_lower_exit_case = "    case 0x830ecbc4u: goto L_830ecbc4;\n"
+new_lower_exit_case = """    case 0x830ecbc2u: goto L_830ecbc2;
+    case 0x830ecbc4u: goto L_830ecbc4;
+"""
+if source.count(old_lower_exit_case) != 1:
+	raise SystemExit("missing or ambiguous 0x830ecbc2 dispatch marker")
+source = source.replace(old_lower_exit_case, new_lower_exit_case, 1)
+
+old_lower_exit_branch = """L_830ecc90:
+    nokia_frontend_last_pc=0x830ecc90u;
+    u_133e00 = ((uint64_t)(!(reg_CY & UINT64_C(0xff)))) & UINT64_C(0xff);
+    u_134000 = ((uint64_t)((u_133e00 & UINT64_C(0xff)) || (reg_ZR & UINT64_C(0xff)))) & UINT64_C(0xff);
+    if ((u_134000 & UINT64_C(0xff))) return NOKIA_FRONTEND_UNSUPPORTED;
+    goto L_830ecc92;
+"""
+new_lower_exit_branch = """L_830ecc90:
+    nokia_frontend_last_pc=0x830ecc90u;
+    u_133e00 = ((uint64_t)(!(reg_CY & UINT64_C(0xff)))) & UINT64_C(0xff);
+    u_134000 = ((uint64_t)((u_133e00 & UINT64_C(0xff)) || (reg_ZR & UINT64_C(0xff)))) & UINT64_C(0xff);
+    if ((u_134000 & UINT64_C(0xff))) goto L_830ecbc2;
+    goto L_830ecc92;
+"""
+if source.count(old_lower_exit_branch) != 1:
+	raise SystemExit("missing or ambiguous 0x830ecc90 branch marker")
+source = source.replace(old_lower_exit_branch, new_lower_exit_branch, 1)
+
+old_lower_exit_target = "L_830ecbc4:\n"
+new_lower_exit_target = """L_830ecbc2:
+    nokia_frontend_last_pc=0x830ecbc2u;
+    goto L_830ecda2;
+L_830ecbc4:
+"""
+if source.count(old_lower_exit_target) != 1:
+	raise SystemExit("missing or ambiguous 0x830ecbc2 target marker")
+source = source.replace(old_lower_exit_target, new_lower_exit_target, 1)
+
 path.write_text(source, encoding="utf-8", newline="\n")
