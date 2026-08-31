@@ -102,7 +102,7 @@ jobs:
         shell: pwsh
         run: |
           $stage = 'build/addon'
-          New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
+          New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data/config", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
@@ -111,8 +111,9 @@ jobs:
           Copy-Item build/runtime-arm64ec/nokia_runtime_5320_arm64ec.dll "$stage/bin/arm64ec/"
           Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test5.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test5.zip build/nokiaNative5320-0.1.0-test5.nvda-addon
+          Copy-Item build/upstream/addon/roms/5320/files/system/data/srsf_*_*.bin "$stage/data/config/"
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test6.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test6.zip build/nokiaNative5320-0.1.0-test6.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -130,11 +131,14 @@ jobs:
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "Missing package file: $path" }
           }
-          Get-Item build/nokiaNative5320-0.1.0-test5.nvda-addon | Format-List Name,Length
+          $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
+          if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
+          Write-Host "Packaged configuration blobs: $configCount"
+          Get-Item build/nokiaNative5320-0.1.0-test6.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test5
-          path: build/nokiaNative5320-0.1.0-test5.nvda-addon
+          name: nokiaNative5320-0.1.0-test6
+          path: build/nokiaNative5320-0.1.0-test6.nvda-addon
           if-no-files-found: error
