@@ -173,6 +173,18 @@ class SynthDriver(BaseSynthDriver):
 		self._dll.nokia_runtime_cancel.argtypes = [ctypes.c_void_p]
 		self._dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
 		self._dll.nokia_runtime_last_error.restype = ctypes.c_int
+		self._diagnosticFunctions = {}
+		for label, export in (
+			("lastPc", "nokia_frontend_last_pc_value"),
+			("badAddress", "nokia_frontend_bad_address_value"),
+			("yieldPc", "nokia_frontend_yield_pc_value"),
+			("yieldReason", "nokia_frontend_yield_reason_value"),
+		):
+			function = getattr(self._dll, export, None)
+			if function:
+				function.argtypes = []
+				function.restype = ctypes.c_uint32
+				self._diagnosticFunctions[label] = function
 
 	def _registerConfigBlobs(self):
 		count = 0
@@ -300,7 +312,14 @@ class SynthDriver(BaseSynthDriver):
 			)
 			if not ok and generation == self._generation:
 				error = self._dll.nokia_runtime_last_error(runtime)
-				raise RuntimeError(f"Native runtime error {error}")
+				diagnostics = ", ".join(
+					f"{label}=0x{function():08x}"
+					for label, function in self._diagnosticFunctions.items()
+				)
+				raise RuntimeError(
+					f"Native runtime error {error}"
+					+ (f"; {diagnostics}" if diagnostics else "")
+				)
 			if generation == self._generation:
 				for index in indexes:
 					synthIndexReached.notify(synth=self, index=index)
