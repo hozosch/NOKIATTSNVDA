@@ -26,24 +26,50 @@ jobs:
           run-id: 33378032381
           github-token: ${{ github.token }}
 
+      - name: Download successful Run 39 native sources
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-full-aot
+          path: build/full-aot
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33378032381
+          github-token: ${{ github.token }}
+
       - name: Fetch the matching Nokia 5320 data image
         shell: bash
         run: |
           git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
 
+      - name: Build native x86 runtime for 32-bit NVDA
+        shell: pwsh
+        run: |
+          & .github/scripts/enter-msvc.ps1 -Arch x86
+          New-Item -ItemType Directory -Force native/generated/full, build/native-x86 | Out-Null
+          Get-ChildItem -Recurse build/full-aot -Filter "nokia_frontend_5320_full*.c" | ForEach-Object {
+            Copy-Item $_.FullName native/generated/full/ -Force
+          }
+          gzip -dk native/generated/nokia_klatt_5320.c.gz
+          $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
+          $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
+          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-x86/nokia_runtime_5320_x86.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'native x86 runtime link failed' }
+          $headers = dumpbin /headers build/native-x86/nokia_runtime_5320_x86.dll
+          if ($headers -notmatch '14C machine \(x86\)') { throw 'runtime is not x86' }
+
       - name: Assemble NVDA add-on
         shell: pwsh
         run: |
           $stage = 'build/addon'
-          New-Item -ItemType Directory -Force "$stage/bin/x64", "$stage/bin/arm64", "$stage/data", "$stage/synthDrivers" | Out-Null
+          New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
+          Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/runtime/nokia-runtime-5320-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
           Copy-Item build/runtime/nokia-runtime-5320-arm64/nokia_runtime_5320_arm64.dll "$stage/bin/arm64/"
           Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test1.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test1.zip build/nokiaNative5320-0.1.0-test1.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test2.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test2.zip build/nokiaNative5320-0.1.0-test2.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -51,6 +77,7 @@ jobs:
           $required = @(
             'build/addon/manifest.ini',
             'build/addon/synthDrivers/nokiaNative5320.py',
+            'build/addon/bin/x86/nokia_runtime_5320_x86.dll',
             'build/addon/bin/x64/nokia_runtime_5320_x64.dll',
             'build/addon/bin/arm64/nokia_runtime_5320_arm64.dll',
             'build/addon/data/5320-de-male.snapshot',
@@ -59,11 +86,11 @@ jobs:
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "Missing package file: $path" }
           }
-          Get-Item build/nokiaNative5320-0.1.0-test1.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test2.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test1
-          path: build/nokiaNative5320-0.1.0-test1.nvda-addon
+          name: nokiaNative5320-0.1.0-test2
+          path: build/nokiaNative5320-0.1.0-test2.nvda-addon
           if-no-files-found: error
