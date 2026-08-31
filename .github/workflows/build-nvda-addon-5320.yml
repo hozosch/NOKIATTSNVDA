@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "addon/**"
+      - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-nvda-addon-5320.yml"
 
 permissions:
