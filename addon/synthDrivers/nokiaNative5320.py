@@ -5,6 +5,8 @@ from __future__ import annotations
 import ctypes
 import os
 import queue
+import struct
+import sys
 import threading
 from pathlib import Path
 
@@ -94,6 +96,22 @@ class SynthDriver(BaseSynthDriver):
 	@staticmethod
 	def _getProcessArchitecture():
 		"""Return the architecture of NVDA itself, not that of the host OS."""
+		# ARM64EC and ARM64X are deliberately distinguished from pure ARM64:
+		# they use the x64-compatible ABI and cannot load a plain ARM64 DLL.
+		try:
+			with open(sys.executable, "rb") as executable:
+				executable.seek(0x3C)
+				peOffset = struct.unpack("<I", executable.read(4))[0]
+				executable.seek(peOffset + 4)
+				imageMachine = struct.unpack("<H", executable.read(2))[0]
+			if imageMachine in {0xA641, 0xA64E}:
+				return "arm64ec"
+			if imageMachine == 0x8664:
+				return "x64"
+			if imageMachine == 0x014C:
+				return "x86"
+		except (OSError, EOFError, struct.error):
+			pass
 		if ctypes.sizeof(ctypes.c_void_p) == 4:
 			return "x86"
 		processMachine = ctypes.c_ushort()
