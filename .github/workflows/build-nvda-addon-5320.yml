@@ -55,7 +55,7 @@ jobs:
           cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-x86/nokia_runtime_5320_x86.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native x86 runtime link failed' }
           $headers = dumpbin /headers build/native-x86/nokia_runtime_5320_x86.dll
-          if ($headers -notmatch '14C machine \(x86\)') { throw 'runtime is not x86' }
+          if (($headers -join "`n") -notmatch '14C machine \(x86\)') { throw 'runtime is not x86' }
 
       - name: Assemble NVDA add-on
         shell: pwsh
@@ -69,8 +69,8 @@ jobs:
           Copy-Item build/runtime/nokia-runtime-5320-arm64/nokia_runtime_5320_arm64.dll "$stage/bin/arm64/"
           Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test2.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test2.zip build/nokiaNative5320-0.1.0-test2.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test3.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test3.zip build/nokiaNative5320-0.1.0-test3.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -87,11 +87,11 @@ jobs:
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "Missing package file: $path" }
           }
-          Get-Item build/nokiaNative5320-0.1.0-test2.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test3.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test2
-          path: build/nokiaNative5320-0.1.0-test2.nvda-addon
+          name: nokiaNative5320-0.1.0-test3
+          path: build/nokiaNative5320-0.1.0-test3.nvda-addon
           if-no-files-found: error
