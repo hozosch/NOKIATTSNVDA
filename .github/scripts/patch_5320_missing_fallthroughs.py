@@ -85,7 +85,7 @@ new_loop_case = """    case 0x830eccd0u: goto L_830eccd0;
     case 0x830eccd8u: goto L_830eccd8;
 """
 if source.count(old_loop_case) != 1:
-\traise SystemExit("missing or ambiguous 0x830eccd2 dispatch marker")
+	raise SystemExit("missing or ambiguous 0x830eccd2 dispatch marker")
 source = source.replace(old_loop_case, new_loop_case, 1)
 
 old_loop_path = """L_830eccd0:
@@ -127,7 +127,7 @@ L_830eccd8:
 L_830eccda:
 """
 if source.count(old_loop_path) != 1:
-\traise SystemExit("missing or ambiguous 0x830eccd2 fallthrough marker")
+	raise SystemExit("missing or ambiguous 0x830eccd2 fallthrough marker")
 source = source.replace(old_loop_path, new_loop_path, 1)
 
 path.write_text(source, encoding="utf-8", newline="\n")

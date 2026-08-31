@@ -62,6 +62,8 @@ class SynthDriver(BaseSynthDriver):
 		self._root = Path(__file__).resolve().parent.parent
 		arch = self._getProcessArchitecture()
 		dllPath = self._root / "bin" / arch / f"nokia_runtime_5320_{arch}.dll"
+		self._arch = arch
+		self._dllPath = dllPath
 		try:
 			self._dll = ctypes.CDLL(str(dllPath))
 		except OSError as error:
@@ -322,10 +324,14 @@ class SynthDriver(BaseSynthDriver):
 			)
 			if not ok and generation == self._generation:
 				error = self._dll.nokia_runtime_last_error(runtime)
-				diagnostics = ", ".join(
-					f"{label}=0x{function():08x}"
-					for label, function in self._diagnosticFunctions.items()
-				)
+				diagnostics = ", ".join([
+					f"runtimeArch={self._arch}",
+					f"runtimeDll={self._dllPath.name}",
+					*(
+						f"{label}=0x{function():08x}"
+						for label, function in self._diagnosticFunctions.items()
+					),
+				])
 				raise RuntimeError(
 					f"Native runtime error {error}"
 					+ (f"; {diagnostics}" if diagnostics else "")
