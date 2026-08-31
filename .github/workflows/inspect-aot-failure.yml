@@ -1,0 +1,89 @@
+name: Inspect current Nokia 5320 AOT failure
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/inspect-aot-failure.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-full-aot
+          path: build/full-aot
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33378032381
+          github-token: ${{ github.token }}
+      - name: Fetch matching Nokia 5320 ROM
+        run: git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+      - name: Install Thumb disassembler
+        run: python -m pip install --disable-pip-version-check capstone
+      - name: Inspect failed AOT blocks and ROM instructions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from capstone import Cs, CS_ARCH_ARM, CS_MODE_LITTLE_ENDIAN, CS_MODE_THUMB
+
+          targets = (0x830ECA1E, 0x830EC836, 0x830ECCD0)
+          sources = sorted(Path("build/full-aot").rglob("nokia_frontend_5320_full*.c"))
+          if not sources:
+              raise SystemExit("full AOT sources not found")
+
+          print("=== Generated AOT labels ===")
+          for address in targets:
+              label = f"L_{address:08x}:"
+              found = False
+              for path in sources:
+                  lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                  for index, line in enumerate(lines):
+                      if line.strip() == label:
+                          found = True
+                          lo = max(0, index - 35)
+                          hi = min(len(lines), index + 75)
+                          print(f"\n--- {label} in {path} (line {index + 1}) ---")
+                          for number in range(lo, hi):
+                              print(f"{number + 1:7}: {lines[number]}")
+              if not found:
+                  print(f"\n--- {label} not present ---")
+                  token = f"{address:08x}"
+                  for path in sources:
+                      lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                      matches = [i for i, line in enumerate(lines) if token in line.lower()]
+                      for index in matches[:8]:
+                          lo = max(0, index - 5)
+                          hi = min(len(lines), index + 6)
+                          print(f"token in {path} line {index + 1}")
+                          for number in range(lo, hi):
+                              print(f"{number + 1:7}: {lines[number]}")
+
+          rom_path = Path("build/upstream/addon/roms/5320/SYM.ROM")
+          rom = rom_path.read_bytes()
+          base = 0x80000000
+          disassembler = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_LITTLE_ENDIAN)
+
+          print("\n=== ROM bytes and Thumb instructions ===")
+          for address in targets:
+              address &= ~1
+              offset = address - base
+              if offset < 0 or offset + 96 > len(rom):
+                  raise SystemExit(f"address 0x{address:08x} outside ROM")
+              raw_start = offset - 16
+              raw = rom[raw_start:offset + 64]
+              print(f"\n--- around 0x{address:08x} ---")
+              for row in range(0, len(raw), 16):
+                  row_address = base + raw_start + row
+                  print(f"{row_address:08x}: {raw[row:row + 16].hex(' ')}")
+              print("Thumb from target:")
+              for instruction in disassembler.disasm(rom[offset:offset + 64], address):
+                  bytes_text = instruction.bytes.hex(" ")
+                  print(f"0x{instruction.address:08x}: {bytes_text:<11} {instruction.mnemonic} {instruction.op_str}")
+          PY
