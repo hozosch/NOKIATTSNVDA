@@ -129,8 +129,8 @@ jobs:
           Copy-Item build/runtime/nokia-runtime-5320-x64/5320-de-male.snapshot "$stage/data/"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
           Copy-Item build/upstream/addon/roms/5320/files/system/data/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test8.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test8.zip build/nokiaNative5320-0.1.0-test8.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test9.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test9.zip build/nokiaNative5320-0.1.0-test9.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -151,11 +151,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test8.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test9.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test8
-          path: build/nokiaNative5320-0.1.0-test8.nvda-addon
+          name: nokiaNative5320-0.1.0-test9
+          path: build/nokiaNative5320-0.1.0-test9.nvda-addon
           if-no-files-found: error
