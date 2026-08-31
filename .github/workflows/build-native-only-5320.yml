@@ -6,6 +6,9 @@ on:
     paths:
       - "native/**"
       - "tools/**"
+      - ".github/scripts/patch_5320_prime_iterator.py"
+      - ".github/scripts/patch_5320_prime_counterloop.py"
+      - ".github/scripts/patch_5320_exclusive_clear.py"
       - ".github/workflows/build-native-only-5320.yml"
 
 permissions:
@@ -107,6 +110,10 @@ jobs:
           python tools/split_frontend_aot.py native/generated/full/nokia_frontend_5320_full.c
           python tools/add_5320_native_klatt_boundary.py native/generated/full/nokia_frontend_5320_full.c
           python tools/optimise_frontend_memory.py native/generated/full/nokia_frontend_5320_full.c
+          python tools/patch_5320_prime_hotloop.py native/generated/full/nokia_frontend_5320_full.c
+          python .github/scripts/patch_5320_prime_iterator.py native/generated/full/nokia_frontend_5320_full.c
+          python .github/scripts/patch_5320_prime_counterloop.py native/generated/full/nokia_frontend_5320_full.c
+          python .github/scripts/patch_5320_exclusive_clear.py native/generated/full/nokia_frontend_5320_full.c
           python tools/instrument_frontend_yields.py native/generated/full/nokia_frontend_5320_full.c
           python tools/report_frontend_yields.py \
             native/generated/full/nokia_frontend_5320_full.c \
