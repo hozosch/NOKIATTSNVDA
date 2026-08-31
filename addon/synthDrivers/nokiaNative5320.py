@@ -179,8 +179,8 @@ class SynthDriver(BaseSynthDriver):
 			("badAddress", "nokia_frontend_bad_address_value"),
 			("yieldPc", "nokia_frontend_yield_pc_value"),
 			("yieldReason", "nokia_frontend_yield_reason_value"),
-			("lastEntry", "nokia_runtime_last_entry_value"),
-			("lastStage", "nokia_runtime_last_stage_value"),
+			("failedEntry", "nokia_runtime_last_entry_value"),
+			("failedStage", "nokia_runtime_last_stage_value"),
 		):
 			function = getattr(self._dll, export, None)
 			if function:
