@@ -50,9 +50,11 @@ jobs:
           import pypcode
 
           sys.path.insert(0, str(Path.cwd()))
+          import tools.collect_5320_dsp_wrapper_trace as dsp_collector
           from tools.collect_5320_dsp_wrapper_trace import (
-              ROM_BASE, collect, translate,
+              ROM_BASE, allowed, collect, translate,
           )
+          dsp_collector.MAX_INSTRUCTIONS=32768
 
           root=Path('build/run48-aot')
           rom=Path('build/test18-addon/data/SYM.ROM').read_bytes()
@@ -188,4 +190,49 @@ jobs:
                       'partial=',len(result),
                       'terminals=',[f'0x{x:08x}' for x in sorted(terminals)],
                   )
+
+          print('=== FULL KNOWN DSP FRONTIER ===')
+          native_payload=json.loads(
+              (root/'build/native/native-lifecycle-trace.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          known=set()
+          for item in native_payload.get('instructions',[]):
+              raw=int(item['address'])
+              known.add((
+                  raw & ~1,
+                  bool(item.get('thumb',False)) or bool(raw & 1),
+              ))
+          frontier=sorted(
+              key for key in known if allowed(key[0])
+          )
+          result={}
+          depths={}
+          terminals=set()
+          for address,thumb in frontier:
+              collect(
+                  rom,address,thumb,0,result,depths,terminals,known
+              )
+          addresses=sorted(address for address,_thumb in result)
+          resolved={address for address,_thumb in known}
+          resolved.update(addresses)
+          unresolved=sorted(
+              address for address in terminals
+              if allowed(address) and address not in resolved
+          )
+          print('known DSP frontier labels:',len(frontier))
+          print('new frontier instructions:',len(result))
+          print('frontier result range:',(
+              f'0x{addresses[0]:08x}-0x{addresses[-1]:08x}'
+              if addresses else 'empty'
+          ))
+          print('0x830fc506 added:',
+                any(address==0x830fc506 for address,_thumb in result))
+          print('unresolved allowed terminals:',
+                [f'0x{x:08x}' for x in unresolved])
+          print('first additions:',
+                [f'0x{x:08x}' for x in addresses[:80]])
+          print('last additions:',
+                [f'0x{x:08x}' for x in addresses[-80:]])
           PY
