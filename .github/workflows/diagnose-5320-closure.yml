@@ -111,6 +111,25 @@ jobs:
                       f"    0x{source:08x} {kind} "
                       f"{'Thumb' if thumb else 'ARM'} size={size}"
                   )
+                  source_offset = source - ROM_BASE
+                  print(
+                      '      source bytes:',
+                      rom[source_offset:source_offset + 16].hex(' '),
+                  )
+                  try:
+                      source_operations = decode(source, thumb)
+                      for operation in source_operations:
+                          print('      pcode:', operation)
+                          if operation.opcode.name in (
+                              'BRANCH', 'CBRANCH', 'CALL',
+                          ):
+                              node = operation.inputs[0]
+                              print(
+                                  '      raw target:',
+                                  node.space.name, hex(node.offset),
+                              )
+                  except Exception as error:
+                      print('      source decode error:', error)
               if not incoming[target]:
                   print('    none')
               for thumb in (True, False):
