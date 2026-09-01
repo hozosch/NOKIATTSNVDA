@@ -162,7 +162,7 @@ jobs:
           print('inline switch8 skipped entries:',p['dsp_inline_switch8_skipped_count'])
           print('inline switch8 union instructions:',p['dsp_inline_switch8_instruction_count'])
           print('inline switch8 unresolved terminals:',p['dsp_inline_switch8_unresolved_terminals'])
-          for address in (0x830f9d60,0x830fad30,0x830fae2c,0x830fae3c,0x830fae42,0x830fb16e):
+          for address in (0x830f9d60,0x830fad30,0x830fae2c,0x830fae3c,0x830fae42,0x830fb16e,0x830ffb9a,0x830ffbdc):
               print(f'0x{address:08x} present:',any(int(i['address'])==address for i in p['instructions']))
           print('native lifecycle instructions after merge:',p['instruction_count'])
           PY
@@ -231,6 +231,7 @@ jobs:
           required_dsp=(
               0x830f9d60, 0x830fad30, 0x830fae2c,
               0x830fae3c, 0x830fae42, 0x830fb16e,
+              0x830ffb98, 0x830ffb9a, 0x830ffbdc,
           )
           missing_dsp=[
               address for address in required_dsp

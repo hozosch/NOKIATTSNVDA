@@ -6,6 +6,8 @@ of Symbian's switch8 thunk.  The 5320 frontend reaches the switch through an
 indirect ARM veneer, so a dynamic trace otherwise reveals one case at a time.
 Invalid halfword entries (the middle of 32-bit instructions) are recorded and
 skipped; every valid entry is recursively closed over branches and direct calls.
+Labels supplied by an existing AOT trace remain traversal anchors: the collector
+decodes through them and emits only missing branches and fallthroughs.
 """
 from __future__ import annotations
 
@@ -115,16 +117,15 @@ def collect(rom: bytes, entry: int, thumb: bool, depth: int,
             continue
         local_seen.add(address)
         key = (address, thumb)
-        if key in known:
-            continue
         old = best_depth.get(key)
         if old is not None and old <= depth:
             continue
         best_depth[key] = depth
         ops, size = translate(rom, address, thumb)
-        result[key] = size
-        if len(result) > MAX_INSTRUCTIONS:
-            raise ValueError("DSP helper trace exceeded instruction budget")
+        if key not in known:
+            result[key] = size
+            if len(result) > MAX_INSTRUCTIONS:
+                raise ValueError("DSP helper trace exceeded instruction budget")
 
         falls_through = True
         for op in ops:
@@ -191,7 +192,8 @@ def main() -> None:
         type=Path,
         help=(
             "JSON trace whose instruction labels are already available; may "
-            "be repeated to stop recursion at the existing AOT boundary."
+            "be repeated. Existing labels are traversed to discover missing "
+            "branches and fallthroughs, but are not emitted again."
         ),
     )
     args = parser.parse_args()
