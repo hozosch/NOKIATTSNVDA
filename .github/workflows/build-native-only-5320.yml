@@ -65,7 +65,8 @@ jobs:
             build/native/native-lifecycle-trace.json \
             build/native/native-lifecycle-closed.json \
             --max-external-call-depth 2 \
-            --max-new-instructions 120000
+            --max-new-instructions 120000 \
+            --thumb-switch16 0x830e9024:0x830e9026:110
           mv build/native/native-lifecycle-closed.json \
             build/native/native-lifecycle-trace.json
 
@@ -222,6 +223,7 @@ jobs:
           print('static control-flow decode errors:', native.get('static_control_flow_decode_errors'))
           print('static control-flow control errors:', native.get('static_control_flow_control_errors'))
           print('static control-flow mode conflicts:', native.get('static_control_flow_mode_conflicts'))
+          print('static control-flow switch16 tables:', native.get('static_control_flow_switch16_tables'))
           print('extra DSP helper entries:', native.get('extra_dsp_helper_entries'))
           print('extra DSP helper counts:', native.get('extra_dsp_helper_counts'))
           print('translated labels:', labels)
@@ -309,6 +311,33 @@ jobs:
               )
           if native.get('static_control_flow_control_errors'):
               raise SystemExit('static control-flow closure has unresolved direct targets')
+          switch16=native.get('static_control_flow_switch16_tables') or []
+          if len(switch16) != 1:
+              raise SystemExit(f'unexpected switch16 table set: {switch16!r}')
+          table=switch16[0]
+          if (
+              table.get('table_base') != '0x830e9024'
+              or table.get('target_base') != '0x830e9026'
+              or table.get('case_count') != 110
+              or table.get('unique_target_count') != 71
+          ):
+              raise SystemExit(f'unexpected switch16 table metadata: {table!r}')
+          required_switch16=(
+              0x830e93ce, 0x830ea956, 0x830ead6c, 0x830eb2a4,
+              0x830ed036, 0x830ed03a,
+          )
+          missing_switch16=[
+              address for address in required_switch16
+              if f'L_{address:08x}:' not in corpus
+          ]
+          for address in required_switch16:
+              print(f'closed switch16 label 0x{address:08x}:',
+                    f'L_{address:08x}:' in corpus)
+          if missing_switch16:
+              raise SystemExit(
+                  'switch16 closure missed regression labels: ' +
+                  ', '.join(f'0x{x:08x}' for x in missing_switch16)
+              )
           print('snapshot bytes:', Path('build/native/5320-de-male.snapshot').stat().st_size)
           PY
 
