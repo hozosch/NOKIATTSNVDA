@@ -47,10 +47,26 @@ jobs:
           import sys
           from pathlib import Path
 
+          import pypcode
+
           sys.path.insert(0, str(Path.cwd()))
           import tools.collect_5320_dsp_wrapper_trace as dsp
 
           dsp.MAX_INSTRUCTIONS=32768
+          contexts={
+              True:pypcode.Context('ARM:LE:32:v8T'),
+              False:pypcode.Context('ARM:LE:32:v8'),
+          }
+          def cached_translate(rom,address,thumb):
+              off=address-dsp.ROM_BASE
+              translated=contexts[thumb].translate(
+                  rom[off:off+16],
+                  base_address=address,
+                  max_instructions=1,
+              )
+              ops=list(translated.ops)
+              return ops,dsp.instruction_size(ops)
+          dsp.translate=cached_translate
           root=Path('build/run48-aot')
           rom=Path('build/test18-addon/data/SYM.ROM').read_bytes()
           payload=json.loads(
