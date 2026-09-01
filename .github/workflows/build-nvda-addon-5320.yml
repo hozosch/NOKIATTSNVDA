@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "addon/**"
+      - "addon/synthDrivers/**"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/scripts/instrument_runtime_lifecycle.py"
       - ".github/workflows/build-nvda-addon-5320.yml"
@@ -18,12 +18,28 @@ jobs:
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v7
+
+      - name: Download frozen Test 18 firmware and configuration
+        uses: actions/download-artifact@v7
+        with:
+          name: nokiaNative5320-0.1.0-test18
+          path: build/test18-package
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33459286021
+          github-token: ${{ github.token }}
+
+      - name: Extract frozen Test 18 data
+        shell: bash
+        run: |
+          addon=$(find build/test18-package -name '*.nvda-addon' -print -quit)
+          test -n "$addon"
+          unzip -q "$addon" -d build/test18-addon
       - uses: actions/download-artifact@v7
         with:
           name: nokia-5320-full-aot
           path: build/full-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33454096950
+          run-id: 33502193337
           github-token: ${{ github.token }}
       - name: Build current ARM64 and ARM64EC runtimes
         shell: pwsh
@@ -57,13 +73,12 @@ jobs:
       - name: Smoke-test ARM64EC synthesis
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/smoke-upstream
           snapshot=$(find build/full-aot -name '5320-de-male.snapshot' -print -quit)
           python tools/smoke_native_5320_runtime.py \
             build/native-arm64ec/nokia_runtime_5320_arm64ec.dll \
-            build/smoke-upstream/addon/roms/5320/SYM.ROM \
+            build/test18-addon/data/SYM.ROM \
             "$snapshot" \
-            build/smoke-upstream/addon/roms/5320/files/system/data
+            build/test18-addon/data/config
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -74,9 +89,9 @@ jobs:
           snapshot=$(find build/full-aot -name '5320-de-male.snapshot' -print -quit)
           python tools/smoke_native_5320_runtime.py \
             build/native-arm64/nokia_runtime_5320_arm64.dll \
-            build/smoke-upstream/addon/roms/5320/SYM.ROM \
+            build/test18-addon/data/SYM.ROM \
             "$snapshot" \
-            build/smoke-upstream/addon/roms/5320/files/system/data
+            build/test18-addon/data/config
       - uses: actions/upload-artifact@v6
         with:
           name: nokia-runtime-5320-arm64ec-current
@@ -94,13 +109,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Download closed Run 40 native sources
+      - name: Download frozen Test 18 firmware and configuration
+        uses: actions/download-artifact@v7
+        with:
+          name: nokiaNative5320-0.1.0-test18
+          path: build/test18-package
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33459286021
+          github-token: ${{ github.token }}
+
+      - name: Extract frozen Test 18 data
+        shell: bash
+        run: |
+          addon=$(find build/test18-package -name '*.nvda-addon' -print -quit)
+          test -n "$addon"
+          unzip -q "$addon" -d build/test18-addon
+
+      - name: Download closed Run 43 native sources
         uses: actions/download-artifact@v7
         with:
           name: nokia-5320-full-aot
           path: build/full-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33454096950
+          run-id: 33502193337
           github-token: ${{ github.token }}
 
       - name: Download current ARM64EC runtime
@@ -114,11 +145,6 @@ jobs:
         with:
           name: nokia-runtime-5320-arm64-current
           path: build/runtime-arm64
-
-      - name: Fetch the matching Nokia 5320 data image
-        shell: bash
-        run: |
-          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
 
       - name: Build native x86 runtime for 32-bit NVDA
         shell: pwsh
@@ -156,9 +182,9 @@ jobs:
           snapshot=$(find build/full-aot -name '5320-de-male.snapshot' -print -quit)
           python tools/smoke_native_5320_runtime.py \
             build/native-x64/nokia_runtime_5320_x64.dll \
-            build/upstream/addon/roms/5320/SYM.ROM \
+            build/test18-addon/data/SYM.ROM \
             "$snapshot" \
-            build/upstream/addon/roms/5320/files/system/data
+            build/test18-addon/data/config
 
       - name: Assemble NVDA add-on
         shell: pwsh
@@ -166,6 +192,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data/config", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test19' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -174,10 +201,10 @@ jobs:
           $snapshot = Get-ChildItem -Recurse build/full-aot -Filter '5320-de-male.snapshot' | Select-Object -First 1 -ExpandProperty FullName
           if (!$snapshot) { throw 'Native snapshot not found in full-AOT artifact' }
           Copy-Item $snapshot "$stage/data/5320-de-male.snapshot"
-          Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
-          Copy-Item build/upstream/addon/roms/5320/files/system/data/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test18.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test18.zip build/nokiaNative5320-0.1.0-test18.nvda-addon
+          Copy-Item build/test18-addon/data/SYM.ROM "$stage/data/SYM.ROM"
+          Copy-Item build/test18-addon/data/config/srsf_*_*.bin "$stage/data/config/"
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test19.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test19.zip build/nokiaNative5320-0.1.0-test19.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -198,11 +225,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test18.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test19.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test18
-          path: build/nokiaNative5320-0.1.0-test18.nvda-addon
+          name: nokiaNative5320-0.1.0-test19
+          path: build/nokiaNative5320-0.1.0-test19.nvda-addon
           if-no-files-found: error
