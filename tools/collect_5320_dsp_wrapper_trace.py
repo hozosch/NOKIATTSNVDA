@@ -65,10 +65,44 @@ def translate(rom: bytes, address: int, thumb: bool):
     return ops, instruction_size(ops)
 
 
+def switch8_entries_from_lr(rom: bytes, lr: int) -> dict:
+    """Decode the exact destinations of an EABI ``__switch8`` inline table.
+
+    The ARM helper reads the maximum case index from ``lr - 1``, selects one
+    unsigned byte at ``lr + index``, and branches to ``lr + 2 * byte``.  Thumb
+    LR is odd, so clear the mode bit only after applying the table offset.
+    """
+    if not (lr & 1):
+        raise ValueError(f"switch8 LR must be a Thumb address: 0x{lr:08x}")
+    max_index_offset = lr - 1 - ROM_BASE
+    table_offset = lr - ROM_BASE
+    if max_index_offset < 0 or table_offset >= len(rom):
+        raise ValueError(f"switch8 LR is outside the ROM: 0x{lr:08x}")
+    max_index = rom[max_index_offset]
+    table_end = table_offset + max_index + 1
+    if table_end > len(rom):
+        raise ValueError(f"switch8 table exceeds the ROM: 0x{lr:08x}")
+    offsets = rom[table_offset:table_end]
+    entries = sorted({(lr + 2 * offset) & ~1 for offset in offsets})
+    invalid = [address for address in entries if not allowed(address)]
+    if invalid:
+        raise ValueError(
+            f"switch8 table 0x{lr:08x} leaves the DSP region: "
+            + ", ".join(f"0x{x:08x}" for x in invalid)
+        )
+    return {
+        "lr": lr,
+        "max_index": max_index,
+        "case_count": len(offsets),
+        "entries": entries,
+    }
+
+
 def collect(rom: bytes, entry: int, thumb: bool, depth: int,
             result: dict[tuple[int, bool], int],
             best_depth: dict[tuple[int, bool], int],
-            terminals: set[int]) -> None:
+            terminals: set[int],
+            known: set[tuple[int, bool]]) -> None:
     pending = [entry]
     local_seen: set[int] = set()
     while pending:
@@ -81,6 +115,8 @@ def collect(rom: bytes, entry: int, thumb: bool, depth: int,
             continue
         local_seen.add(address)
         key = (address, thumb)
+        if key in known:
+            continue
         old = best_depth.get(key)
         if old is not None and old <= depth:
             continue
@@ -116,6 +152,7 @@ def collect(rom: bytes, entry: int, thumb: bool, depth: int,
                         result,
                         best_depth,
                         terminals,
+                        known,
                     )
                 else:
                     terminals.add(target)
@@ -139,6 +176,24 @@ def main() -> None:
                         help="start direct entries in ARM instead of Thumb mode")
     parser.add_argument("--switch8-base", type=lambda x: int(x, 0))
     parser.add_argument("--switch8-last", type=lambda x: int(x, 0))
+    parser.add_argument(
+        "--switch8-lr",
+        action="append",
+        type=lambda x: int(x, 0),
+        help=(
+            "Thumb LR of an EABI __switch8 inline byte table; may be repeated. "
+            "Exact branch destinations are decoded from the ROM."
+        ),
+    )
+    parser.add_argument(
+        "--known-trace",
+        action="append",
+        type=Path,
+        help=(
+            "JSON trace whose instruction labels are already available; may "
+            "be repeated to stop recursion at the existing AOT boundary."
+        ),
+    )
     args = parser.parse_args()
 
     if (args.switch8_base is None) != (args.switch8_last is None):
@@ -154,15 +209,36 @@ def main() -> None:
         parser.error("switch8 range must be an ascending halfword range")
 
     direct_entries = [value & ~1 for value in (args.entry or [])]
-    switch_entries = (
+    range_switch_entries = (
         list(range(args.switch8_base, args.switch8_last + 1, 2))
         if args.switch8_base is not None
         else []
     )
-    if not direct_entries and not switch_entries:
-        direct_entries = [DEFAULT_ENTRY]
 
     rom = args.rom.read_bytes()
+    known: set[tuple[int, bool]] = set()
+    for trace_path in args.known_trace or []:
+        trace_payload = json.loads(trace_path.read_text(encoding="utf-8"))
+        for item in trace_payload.get("instructions", []):
+            raw_address = int(item["address"])
+            known.add((
+                raw_address & ~1,
+                bool(item.get("thumb", False)) or bool(raw_address & 1),
+            ))
+    inline_switch_tables = [
+        switch8_entries_from_lr(rom, lr)
+        for lr in (args.switch8_lr or [])
+    ]
+    switch_entries = list(dict.fromkeys([
+        *range_switch_entries,
+        *(
+            entry
+            for table in inline_switch_tables
+            for entry in table["entries"]
+        ),
+    ]))
+    if not direct_entries and not switch_entries:
+        direct_entries = [DEFAULT_ENTRY]
     result: dict[tuple[int, bool], int] = {}
     terminals: set[int] = set()
     successful_entries: list[int] = []
@@ -178,6 +254,7 @@ def main() -> None:
             result,
             best_depth,
             terminals,
+            known,
         )
         successful_entries.append(entry)
 
@@ -210,6 +287,7 @@ def main() -> None:
             result,
             best_depth,
             terminals,
+            known,
         )
     if len(result) > MAX_INSTRUCTIONS:
         raise ValueError("combined DSP helper trace exceeded instruction budget")
@@ -219,6 +297,7 @@ def main() -> None:
     ]
 
     result_addresses = {address for address, _thumb in result}
+    result_addresses.update(address for address, _thumb in known)
     unresolved = sorted(
         address
         for address in terminals
@@ -248,7 +327,22 @@ def main() -> None:
             if args.switch8_last is not None
             else None
         ),
+        "switch8_lrs": [
+            f"0x{table['lr']:08x}" for table in inline_switch_tables
+        ],
+        "switch8_tables": [
+            {
+                "lr": f"0x{table['lr']:08x}",
+                "max_index": table["max_index"],
+                "case_count": table["case_count"],
+                "entries": [
+                    f"0x{entry:08x}" for entry in table["entries"]
+                ],
+            }
+            for table in inline_switch_tables
+        ],
         "native_klatt_entry": f"0x{NATIVE_KLATT_ENTRY:08x}",
+        "known_instruction_count": len(known),
         "instruction_count": len(result),
         "instructions": [
             {"address": address, "size": size, "thumb": thumb}
