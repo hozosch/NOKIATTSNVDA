@@ -34,7 +34,7 @@ jobs:
           run-id: 33459286021
           github-token: ${{ github.token }}
 
-      - name: Diagnose missing DSP continuation
+      - name: Measure full known DSP frontier
         shell: bash
         run: |
           python -m pip install --disable-pip-version-check pypcode
@@ -47,179 +47,46 @@ jobs:
           import sys
           from pathlib import Path
 
-          import pypcode
-
           sys.path.insert(0, str(Path.cwd()))
-          import tools.collect_5320_dsp_wrapper_trace as dsp_collector
-          from tools.collect_5320_dsp_wrapper_trace import (
-              ROM_BASE, allowed, collect, translate,
-          )
-          dsp_collector.MAX_INSTRUCTIONS=32768
+          import tools.collect_5320_dsp_wrapper_trace as dsp
 
+          dsp.MAX_INSTRUCTIONS=32768
           root=Path('build/run48-aot')
           rom=Path('build/test18-addon/data/SYM.ROM').read_bytes()
-          targets=(0x830fc4fe,0x830fc500,0x830fc502,0x830fc504,0x830fc506)
-          print('=== TRACE MEMBERSHIP ===')
-          json_paths=sorted(root.rglob('*.json'))
-          for path in json_paths:
-              try:
-                  payload=json.loads(path.read_text(encoding='utf-8'))
-              except Exception:
-                  continue
-              instructions=payload.get('instructions',[])
-              by_address={int(item['address']):item for item in instructions}
-              hits={f'0x{address:08x}':by_address.get(address) for address in targets}
-              if any(value is not None for value in hits.values()):
-                  print(path, 'count=',len(instructions), 'hits=',hits)
-                  nearby=[
-                      item for item in instructions
-                      if 0x830fc4c0 <= int(item['address']) <= 0x830fc560
-                  ]
-                  print('nearby=',nearby)
-
-          print('=== GENERATED C MEMBERSHIP ===')
-          c_paths=sorted(root.rglob('nokia_frontend_5320_full*.c'))
-          for path in c_paths:
-              lines=path.read_text(encoding='utf-8').splitlines()
-              for address in targets:
-                  needle=f'L_{address:08x}:'
-                  indices=[i for i,line in enumerate(lines) if line==needle]
-                  if indices:
-                      print(path,needle,'line',indices[0]+1)
-                      start=max(0,indices[0]-3)
-                      end=min(len(lines),indices[0]+35)
-                      print('\n'.join(f'{n+1}: {lines[n]}' for n in range(start,end)))
-              for address in targets:
-                  needle=f'0x{address:08x}'
-                  refs=[(i+1,line) for i,line in enumerate(lines) if needle in line]
-                  if refs:
-                      print(path,'refs',needle,refs[:20])
-
-          def disassemble(start,end):
-              print(f'=== THUMB DISASSEMBLY 0x{start:08x}-0x{end:08x} ===')
-              address=start
-              while address<end:
-                  try:
-                      context=pypcode.Context('ARM:LE:32:v8T')
-                      result=context.disassemble(
-                          rom[address-ROM_BASE:address-ROM_BASE+8],
-                          base_address=address,
-                          max_instructions=1,
-                      )
-                      instructions=list(result.instructions)
-                      if not instructions:
-                          print(f'0x{address:08x}: no instruction')
-                          address+=2
-                          continue
-                      instruction=instructions[0]
-                      raw=rom[
-                          address-ROM_BASE:
-                          address-ROM_BASE+instruction.length
-                      ].hex()
-                      print(
-                          f'0x{address:08x} {raw:8s} '
-                          f'{instruction.mnem:8s} {instruction.body}'
-                      )
-                      address+=instruction.length
-                  except Exception as error:
-                      print(f'0x{address:08x}: {type(error).__name__}: {error}')
-                      address+=2
-
-          disassemble(0x830fc4c0,0x830fc560)
-
-          print('=== PCODE CONTROL OPERATIONS ===')
-          for address in targets:
-              for thumb in (True,False):
-                  try:
-                      ops,size=translate(rom,address,thumb)
-                  except Exception as error:
-                      print(hex(address),'thumb=',thumb,type(error).__name__,error)
-                      continue
-                  controls=[
-                      str(op) for op in ops
-                      if op.opcode.name in (
-                          'BRANCH','CBRANCH','CALL','BRANCHIND',
-                          'CALLIND','RETURN'
-                      )
-                  ]
-                  print(hex(address),'thumb=',thumb,'size=',size,'controls=',controls)
-
-          print('=== ROM POINTER REFERENCES ===')
-          for value in (0x830fc504,0x830fc505,0x830fc506,0x830fc507):
-              needle=value.to_bytes(4,'little')
-              offsets=[]
-              start=0
-              while True:
-                  at=rom.find(needle,start)
-                  if at<0:
-                      break
-                  offsets.append(ROM_BASE+at)
-                  start=at+1
-              print(f'0x{value:08x}:',[f'0x{x:08x}' for x in offsets])
-
-          print('=== STANDALONE CLOSURE FROM GAP ===')
-          for entry in (0x830fc504,0x830fc506):
-              result={}
-              depths={}
-              terminals=set()
-              try:
-                  collect(
-                      rom,entry,True,0,result,depths,terminals,set()
-                  )
-                  addresses=sorted(address for address,_thumb in result)
-                  print(
-                      f'entry=0x{entry:08x}',
-                      'instructions=',len(result),
-                      'range=',
-                      (
-                          f'0x{addresses[0]:08x}-0x{addresses[-1]:08x}'
-                          if addresses else 'empty'
-                      ),
-                      'terminals=',[f'0x{x:08x}' for x in sorted(terminals)],
-                  )
-                  print(
-                      'sample=',
-                      [f'0x{x:08x}' for x in addresses[:40]],
-                      'tail=',
-                      [f'0x{x:08x}' for x in addresses[-40:]],
-                  )
-              except Exception as error:
-                  print(
-                      f'entry=0x{entry:08x}',
-                      type(error).__name__,error,
-                      'partial=',len(result),
-                      'terminals=',[f'0x{x:08x}' for x in sorted(terminals)],
-                  )
-
-          print('=== FULL KNOWN DSP FRONTIER ===')
-          native_payload=json.loads(
+          payload=json.loads(
               (root/'build/native/native-lifecycle-trace.json').read_text(
                   encoding='utf-8'
               )
           )
           known=set()
-          for item in native_payload.get('instructions',[]):
+          for item in payload.get('instructions',[]):
               raw=int(item['address'])
               known.add((
                   raw & ~1,
                   bool(item.get('thumb',False)) or bool(raw & 1),
               ))
-          frontier=sorted(
-              key for key in known if allowed(key[0])
-          )
+          frontier=sorted(key for key in known if dsp.allowed(key[0]))
           result={}
           depths={}
           terminals=set()
+          errors=[]
           for address,thumb in frontier:
-              collect(
-                  rom,address,thumb,0,result,depths,terminals,known
-              )
+              try:
+                  dsp.collect(
+                      rom,address,thumb,0,result,depths,terminals,known
+                  )
+              except Exception as error:
+                  match=re.search(r'r0x([0-9a-fA-F]+)',str(error))
+                  failed=(
+                      int(match.group(1),16) if match else address
+                  )
+                  errors.append((failed,thumb,type(error).__name__,str(error)))
           addresses=sorted(address for address,_thumb in result)
           resolved={address for address,_thumb in known}
           resolved.update(addresses)
           unresolved=sorted(
               address for address in terminals
-              if allowed(address) and address not in resolved
+              if dsp.allowed(address) and address not in resolved
           )
           print('known DSP frontier labels:',len(frontier))
           print('new frontier instructions:',len(result))
@@ -229,10 +96,20 @@ jobs:
           ))
           print('0x830fc506 added:',
                 any(address==0x830fc506 for address,_thumb in result))
+          print('decode errors:',len(errors))
+          for item in errors:
+              print(
+                  f'  0x{item[0]:08x} thumb={item[1]} '
+                  f'{item[2]}: {item[3]}'
+              )
           print('unresolved allowed terminals:',
                 [f'0x{x:08x}' for x in unresolved])
           print('first additions:',
                 [f'0x{x:08x}' for x in addresses[:80]])
           print('last additions:',
                 [f'0x{x:08x}' for x in addresses[-80:]])
+          if not any(address==0x830fc506 for address,_thumb in result):
+              raise SystemExit('failed continuation was not closed')
+          if unresolved:
+              raise SystemExit('frontier has unresolved allowed terminals')
           PY
