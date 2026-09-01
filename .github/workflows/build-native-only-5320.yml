@@ -90,6 +90,14 @@ jobs:
             --known-trace build/native/native-lifecycle-trace.json \
             --known-trace build/native/dsp-helper-9d60.json \
             --known-trace build/native/dsp-switch8.json
+          # Close every missing sequential continuation at the boundary of the
+          # complete known DSP corpus, then recursively follow its direct flow.
+          python tools/collect_5320_dsp_frontier_trace.py \
+            build-5320.rom build/native/dsp-known-frontier.json \
+            --known-trace build/native/native-lifecycle-trace.json \
+            --known-trace build/native/dsp-helper-9d60.json \
+            --known-trace build/native/dsp-switch8.json \
+            --known-trace build/native/dsp-inline-switch8-de9d.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -98,12 +106,14 @@ jobs:
               Path('build/native/dsp-helper-9d60.json'),
               Path('build/native/dsp-switch8.json'),
               Path('build/native/dsp-inline-switch8-de9d.json'),
+              Path('build/native/dsp-known-frontier.json'),
           ]
           p=json.loads(base.read_text(encoding='utf-8'))
           by_key={(int(i['address']),bool(i.get('thumb',False))):i for i in p['instructions']}
           counts={}
           switch=None
           inline_switches=[]
+          frontier=None
           for helper in helper_paths:
               h=json.loads(helper.read_text(encoding='utf-8'))
               counts[helper.stem]=h['instruction_count']
@@ -111,18 +121,27 @@ jobs:
                   switch=h
               if h.get('switch8_lrs'):
                   inline_switches.append(h)
+              if h.get('dsp_boundary_candidate_count') is not None:
+                  frontier=h
               for item in h['instructions']:
                   by_key[(int(item['address']),bool(item.get('thumb',False)))]=item
           if switch is None:
               raise SystemExit('DSP switch8 closure was not generated')
+          if frontier is None:
+              raise SystemExit('DSP boundary frontier was not generated')
           p['instructions']=sorted(by_key.values(),key=lambda i:(int(i['address']),bool(i.get('thumb',False))))
           p['instruction_count']=len(p['instructions'])
           p['extra_dsp_helper_entries']=[
               '0x830f9d60',
               'switch8:0x830fad30-0x830fae42',
               'switch8-inline-lr:0x830fde9d',
+              'known-dsp-boundary-frontier',
           ]
           p['extra_dsp_helper_counts']=counts
+          p['dsp_frontier_candidate_count']=frontier['dsp_boundary_candidate_count']
+          p['dsp_frontier_instruction_count']=frontier['instruction_count']
+          p['dsp_frontier_decode_errors']=frontier['decode_errors']
+          p['dsp_frontier_unresolved_terminals']=frontier['unresolved_terminals']
           p['dsp_switch8_candidate_count']=len(switch['entries'])
           p['dsp_switch8_successful_count']=len(switch['successful_entries'])
           p['dsp_switch8_skipped_count']=len(switch['skipped_entries'])
@@ -162,7 +181,11 @@ jobs:
           print('inline switch8 skipped entries:',p['dsp_inline_switch8_skipped_count'])
           print('inline switch8 union instructions:',p['dsp_inline_switch8_instruction_count'])
           print('inline switch8 unresolved terminals:',p['dsp_inline_switch8_unresolved_terminals'])
-          for address in (0x830f9d60,0x830fad30,0x830fae2c,0x830fae3c,0x830fae42,0x830fb16e,0x830ffb9a,0x830ffbdc):
+          print('DSP frontier candidates:',p['dsp_frontier_candidate_count'])
+          print('DSP frontier instructions:',p['dsp_frontier_instruction_count'])
+          print('DSP frontier decode errors:',p['dsp_frontier_decode_errors'])
+          print('DSP frontier unresolved terminals:',p['dsp_frontier_unresolved_terminals'])
+          for address in (0x830f9d60,0x830fad30,0x830fae2c,0x830fae3c,0x830fae42,0x830fb16e,0x830ffb9a,0x830ffbdc,0x830fc506):
               print(f'0x{address:08x} present:',any(int(i['address'])==address for i in p['instructions']))
           print('native lifecycle instructions after merge:',p['instruction_count'])
           PY
@@ -232,6 +255,7 @@ jobs:
               0x830f9d60, 0x830fad30, 0x830fae2c,
               0x830fae3c, 0x830fae42, 0x830fb16e,
               0x830ffb98, 0x830ffb9a, 0x830ffbdc,
+              0x830fc504, 0x830fc506,
           )
           missing_dsp=[
               address for address in required_dsp
@@ -275,6 +299,23 @@ jobs:
               raise SystemExit(
                   'DSP inline switch8 closure has unresolved terminals'
               )
+          frontier_stats=(
+              native.get('dsp_frontier_candidate_count'),
+              native.get('dsp_frontier_instruction_count'),
+          )
+          print('DSP known-frontier stats:',frontier_stats)
+          if frontier_stats != (396,2222):
+              raise SystemExit(
+                  f'unexpected DSP known-frontier statistics: {frontier_stats}'
+              )
+          if native.get('dsp_frontier_unresolved_terminals'):
+              raise SystemExit(
+                  'DSP known-frontier closure has unresolved terminals'
+              )
+          print(
+              'DSP known-frontier decode errors:',
+              native.get('dsp_frontier_decode_errors'),
+          )
           inline_switch_entries=(
               0x830fdeb4,0x830fdec0,0x830fdec2,0x830fdecc,
               0x830fded6,0x830fdee4,0x830fdeee,0x830fdef8,
@@ -388,6 +429,7 @@ jobs:
             build/native/dsp-helper-9d60.json
             build/native/dsp-switch8.json
             build/native/dsp-inline-switch8-de9d.json
+            build/native/dsp-known-frontier.json
             build/native/full-frontend-yields.json
             build/native/5320-de-male.snapshot
           if-no-files-found: error
