@@ -46,6 +46,17 @@ jobs:
             native/generated/nokia_klatt_5320.c.gz \
             build/native/native-lifecycle-trace.json
 
+          # Close input-dependent frontend alternatives before lifting.  This
+          # replaces the former one-address-at-a-time runtime patch cycle.
+          python tools/expand_5320_frontend_control_flow.py \
+            build-5320.rom \
+            build/native/native-lifecycle-trace.json \
+            build/native/native-lifecycle-closed.json \
+            --max-external-call-depth 2 \
+            --max-new-instructions 120000
+          mv build/native/native-lifecycle-closed.json \
+            build/native/native-lifecycle-trace.json
+
           # The initialized snapshot reaches three small DSP wrapper closures
           # that must remain in AOT even though the Klatt body itself is native.
           # Collect each direct entry explicitly before filtering the DSP range.
@@ -138,6 +149,13 @@ jobs:
           labels=len(re.findall(r'(?m)^L_[0-9a-f]{8}:$',corpus))
           print('full lifecycle instructions:', full['instruction_count'])
           print('native lifecycle after Klatt/helper merge:', native['instruction_count'])
+          print('static control-flow original instructions:', native.get('static_control_flow_original_instructions'))
+          print('static control-flow additions:', native.get('static_control_flow_additions'))
+          print('static control-flow processed instructions:', native.get('static_control_flow_processed_instructions'))
+          print('static control-flow skipped calls:', native.get('static_control_flow_skipped_calls'))
+          print('static control-flow decode errors:', native.get('static_control_flow_decode_errors'))
+          print('static control-flow control errors:', native.get('static_control_flow_control_errors'))
+          print('static control-flow mode conflicts:', native.get('static_control_flow_mode_conflicts'))
           print('extra DSP helper entries:', native.get('extra_dsp_helper_entries'))
           print('extra DSP helper counts:', native.get('extra_dsp_helper_counts'))
           print('translated labels:', labels)
@@ -147,6 +165,24 @@ jobs:
           if ('L_830f9d60:' not in corpus or 'L_830fae3c:' not in corpus
                   or 'L_830fae42:' not in corpus):
               raise SystemExit('required DSP helper entry label missing from final AOT corpus')
+          regression_addresses=(
+              0x830ea398, 0x830ea3d0, 0x830eccd2, 0x830ecbc2,
+              0x830dbbd0, 0x830db366, 0x830db3b8,
+          )
+          missing=[
+              address for address in regression_addresses
+              if f'L_{address:08x}:' not in corpus
+          ]
+          for address in regression_addresses:
+              print(f'closed regression label 0x{address:08x}:',
+                    f'L_{address:08x}:' in corpus)
+          if missing:
+              raise SystemExit(
+                  'static control-flow closure missed regression labels: ' +
+                  ', '.join(f'0x{x:08x}' for x in missing)
+              )
+          if native.get('static_control_flow_control_errors'):
+              raise SystemExit('static control-flow closure has unresolved direct targets')
           print('snapshot bytes:', Path('build/native/5320-de-male.snapshot').stat().st_size)
           PY
 
