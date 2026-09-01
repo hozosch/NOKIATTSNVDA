@@ -48,6 +48,69 @@ def parse_switch16(value: str) -> tuple[int, int, int]:
     return table_base, target_base, case_count
 
 
+def detect_thumb_switch16_tables(rom: bytes) -> list[tuple[int, int, int, int]]:
+    """Find the RVCT inline unsigned-halfword switch idiom in the ROM.
+
+    The compiler emits five Thumb instructions followed by the table::
+
+        lsls Rn, Rn, #1
+        add  Rn, pc
+        ldrh Rn, [Rn, #4]
+        lsls Rn, Rn, #1
+        add  pc, Rn
+
+    A nearby ``cmp Rn, #case_count`` guarded by BCC/BCS supplies the table
+    bound.  Returning the dispatch address as well as the bases lets the
+    caller activate only tables on lifecycle-relevant code pages.
+    """
+    tables: list[tuple[int, int, int, int]] = []
+    for register in range(8):
+        lsl_one = 0x0040 | (register << 3) | register
+        pattern_words = (
+            lsl_one,
+            0x4478 | register,  # add Rn, pc
+            0x8880 | (register << 3) | register,  # ldrh Rn,[Rn,#4]
+            lsl_one,
+            0x4487 | (register << 3),  # add pc, Rn
+        )
+        pattern = b"".join(word.to_bytes(2, "little") for word in pattern_words)
+        offset = 0
+        while True:
+            offset = rom.find(pattern, offset)
+            if offset < 0:
+                break
+            dispatch = ROM_BASE + offset
+            compare_offset = None
+            case_count = None
+            # All known RVCT variants place the unsigned range check within
+            # eight Thumb instructions of the switch sequence.
+            for distance in range(2, 18, 2):
+                candidate = offset - distance
+                if candidate < 0:
+                    break
+                word = int.from_bytes(rom[candidate:candidate + 2], "little")
+                if (
+                    word & 0xF800 == 0x2800
+                    and (word >> 8) & 7 == register
+                    and word & 0xFF
+                ):
+                    between = range(candidate + 2, offset, 2)
+                    has_unsigned_guard = any(
+                        (branch := int.from_bytes(rom[pos:pos + 2], "little"))
+                        & 0xF000 == 0xD000
+                        and (branch >> 8) & 0xF in (2, 3)
+                        for pos in between
+                    )
+                    if has_unsigned_guard:
+                        compare_offset = candidate
+                        case_count = word & 0xFF
+                        break
+            if compare_offset is not None and case_count is not None:
+                tables.append((dispatch + 10, dispatch + 12, case_count, dispatch))
+            offset += 2
+    return sorted(set(tables))
+
+
 def instruction_size(operations) -> int:
     for operation in operations:
         if operation.opcode.name == "IMARK":
@@ -110,6 +173,14 @@ def main() -> None:
             "jump table; destination = TARGET_BASE + 2 * table[index]"
         ),
     )
+    parser.add_argument(
+        "--auto-thumb-switch16",
+        action="store_true",
+        help=(
+            "detect RVCT Thumb halfword jump tables on lifecycle-relevant "
+            "code pages and close every case"
+        ),
+    )
     args = parser.parse_args()
 
     rom = args.rom.read_bytes()
@@ -170,7 +241,19 @@ def main() -> None:
         enqueue(address, bool(item.get("thumb", False)), 0)
 
     switch16_tables = []
-    for table_base, target_base, case_count in args.thumb_switch16:
+    activated_switch16: set[tuple[int, int, int]] = set()
+
+    def activate_switch16(
+        table_base: int,
+        target_base: int,
+        case_count: int,
+        *,
+        source: str,
+        dispatch: int | None = None,
+    ) -> None:
+        key = (table_base, target_base, case_count)
+        if key in activated_switch16:
+            return
         table_offset = table_base - ROM_BASE
         table_size = case_count * 2
         if table_offset < 0 or table_offset + table_size > len(rom):
@@ -197,16 +280,55 @@ def main() -> None:
             )
         for address in unique_entries:
             enqueue(address, True, 0)
-        switch16_tables.append({
+        table = {
             "table_base": f"0x{table_base:08x}",
             "target_base": f"0x{target_base:08x}",
             "case_count": case_count,
             "unique_target_count": len(unique_entries),
             "targets": [f"0x{x:08x}" for x in unique_entries],
-        })
+            "source": source,
+        }
+        if dispatch is not None:
+            table["dispatch"] = f"0x{dispatch:08x}"
+        switch16_tables.append(table)
+        activated_switch16.add(key)
+
+    for table_base, target_base, case_count in args.thumb_switch16:
+        activate_switch16(
+            table_base,
+            target_base,
+            case_count,
+            source="explicit",
+        )
+
+    auto_switches_by_page: dict[int, list[tuple[int, int, int, int]]] = {}
+    if args.auto_thumb_switch16:
+        for table in detect_thumb_switch16_tables(rom):
+            auto_switches_by_page.setdefault(table[3] >> 12, []).append(table)
+
+    activated_auto_pages: set[int] = set()
+
+    def activate_auto_switches(page: int) -> None:
+        if page in activated_auto_pages:
+            return
+        activated_auto_pages.add(page)
+        for table_base, target_base, case_count, dispatch in (
+            auto_switches_by_page.get(page, [])
+        ):
+            activate_switch16(
+                table_base,
+                target_base,
+                case_count,
+                source="auto-rvct",
+                dispatch=dispatch,
+            )
+
+    for page in original_pages:
+        activate_auto_switches(page)
 
     while pending:
         address, thumb, external_depth = pending.popleft()
+        activate_auto_switches(address >> 12)
         previous = processed_depth.get(address)
         if previous is not None and previous <= external_depth:
             continue
