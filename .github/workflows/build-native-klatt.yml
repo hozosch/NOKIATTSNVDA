@@ -1,26 +1,9 @@
 name: Build native Nokia Klatt engine
 
+# Manual only: recapturing the historical lifecycle trace still requires the
+# upstream nokiaKlatt harness, which is currently unavailable.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "native/generated/**"
-      - "native/nokia_klatt_bridge.c"
-      - "native/nokia_config_blobs.c"
-      - "native/nokia_runtime.c"
-      - "native/nokia_runtime.h"
-      - "tools/split_frontend_aot.py"
-      - "tools/optimise_frontend_memory.py"
-      - "tools/extend_prime_aot.py"
-      - "tools/collect_hot_frontend_trace.py"
-      - "tools/collect_5320_dsp_wrapper_trace.py"
-      - "tools/collect_5320_full_lifecycle_trace.py"
-      - "tools/instrument_frontend_yields.py"
-      - "tools/report_frontend_yields.py"
-      - "tools/inspect_frontend_addresses.py"
-      - "tools/decode_5320_rom_addresses.py"
-      - ".github/scripts/enter-msvc.ps1"
-      - ".github/workflows/build-native-klatt.yml"
 
 permissions:
   contents: read
