@@ -1,0 +1,130 @@
+name: Diagnose 5320 closure decode gaps
+
+on:
+  push:
+    paths:
+      - ".github/workflows/diagnose-5320-closure.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download closed AOT trace
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-5320-full-aot
+          path: build/closed-aot
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33454096950
+          github-token: ${{ github.token }}
+
+      - name: Inspect undecodable closure destinations
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pypcode
+          git clone --depth 1 https://github.com/djgraco/nokiaKlatt.git build/upstream
+          trace=$(find build/closed-aot -name native-lifecycle-trace.json -print -quit)
+          test -n "$trace"
+          python - "$trace" build/upstream/addon/roms/5320/SYM.ROM <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          import pypcode
+
+          ROM_BASE = 0x80000000
+          TARGETS = {0x82BFC426, 0x830EC83A, 0x830EC144}
+
+          trace = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          rom = Path(sys.argv[2]).read_bytes()
+          items = {int(item['address']): item for item in trace['instructions']}
+          contexts = {
+              False: pypcode.Context('ARM:LE:32:v8'),
+              True: pypcode.Context('ARM:LE:32:v8T'),
+          }
+
+          def decode(address, thumb):
+              offset = address - ROM_BASE
+              return list(contexts[thumb].translate(
+                  rom[offset:offset + 16],
+                  base_address=address,
+                  max_instructions=1,
+              ).ops)
+
+          def size_of(operations):
+              for operation in operations:
+                  if operation.opcode.name == 'IMARK':
+                      return operation.inputs[0].size
+              raise ValueError('instruction has no IMARK')
+
+          def target_of(operation):
+              node = operation.inputs[0]
+              if node.space.name != 'ram':
+                  return None
+              return node.offset & ~1
+
+          incoming = {target: [] for target in TARGETS}
+          for address, item in items.items():
+              thumb = bool(item.get('thumb', False))
+              try:
+                  operations = decode(address, thumb)
+                  size = size_of(operations)
+              except Exception:
+                  continue
+              falls = True
+              controls = []
+              for operation in operations:
+                  name = operation.opcode.name
+                  if name in ('BRANCH', 'CBRANCH', 'CALL'):
+                      destination = target_of(operation)
+                      controls.append(name)
+                      if destination in TARGETS:
+                          incoming[destination].append(
+                              (address, name, thumb, size)
+                          )
+                      if name == 'BRANCH':
+                          falls = False
+                  elif name in ('BRANCHIND', 'RETURN'):
+                      controls.append(name)
+                      falls = False
+                  elif name == 'CALLIND':
+                      controls.append(name)
+              if falls and address + size in TARGETS:
+                  incoming[address + size].append(
+                      (address, 'FALLTHROUGH/' + '+'.join(controls or ['LINEAR']),
+                       thumb, size)
+                  )
+
+          for target in sorted(TARGETS):
+              print(f'target 0x{target:08x}')
+              print('  recorded in closed trace:', target in items)
+              offset = target - ROM_BASE
+              print('  bytes:', rom[offset:offset + 16].hex(' '))
+              print('  incoming edges:')
+              for source, kind, thumb, size in incoming[target]:
+                  print(
+                      f"    0x{source:08x} {kind} "
+                      f"{'Thumb' if thumb else 'ARM'} size={size}"
+                  )
+              if not incoming[target]:
+                  print('    none')
+              for thumb in (True, False):
+                  try:
+                      operations = decode(target, thumb)
+                      print(
+                          f"  {'Thumb' if thumb else 'ARM'} decode:",
+                          ','.join(operation.opcode.name
+                                   for operation in operations),
+                          'size=', size_of(operations),
+                      )
+                  except Exception as error:
+                      print(
+                          f"  {'Thumb' if thumb else 'ARM'} decode error:",
+                          type(error).__name__, error,
+                      )
+          PY
