@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Collect bounded 5320 DSP wrapper/helper paths before native Klatt.
 
-By default this starts at the historical wrapper entry 0x830f7bce.  --entry
-allows migration of additional dynamically reached helpers while keeping the
-same bounded direct-call closure and treating the native Klatt generator entry
-as a terminal host boundary.
+Besides ordinary direct entries, this collector can close every decodable case
+of Symbian's switch8 thunk.  The 5320 frontend reaches the switch through an
+indirect ARM veneer, so a dynamic trace otherwise reveals one case at a time.
+Invalid halfword entries (the middle of 32-bit instructions) are recorded and
+skipped; every valid entry is recursively closed over branches and direct calls.
 """
 from __future__ import annotations
 
@@ -22,6 +23,10 @@ DEFAULT_ENTRY = 0x830F7BCE
 NATIVE_KLATT_ENTRY = 0x830F9DB0
 MAX_CALL_DEPTH = 6
 MAX_INSTRUCTIONS = 4096
+_CONTEXTS = {
+    False: pypcode.Context("ARM:LE:32:v8"),
+    True: pypcode.Context("ARM:LE:32:v8T"),
+}
 
 
 def direct_target(varnode) -> int:
@@ -53,10 +58,12 @@ def allowed(address: int) -> bool:
 
 
 def translate(rom: bytes, address: int, thumb: bool):
-    ctx = pypcode.Context("ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8")
     off = address - ROM_BASE
-    result = ctx.translate(rom[off:off + 16], base_address=address,
-                           max_instructions=1)
+    result = _CONTEXTS[thumb].translate(
+        rom[off:off + 16],
+        base_address=address,
+        max_instructions=1,
+    )
     ops = list(result.ops)
     return ops, instruction_size(ops)
 
@@ -104,8 +111,15 @@ def collect(rom: bytes, entry: int, thumb: bool, depth: int,
                 if target == NATIVE_KLATT_ENTRY:
                     terminals.add(target)
                 elif depth < MAX_CALL_DEPTH and allowed(target):
-                    collect(rom, target, call_mode(ops, thumb), depth + 1,
-                            result, best_depth, terminals)
+                    collect(
+                        rom,
+                        target,
+                        call_mode(ops, thumb),
+                        depth + 1,
+                        result,
+                        best_depth,
+                        terminals,
+                    )
                 else:
                     terminals.add(target)
             elif name in ("BRANCHIND", "CALLIND", "RETURN"):
@@ -118,20 +132,107 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("rom", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--entry", type=lambda x: int(x, 0), default=DEFAULT_ENTRY)
+    parser.add_argument(
+        "--entry",
+        action="append",
+        type=lambda x: int(x, 0),
+        help="direct helper entry; may be repeated",
+    )
     parser.add_argument("--arm", action="store_true",
-                        help="start entry in ARM instead of Thumb mode")
+                        help="start direct entries in ARM instead of Thumb mode")
+    parser.add_argument("--switch8-base", type=lambda x: int(x, 0))
+    parser.add_argument("--switch8-last", type=lambda x: int(x, 0))
     args = parser.parse_args()
+
+    if (args.switch8_base is None) != (args.switch8_last is None):
+        parser.error("--switch8-base and --switch8-last must be used together")
+    if (
+        args.switch8_base is not None
+        and (
+            args.switch8_base & 1
+            or args.switch8_last & 1
+            or args.switch8_last < args.switch8_base
+        )
+    ):
+        parser.error("switch8 range must be an ascending halfword range")
+
+    direct_entries = [value & ~1 for value in (args.entry or [])]
+    switch_entries = (
+        list(range(args.switch8_base, args.switch8_last + 1, 2))
+        if args.switch8_base is not None
+        else []
+    )
+    if not direct_entries and not switch_entries:
+        direct_entries = [DEFAULT_ENTRY]
 
     rom = args.rom.read_bytes()
     result: dict[tuple[int, bool], int] = {}
-    best_depth: dict[tuple[int, bool], int] = {}
     terminals: set[int] = set()
-    collect(rom, args.entry & ~1, not args.arm, 0,
-            result, best_depth, terminals)
+    successful_entries: list[int] = []
+    skipped_entries: list[dict[str, str]] = []
 
+    candidates = (
+        [(entry, not args.arm, False) for entry in direct_entries]
+        + [(entry, True, True) for entry in switch_entries]
+    )
+    for entry, thumb, may_skip in candidates:
+        one_result: dict[tuple[int, bool], int] = {}
+        one_depth: dict[tuple[int, bool], int] = {}
+        one_terminals: set[int] = set()
+        try:
+            collect(
+                rom,
+                entry,
+                thumb,
+                0,
+                one_result,
+                one_depth,
+                one_terminals,
+            )
+        except Exception as error:
+            if not may_skip:
+                raise
+            skipped_entries.append({
+                "entry": f"0x{entry:08x}",
+                "error": f"{type(error).__name__}: {error}",
+            })
+            continue
+        successful_entries.append(entry)
+        result.update(one_result)
+        terminals.update(one_terminals)
+        if len(result) > MAX_INSTRUCTIONS:
+            raise ValueError("combined DSP helper trace exceeded instruction budget")
+
+    result_addresses = {address for address, _thumb in result}
+    unresolved = sorted(
+        address
+        for address in terminals
+        if allowed(address) and address not in result_addresses
+    )
+    if unresolved:
+        raise ValueError(
+            "DSP helper closure left allowed terminal addresses unresolved: "
+            + ", ".join(f"0x{x:08x}" for x in unresolved)
+        )
+
+    all_entries = direct_entries + switch_entries
     payload = {
-        "entry": f"0x{args.entry & ~1:08x}",
+        "entry": f"0x{all_entries[0]:08x}",
+        "entries": [f"0x{x:08x}" for x in all_entries],
+        "successful_entries": [
+            f"0x{x:08x}" for x in successful_entries
+        ],
+        "skipped_entries": skipped_entries,
+        "switch8_base": (
+            f"0x{args.switch8_base:08x}"
+            if args.switch8_base is not None
+            else None
+        ),
+        "switch8_last": (
+            f"0x{args.switch8_last:08x}"
+            if args.switch8_last is not None
+            else None
+        ),
         "native_klatt_entry": f"0x{NATIVE_KLATT_ENTRY:08x}",
         "instruction_count": len(result),
         "instructions": [
@@ -139,12 +240,22 @@ def main() -> None:
             for (address, thumb), size in sorted(result.items())
         ],
         "terminals": [f"0x{x:08x}" for x in sorted(terminals)],
+        "unresolved_terminals": [],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2) + "\n",
-                           encoding="utf-8")
-    print(f"collected {len(result)} DSP helper instructions from {args.entry:#x}")
+    args.output.write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"collected {len(result)} DSP wrapper instructions from "
+        f"{len(successful_entries)} of {len(candidates)} entries"
+    )
+    print("skipped switch8 entries:", len(skipped_entries))
+    for item in skipped_entries:
+        print(f"  {item['entry']}: {item['error']}")
     print("terminals:", ", ".join(payload["terminals"]))
+    print("unresolved allowed terminals:", len(unresolved))
 
 
 if __name__ == "__main__":
