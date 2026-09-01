@@ -16,13 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Download Run 47 full AOT
+      - name: Download Run 48 full AOT
         uses: actions/download-artifact@v7
         with:
           name: nokia-5320-full-aot
-          path: build/run47-aot
+          path: build/run48-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33538098483
+          run-id: 33559334900
           github-token: ${{ github.token }}
 
       - name: Download frozen Test 18 firmware
@@ -54,9 +54,9 @@ jobs:
               ROM_BASE, collect, translate,
           )
 
-          root=Path('build/run47-aot')
+          root=Path('build/run48-aot')
           rom=Path('build/test18-addon/data/SYM.ROM').read_bytes()
-          targets=(0x830ffb98,0x830ffb9a,0x830ffeaa,0x830ffeac,0x830ffeae)
+          targets=(0x830fc4fe,0x830fc500,0x830fc502,0x830fc504,0x830fc506)
           print('=== TRACE MEMBERSHIP ===')
           json_paths=sorted(root.rglob('*.json'))
           for path in json_paths:
@@ -71,7 +71,7 @@ jobs:
                   print(path, 'count=',len(instructions), 'hits=',hits)
                   nearby=[
                       item for item in instructions
-                      if 0x830ffb70 <= int(item['address']) <= 0x830ffbc0
+                      if 0x830fc4c0 <= int(item['address']) <= 0x830fc560
                   ]
                   print('nearby=',nearby)
 
@@ -123,8 +123,7 @@ jobs:
                       print(f'0x{address:08x}: {type(error).__name__}: {error}')
                       address+=2
 
-          disassemble(0x830ffb70,0x830ffc30)
-          disassemble(0x830ffe80,0x830ffed0)
+          disassemble(0x830fc4c0,0x830fc560)
 
           print('=== PCODE CONTROL OPERATIONS ===')
           for address in targets:
@@ -144,7 +143,7 @@ jobs:
                   print(hex(address),'thumb=',thumb,'size=',size,'controls=',controls)
 
           print('=== ROM POINTER REFERENCES ===')
-          for value in (0x830ffb9a,0x830ffb9b,0x830ffb98,0x830ffb99):
+          for value in (0x830fc504,0x830fc505,0x830fc506,0x830fc507):
               needle=value.to_bytes(4,'little')
               offsets=[]
               start=0
@@ -157,7 +156,7 @@ jobs:
               print(f'0x{value:08x}:',[f'0x{x:08x}' for x in offsets])
 
           print('=== STANDALONE CLOSURE FROM GAP ===')
-          for entry in (0x830ffb98,0x830ffb9a):
+          for entry in (0x830fc504,0x830fc506):
               result={}
               depths={}
               terminals=set()
