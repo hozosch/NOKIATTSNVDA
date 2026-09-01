@@ -7,7 +7,6 @@ on:
       - "addon/**"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/scripts/instrument_runtime_lifecycle.py"
-      - ".github/scripts/patch_5320_missing_fallthroughs.py"
       - ".github/workflows/build-nvda-addon-5320.yml"
 
 permissions:
@@ -24,7 +23,7 @@ jobs:
           name: nokia-5320-full-aot
           path: build/full-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33378032381
+          run-id: 33454096950
           github-token: ${{ github.token }}
       - name: Build current ARM64 and ARM64EC runtimes
         shell: pwsh
@@ -38,10 +37,6 @@ jobs:
           python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
           if ($LASTEXITCODE -ne 0) { throw 'runtime instrumentation failed' }
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
-          foreach ($path in $front) {
-            python .github/scripts/patch_5320_missing_fallthroughs.py $path
-            if ($LASTEXITCODE -ne 0) { throw "AOT fallthrough patch failed for $path" }
-          }
           $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
           cl /nologo /arm64EC /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /MACHINE:ARM64EC /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-arm64ec/nokia_runtime_5320_arm64ec.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native ARM64EC runtime link failed' }
@@ -99,13 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Download successful Run 39 native sources
+      - name: Download closed Run 40 native sources
         uses: actions/download-artifact@v7
         with:
           name: nokia-5320-full-aot
           path: build/full-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33378032381
+          run-id: 33454096950
           github-token: ${{ github.token }}
 
       - name: Download current ARM64EC runtime
@@ -137,10 +132,6 @@ jobs:
           python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
           if ($LASTEXITCODE -ne 0) { throw 'runtime instrumentation failed' }
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
-          foreach ($path in $front) {
-            python .github/scripts/patch_5320_missing_fallthroughs.py $path
-            if ($LASTEXITCODE -ne 0) { throw "AOT fallthrough patch failed for $path" }
-          }
           $sources = @('native/nokia_runtime.c','native/nokia_config_blobs.c','native/generated/nokia_klatt_5320.c') + $front
           cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /LD $sources /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-x86/nokia_runtime_5320_x86.dll"
           if ($LASTEXITCODE -ne 0) { throw 'native x86 runtime link failed' }
@@ -185,8 +176,8 @@ jobs:
           Copy-Item $snapshot "$stage/data/5320-de-male.snapshot"
           Copy-Item build/upstream/addon/roms/5320/SYM.ROM "$stage/data/SYM.ROM"
           Copy-Item build/upstream/addon/roms/5320/files/system/data/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test17.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test17.zip build/nokiaNative5320-0.1.0-test17.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test18.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test18.zip build/nokiaNative5320-0.1.0-test18.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -207,11 +198,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test17.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test18.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test17
-          path: build/nokiaNative5320-0.1.0-test17.nvda-addon
+          name: nokiaNative5320-0.1.0-test18
+          path: build/nokiaNative5320-0.1.0-test18.nvda-addon
           if-no-files-found: error
