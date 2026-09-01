@@ -23,10 +23,6 @@ DEFAULT_ENTRY = 0x830F7BCE
 NATIVE_KLATT_ENTRY = 0x830F9DB0
 MAX_CALL_DEPTH = 6
 MAX_INSTRUCTIONS = 4096
-_CONTEXTS = {
-    False: pypcode.Context("ARM:LE:32:v8"),
-    True: pypcode.Context("ARM:LE:32:v8T"),
-}
 
 
 def direct_target(varnode) -> int:
@@ -58,8 +54,9 @@ def allowed(address: int) -> bool:
 
 
 def translate(rom: bytes, address: int, thumb: bool):
+    context = pypcode.Context("ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8")
     off = address - ROM_BASE
-    result = _CONTEXTS[thumb].translate(
+    result = context.translate(
         rom[off:off + 16],
         base_address=address,
         max_instructions=1,
@@ -171,37 +168,55 @@ def main() -> None:
     successful_entries: list[int] = []
     skipped_entries: list[dict[str, str]] = []
 
-    candidates = (
-        [(entry, not args.arm, False) for entry in direct_entries]
-        + [(entry, True, True) for entry in switch_entries]
-    )
-    for entry, thumb, may_skip in candidates:
-        one_result: dict[tuple[int, bool], int] = {}
-        one_depth: dict[tuple[int, bool], int] = {}
-        one_terminals: set[int] = set()
+    best_depth: dict[tuple[int, bool], int] = {}
+    for entry in direct_entries:
+        collect(
+            rom,
+            entry,
+            not args.arm,
+            0,
+            result,
+            best_depth,
+            terminals,
+        )
+        successful_entries.append(entry)
+
+    # Validate each switch slot itself before following any paths.  The eight
+    # invalid values are the second halfwords of 32-bit Thumb instructions.
+    # Once validated, use one shared visited/depth map so overlapping case
+    # bodies and callees are decoded only once.
+    valid_switch_entries: list[int] = []
+    for entry in switch_entries:
         try:
-            collect(
-                rom,
-                entry,
-                thumb,
-                0,
-                one_result,
-                one_depth,
-                one_terminals,
-            )
+            ops, _size = translate(rom, entry, True)
+            for op in ops:
+                if op.opcode.name in ("BRANCH", "CBRANCH", "CALL"):
+                    direct_target(op.inputs[0])
         except Exception as error:
-            if not may_skip:
-                raise
             skipped_entries.append({
                 "entry": f"0x{entry:08x}",
                 "error": f"{type(error).__name__}: {error}",
             })
             continue
+        valid_switch_entries.append(entry)
         successful_entries.append(entry)
-        result.update(one_result)
-        terminals.update(one_terminals)
-        if len(result) > MAX_INSTRUCTIONS:
-            raise ValueError("combined DSP helper trace exceeded instruction budget")
+
+    for entry in valid_switch_entries:
+        collect(
+            rom,
+            entry,
+            True,
+            0,
+            result,
+            best_depth,
+            terminals,
+        )
+    if len(result) > MAX_INSTRUCTIONS:
+        raise ValueError("combined DSP helper trace exceeded instruction budget")
+    candidates = [
+        *(entry for entry in direct_entries),
+        *(entry for entry in switch_entries),
+    ]
 
     result_addresses = {address for address, _thumb in result}
     unresolved = sorted(

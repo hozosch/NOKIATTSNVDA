@@ -20,10 +20,6 @@ import pypcode
 ROM_BASE = 0x80000000
 DSP_START = 0x830F7A48
 DSP_END = 0x83102E00
-_CONTEXTS = {
-    False: pypcode.Context("ARM:LE:32:v8"),
-    True: pypcode.Context("ARM:LE:32:v8T"),
-}
 
 
 def parse_address(value: int | str) -> int:
@@ -65,8 +61,9 @@ def in_frontend_rom(address: int, rom_size: int) -> bool:
 
 
 def translate_one(rom: bytes, address: int, thumb: bool):
+    context = pypcode.Context("ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8")
     offset = address - ROM_BASE
-    translation = _CONTEXTS[thumb].translate(
+    translation = context.translate(
         rom[offset:offset + 16],
         base_address=address,
         max_instructions=1,
