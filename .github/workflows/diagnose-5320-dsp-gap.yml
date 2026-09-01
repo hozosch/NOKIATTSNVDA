@@ -59,13 +59,23 @@ jobs:
               )
           )
           known=set()
+          known_sizes={}
           for item in payload.get('instructions',[]):
               raw=int(item['address'])
-              known.add((
+              key=(
                   raw & ~1,
                   bool(item.get('thumb',False)) or bool(raw & 1),
-              ))
-          frontier=sorted(key for key in known if dsp.allowed(key[0]))
+              )
+              known.add(key)
+              known_sizes[key]=int(item['size'])
+          frontier=sorted(
+              key for key,size in known_sizes.items()
+              if (
+                  dsp.allowed(key[0])
+                  and dsp.allowed(key[0]+size)
+                  and (key[0]+size,key[1]) not in known
+              )
+          )
           result={}
           depths={}
           terminals=set()
@@ -88,7 +98,7 @@ jobs:
               address for address in terminals
               if dsp.allowed(address) and address not in resolved
           )
-          print('known DSP frontier labels:',len(frontier))
+          print('known DSP boundary candidates:',len(frontier))
           print('new frontier instructions:',len(result))
           print('frontier result range:',(
               f'0x{addresses[0]:08x}-0x{addresses[-1]:08x}'
