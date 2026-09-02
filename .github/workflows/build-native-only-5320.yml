@@ -304,7 +304,7 @@ jobs:
               native.get('dsp_frontier_instruction_count'),
           )
           print('DSP known-frontier stats:',frontier_stats)
-          if frontier_stats != (396,2222):
+          if frontier_stats != (396,3291):
               raise SystemExit(
                   f'unexpected DSP known-frontier statistics: {frontier_stats}'
               )

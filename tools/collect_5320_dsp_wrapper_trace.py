@@ -55,14 +55,10 @@ def allowed(address: int) -> bool:
     return DSP_START <= address < DSP_END and address != NATIVE_KLATT_ENTRY
 
 
-TRANSLATION_CONTEXTS = {
-    True: pypcode.Context("ARM:LE:32:v8T"),
-    False: pypcode.Context("ARM:LE:32:v8"),
-}
-
-
 def translate(rom: bytes, address: int, thumb: bool):
-    context = TRANSLATION_CONTEXTS[thumb]
+    # A pypcode context retains architectural state.  Use a fresh instance so
+    # disjoint ROM addresses cannot inherit mode/context bits from one another.
+    context = pypcode.Context("ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8")
     off = address - ROM_BASE
     result = context.translate(
         rom[off:off + 16],
