@@ -49,7 +49,10 @@ if old not in source:
 	raise SystemExit("native_call body marker not found")
 source = source.replace(old, new, 1)
 
-old = """    if (status != 1) { r->last_error = status == 2 ? -2002 : -2001; return 0; }
+old = """    if (status != 1) {
+        if (!r->last_error) r->last_error = status == 2 ? -2002 : -2001;
+        return 0;
+    }
 """
 new = """    if (status != 1) {
         if(!nokia_runtime_last_stage_value_storage){
@@ -77,7 +80,8 @@ new = """    if (status != 1) {
             else if(entry==r->cleanup_prev)nokia_runtime_last_stage_value_storage=13u;
             else nokia_runtime_last_stage_value_storage=255u;
         }
-        r->last_error = status == 2 ? -2002 : -2001; return 0;
+        if (!r->last_error) r->last_error = status == 2 ? -2002 : -2001;
+        return 0;
     }
 """
 if old not in source:
