@@ -16,13 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Download Run 48 full AOT
+      - name: Download Run 50 full AOT
         uses: actions/download-artifact@v7
         with:
           name: nokia-5320-full-aot
-          path: build/run48-aot
+          path: build/run50-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33559334900
+          run-id: 33574474293
           github-token: ${{ github.token }}
 
       - name: Download frozen Test 18 firmware
@@ -34,7 +34,7 @@ jobs:
           run-id: 33459286021
           github-token: ${{ github.token }}
 
-      - name: Measure full known DSP frontier
+      - name: Diagnose stage 8 indirect DSP target
         shell: bash
         run: |
           python -m pip install --disable-pip-version-check pypcode
@@ -43,99 +43,130 @@ jobs:
           unzip -q "$addon" -d build/test18-addon
           python - <<'PY'
           import json
-          import re
           import sys
           from pathlib import Path
 
           import pypcode
 
-          sys.path.insert(0, str(Path.cwd()))
-          import tools.collect_5320_dsp_wrapper_trace as dsp
+          sys.path.insert(0,str(Path.cwd()))
+          from tools.collect_5320_dsp_wrapper_trace import (
+              ROM_BASE,instruction_size,translate,
+          )
 
-          dsp.MAX_INSTRUCTIONS=32768
-          contexts={
-              True:pypcode.Context('ARM:LE:32:v8T'),
-              False:pypcode.Context('ARM:LE:32:v8'),
-          }
-          def cached_translate(rom,address,thumb):
-              off=address-dsp.ROM_BASE
-              translated=contexts[thumb].translate(
-                  rom[off:off+16],
-                  base_address=address,
-                  max_instructions=1,
-              )
-              ops=list(translated.ops)
-              return ops,dsp.instruction_size(ops)
-          dsp.translate=cached_translate
-          root=Path('build/run48-aot')
+          root=Path('build/run50-aot')
           rom=Path('build/test18-addon/data/SYM.ROM').read_bytes()
-          payload=json.loads(
-              (root/'build/native/native-lifecycle-trace.json').read_text(
-                  encoding='utf-8'
-              )
+          targets=(
+              0x80196ffc,0x801a1344,
+              0x830ff946,0x830ff948,0x830ff94a,
+              0x830ff968,0x830ff96a,
           )
-          known=set()
-          known_sizes={}
-          for item in payload.get('instructions',[]):
-              raw=int(item['address'])
-              key=(
-                  raw & ~1,
-                  bool(item.get('thumb',False)) or bool(raw & 1),
-              )
-              known.add(key)
-              known_sizes[key]=int(item['size'])
-          frontier=sorted(
-              key for key,size in known_sizes.items()
-              if (
-                  dsp.allowed(key[0])
-                  and dsp.allowed(key[0]+size)
-                  and (key[0]+size,key[1]) not in known
-              )
-          )
-          result={}
-          depths={}
-          terminals=set()
-          errors=[]
-          for address,thumb in frontier:
+
+          print('=== TRACE MEMBERSHIP ===')
+          for path in sorted(root.rglob('*.json')):
               try:
-                  dsp.collect(
-                      rom,address,thumb,0,result,depths,terminals,known
-                  )
-              except Exception as error:
-                  match=re.search(r'r0x([0-9a-fA-F]+)',str(error))
-                  failed=(
-                      int(match.group(1),16) if match else address
-                  )
-                  errors.append((failed,thumb,type(error).__name__,str(error)))
-          addresses=sorted(address for address,_thumb in result)
-          resolved={address for address,_thumb in known}
-          resolved.update(addresses)
-          unresolved=sorted(
-              address for address in terminals
-              if dsp.allowed(address) and address not in resolved
-          )
-          print('known DSP boundary candidates:',len(frontier))
-          print('new frontier instructions:',len(result))
-          print('frontier result range:',(
-              f'0x{addresses[0]:08x}-0x{addresses[-1]:08x}'
-              if addresses else 'empty'
-          ))
-          print('0x830fc506 added:',
-                any(address==0x830fc506 for address,_thumb in result))
-          print('decode errors:',len(errors))
-          for item in errors:
+                  payload=json.loads(path.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              by_address={
+                  int(item['address']):item
+                  for item in payload.get('instructions',[])
+              }
+              hits={
+                  f'0x{address:08x}':by_address.get(address)
+                  for address in targets
+              }
+              if any(value is not None for value in hits.values()):
+                  print(path,'count=',len(by_address),'hits=',hits)
+                  nearby=[
+                      item for item in payload.get('instructions',[])
+                      if 0x830ff920 <= int(item['address']) <= 0x830ff990
+                  ]
+                  if nearby:
+                      print('DSP nearby=',nearby)
+
+          print('=== GENERATED C MEMBERSHIP ===')
+          for path in sorted(root.rglob('nokia_frontend_5320_full*.c')):
+              lines=path.read_text(encoding='utf-8').splitlines()
+              for address in targets:
+                  label=f'L_{address:08x}:'
+                  indices=[i for i,line in enumerate(lines) if line==label]
+                  if indices:
+                      at=indices[0]
+                      print(path,label,'line',at+1)
+                      print('\n'.join(
+                          f'{n+1}: {lines[n]}'
+                          for n in range(
+                              max(0,at-3),min(len(lines),at+25)
+                          )
+                      ))
+
+          def disassemble(start,end,thumb):
               print(
-                  f'  0x{item[0]:08x} thumb={item[1]} '
-                  f'{item[2]}: {item[3]}'
+                  f'=== DISASSEMBLY 0x{start:08x}-0x{end:08x} '
+                  f'thumb={thumb} ==='
               )
-          print('unresolved allowed terminals:',
-                [f'0x{x:08x}' for x in unresolved])
-          print('first additions:',
-                [f'0x{x:08x}' for x in addresses[:80]])
-          print('last additions:',
-                [f'0x{x:08x}' for x in addresses[-80:]])
-          if not any(address==0x830fc506 for address,_thumb in result):
-              raise SystemExit('failed continuation was not closed')
-          if unresolved:
-              raise SystemExit('frontier has unresolved allowed terminals')
+              context=pypcode.Context(
+                  'ARM:LE:32:v8T' if thumb else 'ARM:LE:32:v8'
+              )
+              result=context.disassemble(
+                  rom[start-ROM_BASE:end-ROM_BASE],
+                  base_address=start,
+                  max_instructions=256,
+              )
+              for instruction in result.instructions:
+                  address=instruction.addr.offset
+                  raw=rom[
+                      address-ROM_BASE:
+                      address-ROM_BASE+instruction.length
+                  ].hex()
+                  print(
+                      f'0x{address:08x} {raw:8s} '
+                      f'{instruction.mnem:8s} {instruction.body}'
+                  )
+
+          disassemble(0x830ff920,0x830ff990,True)
+          disassemble(0x80196fe0,0x80197020,True)
+          disassemble(0x801a1320,0x801a1360,True)
+
+          print('=== PCODE CONTROL OPERATIONS ===')
+          for address in targets:
+              for thumb in (True,False):
+                  try:
+                      ops,size=translate(rom,address,thumb)
+                  except Exception as error:
+                      print(
+                          f'0x{address:08x} thumb={thumb} '
+                          f'{type(error).__name__}: {error}'
+                      )
+                      continue
+                  controls=[
+                      str(op) for op in ops
+                      if op.opcode.name in (
+                          'BRANCH','CBRANCH','CALL',
+                          'BRANCHIND','CALLIND','RETURN'
+                      )
+                  ]
+                  print(
+                      f'0x{address:08x} thumb={thumb} '
+                      f'size={size} controls={controls}'
+                  )
+
+          print('=== ROM POINTER REFERENCES ===')
+          for value in (
+              0x830ff968,0x830ff969,0x830ff96a,0x830ff96b,
+              0x830ff946,0x830ff947,
+          ):
+              needle=value.to_bytes(4,'little')
+              offsets=[]
+              start=0
+              while True:
+                  at=rom.find(needle,start)
+                  if at<0:
+                      break
+                  offsets.append(ROM_BASE+at)
+                  start=at+1
+              print(
+                  f'0x{value:08x}:',
+                  [f'0x{x:08x}' for x in offsets],
+              )
           PY
