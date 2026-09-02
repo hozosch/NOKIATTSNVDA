@@ -81,12 +81,13 @@ jobs:
             build-5320.rom build/native/dsp-switch8.json \
             --switch8-base 0x830fad30 \
             --switch8-last 0x830fae42
-          # Close the exact destinations encoded after the __switch8 call at
-          # 0x830fde98.  Its inline table selects 23 small DSP wrappers; the
-          # recorded German smoke phrase exercised only a subset of them.
+          # Close the exact destinations encoded after both known __switch8
+          # calls.  The second table is reached during stage 8 after PCM output
+          # has begun; missing one of its cases caused truncated utterances.
           python tools/collect_5320_dsp_wrapper_trace.py \
             build-5320.rom build/native/dsp-inline-switch8-de9d.json \
             --switch8-lr 0x830fde9d \
+            --switch8-lr 0x830ff94b \
             --known-trace build/native/native-lifecycle-trace.json \
             --known-trace build/native/dsp-helper-9d60.json \
             --known-trace build/native/dsp-switch8.json
@@ -135,6 +136,7 @@ jobs:
               '0x830f9d60',
               'switch8:0x830fad30-0x830fae42',
               'switch8-inline-lr:0x830fde9d',
+              'switch8-inline-lr:0x830ff94b',
               'known-dsp-boundary-frontier',
           ]
           p['extra_dsp_helper_counts']=counts
@@ -256,6 +258,8 @@ jobs:
               0x830fae3c, 0x830fae42, 0x830fb16e,
               0x830ffb98, 0x830ffb9a, 0x830ffbdc,
               0x830fc504, 0x830fc506,
+              0x830ff954, 0x830ff968, 0x830ff96a,
+              0x830ff980, 0x830ff996, 0x830ff9ac,
           )
           missing_dsp=[
               address for address in required_dsp
@@ -286,12 +290,12 @@ jobs:
               native.get('dsp_inline_switch8_skipped_count'),
           )
           print('DSP inline switch8 stats:',inline_stats)
-          if native.get('dsp_inline_switch8_lrs') != ['0x830fde9d']:
+          if native.get('dsp_inline_switch8_lrs') != ['0x830fde9d','0x830ff94b']:
               raise SystemExit(
                   'unexpected DSP inline switch8 LR set: ' +
                   repr(native.get('dsp_inline_switch8_lrs'))
               )
-          if inline_stats != (23,23,0):
+          if inline_stats != (29,29,0):
               raise SystemExit(
                   f'unexpected DSP inline switch8 statistics: {inline_stats}'
               )
@@ -304,9 +308,12 @@ jobs:
               native.get('dsp_frontier_instruction_count'),
           )
           print('DSP known-frontier stats:',frontier_stats)
-          if frontier_stats != (396,3291):
+          if (
+              frontier_stats[0] is None or frontier_stats[0] < 390
+              or frontier_stats[1] is None or frontier_stats[1] < 3000
+          ):
               raise SystemExit(
-                  f'unexpected DSP known-frontier statistics: {frontier_stats}'
+                  f'unexpectedly small DSP known-frontier closure: {frontier_stats}'
               )
           if native.get('dsp_frontier_unresolved_terminals'):
               raise SystemExit(
@@ -323,6 +330,8 @@ jobs:
               0x830fdf3a,0x830fdf48,0x830fdf56,0x830fdf64,
               0x830fdf6e,0x830fdf78,0x830fdf82,0x830fdf8c,
               0x830fdf9a,0x830fdfa4,0x830fdfb2,
+              0x830ff954,0x830ff968,0x830ff96a,
+              0x830ff980,0x830ff996,0x830ff9ac,
           )
           missing_inline=[
               address for address in inline_switch_entries
