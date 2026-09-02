@@ -62,6 +62,7 @@ struct NokiaRuntime {
     double rate_factor, pitch_factor;
     volatile long cancelled;
     int last_error;
+    uint32_t klatt_failure, klatt_regs[5], klatt_count, klatt_gain;
     uint64_t frontend_ticks, audio_ticks;
     const NokiaRuntimeCallbacks *callbacks;
     uint32_t *pending;
@@ -265,16 +266,32 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
     int32_t peak, scaled;
     uint32_t gain, after[5];
     uint8_t *p0, *p1, *p2, *p3, *ps;
-    p0 = guest_ptr(r, regs[0], 16384, 1);
+    uint32_t missing;
+    r->klatt_failure = 0;
+    r->klatt_regs[0]=regs[0];r->klatt_regs[1]=regs[1];
+    r->klatt_regs[2]=regs[2];r->klatt_regs[3]=regs[3];
+    r->klatt_regs[4]=regs[13];r->klatt_count=0xffffffffu;r->klatt_gain=0;
     p1 = guest_ptr(r, regs[1], 4, 1);
     p2 = guest_ptr(r, regs[2], sizeof(parameters), 1);
     p3 = guest_ptr(r, regs[3], sizeof(state), 1);
     ps = guest_ptr(r, regs[13], 4, 0);
-    if (!p0 || !p1 || !p2 || !p3 || !ps) return 0;
+    missing=(!p1?2u:0u)|(!p2?4u:0u)|(!p3?8u:0u)|(!ps?16u:0u);
+    if (missing) {
+        r->klatt_failure=0x100u|missing;r->last_error=-2101;return 0;
+    }
     memcpy(&peak, p1, 4); memcpy(parameters, p2, sizeof(parameters));
     memcpy(state, p3, sizeof(state)); memcpy(&gain, ps, 4);
     memcpy(&count, parameters + 2, 2);
-    if (count < 0 || count > 8192) return 0;
+    r->klatt_count=(uint32_t)(int32_t)count;r->klatt_gain=gain;
+    if (count < 0 || count > 8192) {
+        r->klatt_failure=0x200u;r->last_error=-2102;return 0;
+    }
+    /* Validate only the bytes this frame will actually write.  The former
+       fixed 16384-byte check rejected valid short buffers near a region end. */
+    p0 = guest_ptr(r, regs[0], (uint32_t)count * 2u, 1);
+    if (!p0) {
+        r->klatt_failure=0x101u;r->last_error=-2101;return 0;
+    }
     if (r->pitch_factor > 0.0 && r->pitch_factor != 1.0) {
         memcpy(&f0, parameters + 0x18, 2);
         if (f0 > 0) {
@@ -284,7 +301,9 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
         }
     }
     if (!nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
-                                  r->rom, ROM_BASE, r->rom_size, after)) return 0;
+                                  r->rom, ROM_BASE, r->rom_size, after)) {
+        r->klatt_failure=0x300u;r->last_error=-2103;return 0;
+    }
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -376,7 +395,10 @@ static int native_call(NokiaRuntime *r, uint32_t entry,
     regs[13]=sp;regs[14]=RET_MAGIC;regs[15]=entry;regs[16]=0;
     status = nokia_frontend_aot(r->heap,r->vtable,r->traps,r->pool,r->stack,
                                 r->rom,ROM_BASE,r->rom_size,regs,RET_MAGIC,&r->host);
-    if (status != 1) { r->last_error = status == 2 ? -2002 : -2001; return 0; }
+    if (status != 1) {
+        if (!r->last_error) r->last_error = status == 2 ? -2002 : -2001;
+        return 0;
+    }
     if (result) *result = regs[0]; return 1;
 }
 static uint32_t cleanup_ptr(NokiaRuntime *r) { return guest_u32(r, r->trap_handler + 4u); }
@@ -453,5 +475,9 @@ failed:
 }
 
 NOKIA_RUNTIME_EXPORT int nokia_runtime_last_error(const NokiaRuntime *r){return r?r->last_error:-1;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_failure(const NokiaRuntime *r){return r?r->klatt_failure:0;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_reg(const NokiaRuntime *r,uint32_t i){return r&&i<5u?r->klatt_regs[i]:0;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_count(const NokiaRuntime *r){return r?r->klatt_count:0;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_gain(const NokiaRuntime *r){return r?r->klatt_gain:0;}
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_frontend_ticks(const NokiaRuntime *r){return r?r->frontend_ticks:0;}
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_audio_ticks(const NokiaRuntime *r){return r?r->audio_ticks:0;}
