@@ -175,6 +175,19 @@ class SynthDriver(BaseSynthDriver):
 		self._dll.nokia_runtime_cancel.argtypes = [ctypes.c_void_p]
 		self._dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
 		self._dll.nokia_runtime_last_error.restype = ctypes.c_int
+		for export in (
+			"nokia_runtime_klatt_failure",
+			"nokia_runtime_klatt_count",
+			"nokia_runtime_klatt_gain",
+		):
+			function = getattr(self._dll, export)
+			function.argtypes = [ctypes.c_void_p]
+			function.restype = ctypes.c_uint32
+		self._dll.nokia_runtime_klatt_reg.argtypes = [
+			ctypes.c_void_p,
+			ctypes.c_uint32,
+		]
+		self._dll.nokia_runtime_klatt_reg.restype = ctypes.c_uint32
 		self._diagnosticFunctions = {}
 		for label, export in (
 			("failedLastPc", "nokia_runtime_failed_last_pc_value"),
@@ -324,9 +337,19 @@ class SynthDriver(BaseSynthDriver):
 			)
 			if not ok and generation == self._generation:
 				error = self._dll.nokia_runtime_last_error(runtime)
+				klattDiagnostics = [
+					f"klattFailure=0x{self._dll.nokia_runtime_klatt_failure(runtime):08x}",
+					*(
+						f"klattR{label}=0x{self._dll.nokia_runtime_klatt_reg(runtime, index):08x}"
+						for index, label in enumerate(("0", "1", "2", "3", "Sp"))
+					),
+					f"klattCount=0x{self._dll.nokia_runtime_klatt_count(runtime):08x}",
+					f"klattGain=0x{self._dll.nokia_runtime_klatt_gain(runtime):08x}",
+				]
 				diagnostics = ", ".join([
 					f"runtimeArch={self._arch}",
 					f"runtimeDll={self._dllPath.name}",
+					*klattDiagnostics,
 					*(
 						f"{label}=0x{function():08x}"
 						for label, function in self._diagnosticFunctions.items()
