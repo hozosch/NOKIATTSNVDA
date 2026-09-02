@@ -50,6 +50,14 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
 NOKIA_RUNTIME_EXPORT void nokia_runtime_cancel(NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT int nokia_runtime_last_error(
     const NokiaRuntime *runtime);
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_failure(
+    const NokiaRuntime *runtime);
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_reg(
+    const NokiaRuntime *runtime, uint32_t index);
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_count(
+    const NokiaRuntime *runtime);
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_gain(
+    const NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_frontend_ticks(
     const NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_audio_ticks(
