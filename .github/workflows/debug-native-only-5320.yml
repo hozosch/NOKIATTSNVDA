@@ -1,14 +1,9 @@
 name: Debug native-only Nokia 5320 runtime
 
+# Legacy focused diagnostic. Run it manually only; the production native
+# workflow now performs the authoritative builds and smoke tests.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "native/nokia_runtime.c"
-      - "native/nokia_runtime.h"
-      - "native/nokia_config_blobs.c"
-      - "tools/smoke_native_5320_runtime.py"
-      - ".github/workflows/debug-native-only-5320.yml"
 
 permissions:
   contents: read
