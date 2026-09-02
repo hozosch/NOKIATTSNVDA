@@ -39,7 +39,7 @@ jobs:
           name: nokia-5320-full-aot
           path: build/full-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33574474293
+          run-id: 33599463624
           github-token: ${{ github.token }}
       - name: Build current ARM64 and ARM64EC runtimes
         shell: pwsh
@@ -125,13 +125,13 @@ jobs:
           test -n "$addon"
           unzip -q "$addon" -d build/test18-addon
 
-      - name: Download closed Run 50 native sources
+      - name: Download closed Run 51 native sources
         uses: actions/download-artifact@v7
         with:
           name: nokia-5320-full-aot
           path: build/full-aot
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33574474293
+          run-id: 33599463624
           github-token: ${{ github.token }}
 
       - name: Download current ARM64EC runtime
@@ -192,7 +192,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data/config", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test24' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test25' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -203,8 +203,8 @@ jobs:
           Copy-Item $snapshot "$stage/data/5320-de-male.snapshot"
           Copy-Item build/test18-addon/data/SYM.ROM "$stage/data/SYM.ROM"
           Copy-Item build/test18-addon/data/config/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test24.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test24.zip build/nokiaNative5320-0.1.0-test24.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test25.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test25.zip build/nokiaNative5320-0.1.0-test25.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -225,11 +225,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test24.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test25.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test24
-          path: build/nokiaNative5320-0.1.0-test24.nvda-addon
+          name: nokiaNative5320-0.1.0-test25
+          path: build/nokiaNative5320-0.1.0-test25.nvda-addon
           if-no-files-found: error
