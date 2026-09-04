@@ -190,6 +190,10 @@ class SynthDriver(BaseSynthDriver):
 		self._dll.nokia_runtime_klatt_reg.restype = ctypes.c_uint32
 		self._diagnosticFunctions = {}
 		for label, export in (
+			("klattLastPc", "nokia_klatt_last_pc"),
+			("klattLastR0", "nokia_klatt_last_r0"),
+			("klattLastR7", "nokia_klatt_last_r7"),
+			("klattBadAddress", "nokia_klatt_last_bad_address"),
 			("failedLastPc", "nokia_runtime_failed_last_pc_value"),
 			("failedPc", "nokia_runtime_failed_pc_value"),
 			("failedLr", "nokia_runtime_failed_lr_value"),
