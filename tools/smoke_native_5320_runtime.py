@@ -176,23 +176,21 @@ def main() -> None:
     # Exercise the letter-name path one character at a time. Embedding the
     # alphabet in a sentence does not use the same Nokia frontend branch and
     # therefore failed to reveal missing compact-ROM pages needed by "H".
-    neutral_h = 0
     for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ':
-        produced = speak_case(f'isolated letter {letter}', letter)
-        if letter == 'H':
-            neutral_h = produced
+        speak_case(f'isolated letter {letter}', letter)
     speak_case('known crash word', 'Einstellungen')
-    fast_h = speak_case('isolated letter H at 2x rate', 'H', rate=2.0)
-    slow_h = speak_case('isolated letter H at 0.5x rate', 'H', rate=0.5)
-    if not fast_h < neutral_h * 0.8:
+    neutral_rate = speak_case('native rate reference', 'Hallo')
+    fast_rate = speak_case('native rate at 2x', 'Hallo', rate=2.0)
+    slow_rate = speak_case('native rate at 0.5x', 'Hallo', rate=0.5)
+    if not fast_rate < neutral_rate * 0.8:
         raise SystemExit(
-            f'native 2x rate did not shorten PCM: neutral={neutral_h}, '
-            f'fast={fast_h}'
+            f'native 2x rate did not shorten PCM: neutral={neutral_rate}, '
+            f'fast={fast_rate}'
         )
-    if not slow_h > neutral_h * 1.5:
+    if not slow_rate > neutral_rate * 1.5:
         raise SystemExit(
-            f'native 0.5x rate did not lengthen PCM: neutral={neutral_h}, '
-            f'slow={slow_h}'
+            f'native 0.5x rate did not lengthen PCM: neutral={neutral_rate}, '
+            f'slow={slow_rate}'
         )
 
     text = (

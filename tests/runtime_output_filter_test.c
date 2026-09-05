@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -31,22 +30,30 @@ static void pcm(void *user, const int16_t *samples, uint32_t count,
 }
 
 static void reset_runtime(NokiaRuntime *r, NokiaRuntimeCallbacks *callbacks,
-                          double factor, int seams) {
+                          int seams) {
     memset(r, 0, sizeof(*r));
     r->callbacks = callbacks;
-    r->rate_factor = factor;
+    r->rate_factor = 1.0;
     r->seam_enabled = seams ? 1u : 0u;
-    if (factor != 1.0) {
-        r->rate = rate_create(factor);
-        assert(r->rate);
-    }
     output_samples = 0;
+}
+
+static void put_i16(uint8_t *base, size_t offset, const int16_t *values,
+                    size_t count) {
+    memcpy(base + offset, values, count * sizeof(*values));
 }
 
 int main(void) {
     NokiaRuntime runtime;
     NokiaRuntimeCallbacks callbacks = {pcm, NULL, NULL};
-    int16_t first[1100], second[1300], rate_input[4800];
+    int16_t first[1100], second[1300];
+    int16_t phones[3] = {1, 2, 3};
+    int16_t durations[3] = {100, 201, 1};
+    int16_t pitch[3] = {1000, 1100, 1200};
+    int16_t pitch_time[3] = {0, 101, 200};
+    int16_t amplitude[2] = {100, 120};
+    int16_t amplitude_time[2] = {0, 151};
+    uint8_t *object;
     size_t i;
 
     for (i = 0; i < 100; ++i) first[i] = 1000;
@@ -55,7 +62,7 @@ int main(void) {
     for (i = 1000; i < 1100; ++i) second[i] = -1000;
     memset(second + 1100, 0, 200 * sizeof(*second));
 
-    reset_runtime(&runtime, &callbacks, 1.0, 1);
+    reset_runtime(&runtime, &callbacks, 1);
     assert(seam_feed(&runtime, first, 1100));
     assert(seam_finish_chunk(&runtime, 0));
     assert(seam_feed(&runtime, second, 1300));
@@ -64,21 +71,36 @@ int main(void) {
     assert(runtime.seam_trimmed_samples == 1936u);
     free(runtime.seam_quiet);
 
-    for (i = 0; i < 4800; ++i)
-        rate_input[i] = (int16_t)(12000.0 * sin((double)i * 0.07));
-    reset_runtime(&runtime, &callbacks, 2.0, 0);
-    assert(emit_pcm(&runtime, rate_input, 4800, 0));
-    assert(emit_pcm(&runtime, NULL, 0, 1));
-    assert(output_samples < 4800u * 8u / 10u);
-    rate_destroy(runtime.rate);
-    free(runtime.rate_output);
-
-    reset_runtime(&runtime, &callbacks, 0.5, 0);
-    assert(emit_pcm(&runtime, rate_input, 4800, 0));
-    assert(emit_pcm(&runtime, NULL, 0, 1));
-    assert(output_samples > 4800u * 15u / 10u);
-    rate_destroy(runtime.rate);
-    free(runtime.rate_output);
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.pool = (uint8_t *)calloc(1, 0x400u);
+    assert(runtime.pool);
+    runtime.pool_next = POOL_BASE + 0x400u;
+    runtime.rate_factor = 2.0;
+    object = runtime.pool + 0x100u;
+    memcpy(object, "\003\000\003\000\002\000", 6u);
+    wr32(object + 0x08u, POOL_BASE + 0x200u);
+    wr32(object + 0x0cu, POOL_BASE + 0x220u);
+    wr32(object + 0x10u, POOL_BASE + 0x240u);
+    wr32(object + 0x14u, POOL_BASE + 0x260u);
+    wr32(object + 0x1cu, POOL_BASE + 0x280u);
+    wr32(object + 0x20u, POOL_BASE + 0x2a0u);
+    put_i16(runtime.pool, 0x200u, phones, 3u);
+    put_i16(runtime.pool, 0x220u, durations, 3u);
+    put_i16(runtime.pool, 0x240u, pitch, 3u);
+    put_i16(runtime.pool, 0x260u, pitch_time, 3u);
+    put_i16(runtime.pool, 0x280u, amplitude, 2u);
+    put_i16(runtime.pool, 0x2a0u, amplitude_time, 2u);
+    assert(apply_prosody_rate(&runtime));
+    assert(((int16_t *)(runtime.pool + 0x220u))[0] == 50);
+    assert(((int16_t *)(runtime.pool + 0x220u))[1] == 101);
+    assert(((int16_t *)(runtime.pool + 0x220u))[2] == 1);
+    assert(((int16_t *)(runtime.pool + 0x260u))[1] == 51);
+    assert(((int16_t *)(runtime.pool + 0x260u))[2] == 100);
+    assert(((int16_t *)(runtime.pool + 0x2a0u))[1] == 76);
+    /* F0 and amplitude values are deliberately not rate-scaled. */
+    assert(((int16_t *)(runtime.pool + 0x240u))[1] == 1100);
+    assert(((int16_t *)(runtime.pool + 0x280u))[1] == 120);
+    free(runtime.pool);
     puts("runtime output filters passed");
     return 0;
 }
