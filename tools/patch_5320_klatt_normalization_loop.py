@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repair the missing taken edge of the 5320 Klatt normalization loop."""
+"""Restore the missing body and taken edge of the 5320 Klatt normalization loop."""
 
 from pathlib import Path
 import argparse
@@ -29,8 +29,28 @@ def patch(path: Path) -> None:
         raise SystemExit(
             f"expected exactly one unsupported edge in {label}, found {count}"
         )
-    if f"{target}:" not in text:
-        raise SystemExit(f"existing loop target {target}: is missing")
+    target_label = f"{target}:"
+    if target_label not in text:
+        continuation = "L_830fa428:"
+        if continuation not in text:
+            raise SystemExit(f"loop continuation {continuation} is missing")
+        target_code = (
+            f"{target_label}\n"
+            f"  nokia_at = 0x{TARGET:08x}u;\n"
+            "  reg_r0 = reg_r0 - reg_r1;\n"
+            "  goto L_830fa428;\n"
+        )
+        text = text.replace(continuation, target_code + continuation, 1)
+        start = text.find(label)
+        end_match = re.search(
+            r"(?m)^L_[0-9a-f]{8}:$", text[start + len(label):]
+        )
+        end = (
+            len(text)
+            if end_match is None
+            else start + len(label) + end_match.start()
+        )
+        block = text[start:end]
     block = block.replace(old, new, 1)
     path.write_text(text[:start] + block + text[end:], encoding="utf-8")
     print(f"repaired Klatt BGT edge 0x{SOURCE:08x} -> 0x{TARGET:08x}")
