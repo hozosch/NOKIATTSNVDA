@@ -14,6 +14,24 @@ NORMALIZE_SOURCE = 0x830FA42A
 NORMALIZE_TARGET = 0x830FA426
 SATURATE_SOURCES = (0x830FA20E, 0x830FA214)
 SATURATE_TARGET = 0x830FA22C
+DIVISION_FALLTHROUGHS = (
+    (0x830F99EA, 0x830F99EC, 0x830F99F0, (
+        "reg_r1 = (reg_r1 - UINT64_C(1)) & UINT64_C(0xffffffff);",
+        "reg_r3 = UINT64_C(1);",
+    )),
+    (0x830F9A00, 0x830F9A02, 0x830F9A06, (
+        "reg_r1 = (reg_r1 - reg_r2) & UINT64_C(0xffffffff);",
+        "reg_r0 = (reg_r0 + UINT64_C(1)) & UINT64_C(0xffffffff);",
+    )),
+    (0x830F9A16, 0x830F9A18, 0x830F9A1C, (
+        "reg_r1 = (reg_r1 - reg_r2) & UINT64_C(0xffffffff);",
+        "reg_r0 = (reg_r0 + UINT64_C(1)) & UINT64_C(0xffffffff);",
+    )),
+    (0x830F9A2C, 0x830F9A2E, 0x830F9A32, (
+        "reg_r1 = (reg_r1 - reg_r2) & UINT64_C(0xffffffff);",
+        "reg_r0 = (reg_r0 + UINT64_C(1)) & UINT64_C(0xffffffff);",
+    )),
+)
 
 
 def label_block(text: str, address: int) -> tuple[int, int, str]:
@@ -78,20 +96,39 @@ def add_normalization_target(text: str) -> str:
     return text.replace(continuation, target_code + continuation, 1)
 
 
+def add_fallthrough_target(
+    text: str, target: int, continuation: int, operations: tuple[str, ...]
+) -> str:
+    target_label = f"L_{target:08x}:"
+    if target_label in text:
+        return text
+    continuation_label = f"L_{continuation:08x}:"
+    if continuation_label not in text:
+        raise SystemExit(
+            f"division continuation {continuation_label} is missing"
+        )
+    body = [target_label, f"  nokia_at = 0x{target:08x}u;"]
+    body.extend(f"  {operation}" for operation in operations)
+    body.append(f"  goto L_{continuation:08x};")
+    return text.replace(continuation_label, "\n".join(body) + "\n" + continuation_label, 1)
+
+
 def patch(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     text = add_saturation_target(text)
     for source in SATURATE_SOURCES:
         text = replace_unsupported_edge(text, source, SATURATE_TARGET)
+    for source, target, continuation, operations in DIVISION_FALLTHROUGHS:
+        text = add_fallthrough_target(text, target, continuation, operations)
+        text = replace_unsupported_edge(text, source, target)
     text = add_normalization_target(text)
     text = replace_unsupported_edge(
         text, NORMALIZE_SOURCE, NORMALIZE_TARGET
     )
     path.write_text(text, encoding="utf-8")
     print(
-        "repaired Klatt signed-saturation edges "
-        "0x830fa20e/0x830fa214 -> 0x830fa22c and normalization edge "
-        "0x830fa42a -> 0x830fa426"
+        "repaired Klatt signed-saturation, fixed-point division, and "
+        "normalization-loop edges"
     )
 
 

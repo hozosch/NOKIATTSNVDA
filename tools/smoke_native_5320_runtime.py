@@ -100,6 +100,16 @@ def main() -> None:
         fn = optional_u32(dll, f'nokia_frontend_debug_{label}_value')
         if fn:
             debug_values.append((label, fn))
+    klatt_debug_values = []
+    for label, export in (
+        ('klattLastPc', 'nokia_klatt_last_pc'),
+        ('klattLastR0', 'nokia_klatt_last_r0'),
+        ('klattLastR7', 'nokia_klatt_last_r7'),
+        ('klattBadAddress', 'nokia_klatt_last_bad_address'),
+    ):
+        fn = optional_u32(dll, export)
+        if fn:
+            klatt_debug_values.append((label, fn))
 
     held = []
     for path in sorted(args.data_dir.glob('srsf_*_*.bin')):
@@ -164,9 +174,13 @@ def main() -> None:
                 f'pcm callbacks={calls[0] - calls_before} samples={produced}'
             )
             if not ok or produced <= 0:
+                details = ', '.join(
+                    f'{name}={fn():#x}' for name, fn in klatt_debug_values
+                )
                 raise SystemExit(
                     f'native synthesis failed for {label!r}: '
                     f'error={error}, samples={produced}'
+                    + (f', {details}' if details else '')
                 )
             return produced
         finally:
