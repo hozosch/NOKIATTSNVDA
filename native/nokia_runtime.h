@@ -66,6 +66,10 @@ NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_first_pcm_ticks(
     const NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_text_chunks(
     const NokiaRuntime *runtime);
+/* Number of effectively-silent PCM samples removed only at artificial
+   long-text chunk joins.  This is a diagnostic export for regression tests. */
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_seam_trimmed_samples(
+    const NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT void nokia_runtime_rom_trace_reset(void);
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_rom_trace_page_size(void);
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_rom_trace_page_used(uint32_t page);

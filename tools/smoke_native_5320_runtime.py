@@ -68,11 +68,15 @@ def main() -> None:
         ctypes.POINTER(ctypes.c_uint16), ctypes.c_uint32,
         ctypes.POINTER(Callbacks)]
     dll.nokia_runtime_speak_utf16.restype = ctypes.c_int
+    dll.nokia_runtime_set_rate.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    dll.nokia_runtime_set_rate.restype = ctypes.c_int
     dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_last_error.restype = ctypes.c_int
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_text_chunks.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_text_chunks.restype = ctypes.c_uint32
+    dll.nokia_runtime_seam_trimmed_samples.argtypes = [ctypes.c_void_p]
+    dll.nokia_runtime_seam_trimmed_samples.restype = ctypes.c_uint32
     dll.nokia_runtime_first_pcm_ticks.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_first_pcm_ticks.restype = ctypes.c_uint64
     dll.nokia_runtime_rom_trace_reset.argtypes = []
@@ -137,7 +141,8 @@ def main() -> None:
         pass
     callbacks = Callbacks(on_pcm, on_index, None)
 
-    def speak_case(label: str, value: str, runtime=None) -> None:
+    def speak_case(label: str, value: str, runtime=None,
+                   rate: float = 1.0) -> int:
         owned_runtime = runtime is None
         if owned_runtime:
             runtime = create_runtime()
@@ -146,6 +151,10 @@ def main() -> None:
         samples_before = samples[0]
         calls_before = calls[0]
         try:
+            if not dll.nokia_runtime_set_rate(runtime, rate):
+                raise SystemExit(
+                    f'native runtime rejected rate {rate} for {label!r}'
+                )
             ok = dll.nokia_runtime_speak_utf16(
                 runtime, words, len(words), ctypes.byref(callbacks))
             error = dll.nokia_runtime_last_error(runtime)
@@ -159,6 +168,7 @@ def main() -> None:
                     f'native synthesis failed for {label!r}: '
                     f'error={error}, samples={produced}'
                 )
+            return produced
         finally:
             if owned_runtime:
                 dll.nokia_runtime_destroy(runtime)
@@ -166,9 +176,24 @@ def main() -> None:
     # Exercise the letter-name path one character at a time. Embedding the
     # alphabet in a sentence does not use the same Nokia frontend branch and
     # therefore failed to reveal missing compact-ROM pages needed by "H".
+    neutral_h = 0
     for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ':
-        speak_case(f'isolated letter {letter}', letter)
+        produced = speak_case(f'isolated letter {letter}', letter)
+        if letter == 'H':
+            neutral_h = produced
     speak_case('known crash word', 'Einstellungen')
+    fast_h = speak_case('isolated letter H at 2x rate', 'H', rate=2.0)
+    slow_h = speak_case('isolated letter H at 0.5x rate', 'H', rate=0.5)
+    if not fast_h < neutral_h * 0.8:
+        raise SystemExit(
+            f'native 2x rate did not shorten PCM: neutral={neutral_h}, '
+            f'fast={fast_h}'
+        )
+    if not slow_h > neutral_h * 1.5:
+        raise SystemExit(
+            f'native 0.5x rate did not lengthen PCM: neutral={neutral_h}, '
+            f'slow={slow_h}'
+        )
 
     text = (
         'Dies ist der erste Satz und er prueft die schnelle Analyse. '
@@ -205,6 +230,7 @@ def main() -> None:
         for label, fn in debug_values:
             diagnostics.append(f'{label}={fn():#x}')
         chunks = dll.nokia_runtime_text_chunks(runtime)
+        seam_trimmed = dll.nokia_runtime_seam_trimmed_samples(runtime)
         first_pcm_ticks = dll.nokia_runtime_first_pcm_ticks(runtime)
         page_size = dll.nokia_runtime_rom_trace_page_size()
         virtual_size = (
@@ -220,7 +246,9 @@ def main() -> None:
         touched_pages = dll.nokia_runtime_rom_trace_touched_pages()
         print('native speak result:', ok, 'error:', error,
               'pcm callbacks:', calls[0], 'samples:', samples[0],
-              'text chunks:', chunks, 'first PCM ticks:', first_pcm_ticks,
+              'text chunks:', chunks,
+              'seam samples removed:', seam_trimmed,
+              'first PCM ticks:', first_pcm_ticks,
               'ROM pages:', touched_pages, '/', total_pages,
               'ROM bytes:', touched_pages * page_size,
               ' '.join(diagnostics))
@@ -231,6 +259,10 @@ def main() -> None:
         if chunks < 2:
             raise SystemExit(
                 f'long-text synthesis did not segment internally: chunks={chunks}'
+            )
+        if seam_trimmed == 0:
+            raise SystemExit(
+                'long-text synthesis removed no silence at internal chunk joins'
             )
         if touched_pages != len(used_pages):
             raise SystemExit(

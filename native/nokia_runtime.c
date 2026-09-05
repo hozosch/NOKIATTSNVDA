@@ -1,5 +1,6 @@
 #include "nokia_runtime.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -188,6 +189,27 @@ typedef struct {
     uint8_t used;
 } RuntimeBlock;
 
+/* Streaming WSOLA rate control.  Nokia's TTtsStyle::iRate field is ignored by
+   the original engine, so the standalone DLL changes duration after Klatt PCM
+   has been generated.  Keeping this state in the DLL gives every client the
+   same rate behaviour and preserves pitch. */
+#define RATE_FRAME   480u
+#define RATE_OVERLAP 240u
+#define RATE_SEARCH   64u
+#define RATE_STEP      4u
+#define RATE_CORR     96u
+
+typedef struct {
+    double factor, position;
+    int16_t *samples;
+    size_t count, capacity;
+    int16_t tail[RATE_OVERLAP];
+    uint8_t have_tail;
+} NokiaRate;
+
+#define SEAM_QUIET_LEVEL 16
+#define SEAM_PREROLL     32u
+
 struct NokiaRuntime {
     uint8_t *rom;
     size_t rom_size;
@@ -211,7 +233,13 @@ struct NokiaRuntime {
     const NokiaRuntimeCallbacks *callbacks;
     uint32_t *pending;
     uint32_t pending_count, pending_capacity, text_chunks;
-    uint8_t done, first_pcm_seen;
+    NokiaRate *rate;
+    int16_t *rate_output, *seam_quiet;
+    size_t rate_output_capacity, seam_quiet_count, seam_quiet_capacity;
+    uint32_t seam_trimmed_samples, seam_leading_seen;
+    int16_t seam_leading[SEAM_PREROLL];
+    uint32_t seam_leading_count;
+    uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     NokiaFrontendHost host;
 };
 
@@ -389,6 +417,256 @@ static int descriptor_data(NokiaRuntime *r, uint32_t d,
     return *data != NULL || len == 0;
 }
 
+static int rate_reserve_samples(NokiaRate *s, size_t wanted) {
+    size_t capacity;
+    int16_t *grown;
+    if (wanted <= s->capacity) return 1;
+    capacity = s->capacity ? s->capacity : 2048u;
+    while (capacity < wanted) {
+        if (capacity > (size_t)-1 / 2u) return 0;
+        capacity *= 2u;
+    }
+    grown = (int16_t *)realloc(s->samples, capacity * sizeof(*grown));
+    if (!grown) return 0;
+    s->samples = grown;
+    s->capacity = capacity;
+    return 1;
+}
+
+static NokiaRate *rate_create(double factor) {
+    NokiaRate *s = (NokiaRate *)calloc(1, sizeof(*s));
+    if (!s) return NULL;
+    s->factor = factor < 0.2 ? 0.2 : factor > 5.0 ? 5.0 : factor;
+    return s;
+}
+
+static void rate_destroy(NokiaRate *s) {
+    if (!s) return;
+    free(s->samples);
+    free(s);
+}
+
+static int rate_feed(NokiaRate *s, const int16_t *input, size_t input_count,
+                     int final, int16_t *output, size_t output_capacity) {
+    size_t produced = 0;
+    if (!s || (!input && input_count) || !output) return -1;
+    if (!rate_reserve_samples(s, s->count + input_count)) return -2;
+    if (input_count)
+        memcpy(s->samples + s->count, input, input_count * sizeof(*input));
+    s->count += input_count;
+    for (;;) {
+        size_t ideal = (size_t)s->position;
+        size_t margin = final ? RATE_FRAME
+                              : RATE_FRAME + RATE_SEARCH + RATE_CORR;
+        size_t read = ideal;
+        if (ideal + margin > s->count) break;
+        if (s->have_tail) {
+            int64_t best_score = INT64_MIN;
+            size_t lo = ideal > RATE_SEARCH ? ideal - RATE_SEARCH : 0u;
+            size_t hi = ideal + RATE_SEARCH;
+            size_t candidate, k;
+            if (hi + RATE_CORR > s->count) hi = s->count - RATE_CORR;
+            for (candidate = lo; candidate <= hi; candidate += RATE_STEP) {
+                int64_t score = 0;
+                for (k = 0; k < RATE_CORR; k += 2u)
+                    score += (int32_t)s->tail[k] * s->samples[candidate + k];
+                if (score > best_score) {
+                    best_score = score;
+                    read = candidate;
+                }
+            }
+        }
+        if (read + RATE_FRAME > s->count ||
+            produced + RATE_OVERLAP > output_capacity)
+            break;
+        if (!s->have_tail) {
+            memcpy(output + produced, s->samples + read,
+                   RATE_OVERLAP * sizeof(*output));
+        } else {
+            size_t k;
+            for (k = 0; k < RATE_OVERLAP; ++k) {
+                int32_t numerator =
+                    (int32_t)s->tail[k] * (int32_t)(RATE_OVERLAP - k) +
+                    (int32_t)s->samples[read + k] * (int32_t)k;
+                int32_t mixed = numerator / (int32_t)RATE_OVERLAP;
+                if (numerator < 0 && numerator % (int32_t)RATE_OVERLAP) --mixed;
+                output[produced + k] = (int16_t)(
+                    mixed < -32768 ? -32768 : mixed > 32767 ? 32767 : mixed);
+            }
+        }
+        memcpy(s->tail, s->samples + read + RATE_OVERLAP,
+               RATE_OVERLAP * sizeof(*s->tail));
+        s->have_tail = 1u;
+        produced += RATE_OVERLAP;
+        s->position += RATE_OVERLAP * s->factor;
+    }
+    {
+        size_t keep = s->position > RATE_SEARCH + 1u
+            ? (size_t)s->position - RATE_SEARCH - 1u : 0u;
+        if (keep) {
+            size_t drop = keep > s->count ? s->count : keep;
+            memmove(s->samples, s->samples + drop,
+                    (s->count - drop) * sizeof(*s->samples));
+            s->count -= drop;
+            s->position -= keep;
+        }
+    }
+    if (final && s->have_tail) {
+        if (produced + RATE_OVERLAP > output_capacity) return -3;
+        memcpy(output + produced, s->tail,
+               RATE_OVERLAP * sizeof(*output));
+        produced += RATE_OVERLAP;
+        s->have_tail = 0u;
+        s->count = 0u;
+        s->position = 0.0;
+    }
+    return produced > (size_t)INT_MAX ? -3 : (int)produced;
+}
+
+static int reserve_i16(int16_t **buffer, size_t *capacity, size_t wanted) {
+    size_t grown_capacity;
+    int16_t *grown;
+    if (wanted <= *capacity) return 1;
+    grown_capacity = *capacity ? *capacity : 1024u;
+    while (grown_capacity < wanted) {
+        if (grown_capacity > (size_t)-1 / 2u) return 0;
+        grown_capacity *= 2u;
+    }
+    grown = (int16_t *)realloc(*buffer,
+                               grown_capacity * sizeof(*grown));
+    if (!grown) return 0;
+    *buffer = grown;
+    *capacity = grown_capacity;
+    return 1;
+}
+
+static int emit_pcm(NokiaRuntime *r, const int16_t *samples,
+                    size_t count, int final) {
+    int produced;
+    size_t wanted;
+    if (!r->rate) {
+        if (count && r->callbacks && r->callbacks->pcm)
+            r->callbacks->pcm(r->callbacks->user, samples,
+                              (uint32_t)count, SAMPLE_RATE);
+        return 1;
+    }
+    wanted = (r->rate->count + count + RATE_FRAME * 2u) * 6u;
+    if (wanted < RATE_FRAME * 4u) wanted = RATE_FRAME * 4u;
+    if (!reserve_i16(&r->rate_output, &r->rate_output_capacity, wanted))
+        return 0;
+    produced = rate_feed(r->rate, samples, count, final,
+                         r->rate_output, r->rate_output_capacity);
+    if (produced < 0) return 0;
+    if (produced && r->callbacks && r->callbacks->pcm)
+        r->callbacks->pcm(r->callbacks->user, r->rate_output,
+                          (uint32_t)produced, SAMPLE_RATE);
+    return 1;
+}
+
+static int quiet_sample(int16_t sample) {
+    return sample >= -SEAM_QUIET_LEVEL && sample <= SEAM_QUIET_LEVEL;
+}
+
+static int remember_leading(NokiaRuntime *r, const int16_t *samples,
+                            size_t count) {
+    size_t keep, old_keep;
+    if (!count) return 1;
+    r->seam_leading_seen += (uint32_t)count;
+    keep = count < SEAM_PREROLL ? count : SEAM_PREROLL;
+    old_keep = r->seam_leading_count;
+    if (keep == SEAM_PREROLL) {
+        memcpy(r->seam_leading, samples + count - keep,
+               keep * sizeof(*samples));
+        r->seam_leading_count = (uint32_t)keep;
+        return 1;
+    }
+    if (old_keep + keep > SEAM_PREROLL) {
+        size_t drop = old_keep + keep - SEAM_PREROLL;
+        memmove(r->seam_leading, r->seam_leading + drop,
+                (old_keep - drop) * sizeof(*samples));
+        old_keep -= drop;
+    }
+    memcpy(r->seam_leading + old_keep, samples + count - keep,
+           keep * sizeof(*samples));
+    r->seam_leading_count = (uint32_t)(old_keep + keep);
+    return 1;
+}
+
+static int append_quiet(NokiaRuntime *r, const int16_t *samples,
+                        size_t count) {
+    if (!count) return 1;
+    if (!reserve_i16(&r->seam_quiet, &r->seam_quiet_capacity,
+                     r->seam_quiet_count + count))
+        return 0;
+    memcpy(r->seam_quiet + r->seam_quiet_count, samples,
+           count * sizeof(*samples));
+    r->seam_quiet_count += count;
+    return 1;
+}
+
+/* Preserve all pauses produced inside a Nokia chunk.  Only silence immediately
+   before and after an artificial long-text boundary is shortened. */
+static int seam_feed(NokiaRuntime *r, const int16_t *samples, size_t count) {
+    size_t start = 0, end;
+    if (!r->seam_enabled) return emit_pcm(r, samples, count, 0);
+    if (r->seam_skip_leading) {
+        while (start < count && quiet_sample(samples[start])) ++start;
+        if (!remember_leading(r, samples, start)) return 0;
+        if (start == count) return 1;
+        if (r->seam_leading_seen > r->seam_leading_count)
+            r->seam_trimmed_samples +=
+                r->seam_leading_seen - r->seam_leading_count;
+        if (r->seam_leading_count &&
+            !emit_pcm(r, r->seam_leading, r->seam_leading_count, 0))
+            return 0;
+        r->seam_leading_seen = 0u;
+        r->seam_leading_count = 0u;
+        r->seam_skip_leading = 0u;
+    }
+    end = count;
+    while (end > start && quiet_sample(samples[end - 1u])) --end;
+    if (end == start)
+        return append_quiet(r, samples + start, count - start);
+    if (r->seam_quiet_count) {
+        if (!emit_pcm(r, r->seam_quiet, r->seam_quiet_count, 0)) return 0;
+        r->seam_quiet_count = 0u;
+    }
+    if (end > start && !emit_pcm(r, samples + start, end - start, 0)) return 0;
+    return append_quiet(r, samples + end, count - end);
+}
+
+static int seam_finish_chunk(NokiaRuntime *r, int final) {
+    size_t keep;
+    if (!r->seam_enabled) return final ? emit_pcm(r, NULL, 0u, 1) : 1;
+    if (final) {
+        if (r->seam_skip_leading && r->seam_leading_count) {
+            if (r->seam_leading_seen > r->seam_leading_count)
+                r->seam_trimmed_samples +=
+                    r->seam_leading_seen - r->seam_leading_count;
+            if (!emit_pcm(r, r->seam_leading,
+                          r->seam_leading_count, 0)) return 0;
+        }
+        if (r->seam_quiet_count &&
+            !emit_pcm(r, r->seam_quiet, r->seam_quiet_count, 0))
+            return 0;
+        r->seam_quiet_count = 0u;
+        r->seam_leading_seen = r->seam_leading_count = 0u;
+        return emit_pcm(r, NULL, 0u, 1);
+    }
+    keep = r->seam_quiet_count < SEAM_PREROLL
+        ? r->seam_quiet_count : SEAM_PREROLL;
+    if (r->seam_quiet_count > keep)
+        r->seam_trimmed_samples +=
+            (uint32_t)(r->seam_quiet_count - keep);
+    if (keep && !emit_pcm(r, r->seam_quiet + r->seam_quiet_count - keep,
+                          keep, 0))
+        return 0;
+    r->seam_quiet_count = 0u;
+    r->seam_skip_leading = 1u;
+    r->seam_leading_seen = r->seam_leading_count = 0u;
+    return 1;
+}
+
 static uint32_t rt_process(void *ctx, uint32_t descriptor) {
     NokiaRuntime *r = (NokiaRuntime *)ctx;
     uint8_t *data = NULL;
@@ -402,9 +680,8 @@ static uint32_t rt_process(void *ctx, uint32_t descriptor) {
         r->first_pcm_seen = 1u;
         r->first_pcm_ticks = (uint64_t)(clock() - r->speak_started);
     }
-    if (bytes && r->callbacks && r->callbacks->pcm)
-        r->callbacks->pcm(r->callbacks->user, (const int16_t *)data,
-                          bytes / 2u, SAMPLE_RATE);
+    if (bytes && !seam_feed(r, (const int16_t *)data, bytes / 2u))
+        r->last_error = -1402;
     r->audio_ticks += (uint64_t)(clock() - before);
     return 0;
 }
@@ -530,6 +807,8 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
 
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *r) {
     if (!r) return;
+    rate_destroy(r->rate);
+    free(r->rate_output); free(r->seam_quiet);
     free(r->pending); free(r->blocks); free(r->heap); free(r->vtable);
     free(r->traps); free(r->pool); free(r->stack); free(r->rom); free(r);
 }
@@ -684,6 +963,7 @@ static int synthesize_text_chunk(NokiaRuntime *r, const uint16_t *text,
         if(++loops>100000u){r->last_error=-3004;goto failed;}
     }
     if(!drain(r))goto failed;
+    if(r->last_error)goto failed;
     if(r->cancelled){a[0]=r->dev;native_call(r,r->dev_stop,a,1,&res);}
     a[0]=pt;native_call(r,r->pt_delete,a,1,&res);pt=0;
     if(seg){rt_free(r,seg);seg=0;}free_desc(r,txt);free_desc(r,e8);free_desc(r,e16);
@@ -701,8 +981,13 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     if(!r||!text||!len||!r->dev){if(r)r->last_error=-3000;return 0;}
     r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
     r->first_pcm_ticks=0;r->first_pcm_seen=0;r->text_chunks=0;
+    r->seam_trimmed_samples=0;r->seam_quiet_count=0;
+    r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
+    rate_destroy(r->rate);r->rate=NULL;
+    if(r->rate_factor!=1.0){r->rate=rate_create(r->rate_factor);if(!r->rate){r->last_error=-3005;goto failed;}}
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
+    r->seam_enabled = incremental ? 1u : 0u;
     while(offset < len && !r->cancelled) {
         remaining = len - offset;
         chunk = incremental ? next_text_chunk(text + offset, remaining) : remaining;
@@ -710,6 +995,9 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
         ++r->text_chunks;
         if(!synthesize_text_chunk(r,text + offset,chunk))goto failed;
         offset += chunk;
+        if(!r->cancelled && !seam_finish_chunk(r,offset==len)){
+            r->last_error=-3006;goto failed;
+        }
     }
     r->callbacks=NULL;
     return offset == len || r->cancelled;
@@ -726,3 +1014,4 @@ NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_frontend_ticks(const NokiaRuntime *r
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_audio_ticks(const NokiaRuntime *r){return r?r->audio_ticks:0;}
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_first_pcm_ticks(const NokiaRuntime *r){return r?r->first_pcm_ticks:0;}
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_text_chunks(const NokiaRuntime *r){return r?r->text_chunks:0;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_seam_trimmed_samples(const NokiaRuntime *r){return r?r->seam_trimmed_samples:0;}

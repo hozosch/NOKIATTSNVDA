@@ -43,7 +43,10 @@ class _Callbacks(ctypes.Structure):
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
 	description = "Nokia 5320 Native (experimental)"
-	supportedSettings = (BaseSynthDriver.PitchSetting(),)
+	supportedSettings = (
+		BaseSynthDriver.RateSetting(),
+		BaseSynthDriver.PitchSetting(),
+	)
 	supportedCommands = {IndexCommand, PitchCommand}
 	supportedNotifications = {synthIndexReached, synthDoneSpeaking}
 
@@ -59,6 +62,7 @@ class SynthDriver(BaseSynthDriver):
 			return False
 
 	def __init__(self):
+		self._rate = 50
 		self._pitch = 50
 		self._root = Path(__file__).resolve().parent.parent
 		arch = self._getProcessArchitecture()
@@ -167,6 +171,8 @@ class SynthDriver(BaseSynthDriver):
 		]
 		self._dll.nokia_runtime_create_5320_snapshot.restype = ctypes.c_void_p
 		self._dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
+		self._dll.nokia_runtime_set_rate.argtypes = [ctypes.c_void_p, ctypes.c_double]
+		self._dll.nokia_runtime_set_rate.restype = ctypes.c_int
 		self._dll.nokia_runtime_set_pitch.argtypes = [ctypes.c_void_p, ctypes.c_double]
 		self._dll.nokia_runtime_set_pitch.restype = ctypes.c_int
 		self._dll.nokia_runtime_speak_utf16.argtypes = [
@@ -244,6 +250,18 @@ class SynthDriver(BaseSynthDriver):
 	def _set_pitch(self, value):
 		self._pitch = max(0, min(100, int(value)))
 
+	def _get_rate(self):
+		return self._rate
+
+	def _set_rate(self, value):
+		self._rate = max(0, min(100, int(value)))
+
+	@staticmethod
+	def _rateFactor(value):
+		# Match the useful range of the former hybrid driver: every 25 slider
+		# points doubles or halves duration, capped at 0.4x..4x.
+		return max(0.4, min(4.0, 2.0 ** ((value - 50) / 25.0)))
+
 	@staticmethod
 	def _pitchFactor(value):
 		# 0..100 maps exponentially to the runtime's native 0.5x..2x range.
@@ -279,7 +297,12 @@ class SynthDriver(BaseSynthDriver):
 			return
 		with self._lock:
 			generation = self._generation
-		self._requests.put((generation, tuple(runs), tuple(indexes)))
+		self._requests.put((
+			generation,
+			tuple(runs),
+			tuple(indexes),
+			self._rateFactor(self._rate),
+		))
 
 	def cancel(self):
 		with self._lock:
@@ -310,16 +333,16 @@ class SynthDriver(BaseSynthDriver):
 			request = self._requests.get()
 			if request is None:
 				break
-			generation, runs, indexes = request
+			generation, runs, indexes, rateFactor = request
 			with self._lock:
 				if generation != self._generation:
 					continue
 			try:
-				self._runUtterance(generation, runs, indexes)
+				self._runUtterance(generation, runs, indexes, rateFactor)
 			except Exception:
 				log.error("Native Nokia 5320 synthesis failed", exc_info=True)
 
-	def _runUtterance(self, generation, runs, indexes):
+	def _runUtterance(self, generation, runs, indexes, rateFactor):
 		runtime = self._dll.nokia_runtime_create_5320_snapshot(
 			self._rom,
 			len(self._romBytes),
@@ -347,6 +370,8 @@ class SynthDriver(BaseSynthDriver):
 		indexCallback = _IndexCallback(onIndex)
 		callbacks = _Callbacks(pcmCallback, indexCallback, None)
 		try:
+			if not self._dll.nokia_runtime_set_rate(runtime, rateFactor):
+				raise RuntimeError("Native runtime rejected rate change")
 			for text, pitchFactor in runs:
 				if generation != self._generation:
 					return
