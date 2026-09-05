@@ -63,11 +63,12 @@ struct NokiaRuntime {
     volatile long cancelled;
     int last_error;
     uint32_t klatt_failure, klatt_regs[5], klatt_count, klatt_gain;
-    uint64_t frontend_ticks, audio_ticks;
+    uint64_t frontend_ticks, audio_ticks, first_pcm_ticks;
+    clock_t speak_started;
     const NokiaRuntimeCallbacks *callbacks;
     uint32_t *pending;
-    uint32_t pending_count, pending_capacity;
-    uint8_t done;
+    uint32_t pending_count, pending_capacity, text_chunks;
+    uint8_t done, first_pcm_seen;
     NokiaFrontendHost host;
 };
 
@@ -251,6 +252,10 @@ static uint32_t rt_process(void *ctx, uint32_t descriptor) {
     if (!descriptor_data(r, descriptor, &data, &bytes) ||
         !pending_add(r, descriptor)) {
         r->last_error = -1401; return 0;
+    }
+    if (bytes && !r->first_pcm_seen) {
+        r->first_pcm_seen = 1u;
+        r->first_pcm_ticks = (uint64_t)(clock() - r->speak_started);
     }
     if (bytes && r->callbacks && r->callbacks->pcm)
         r->callbacks->pcm(r->callbacks->user, (const int16_t *)data,
@@ -437,13 +442,80 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_set_rate(NokiaRuntime *r,double f){if(!r)
 NOKIA_RUNTIME_EXPORT int nokia_runtime_set_pitch(NokiaRuntime *r,double f){if(!r)return 0;if(f<0.5)f=0.5;if(f>2.0)f=2.0;r->pitch_factor=f;return 1;}
 NOKIA_RUNTIME_EXPORT void nokia_runtime_cancel(NokiaRuntime *r){if(r)r->cancelled=1;}
 
-NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
-    NokiaRuntime *r,const uint16_t *text,uint32_t len,const NokiaRuntimeCallbacks *cb) {
+#define NOKIA_LONG_TEXT_THRESHOLD 256u
+#define NOKIA_TEXT_CHUNK_MIN       96u
+#define NOKIA_TEXT_CHUNK_TARGET   192u
+#define NOKIA_TEXT_CHUNK_LIMIT    384u
+
+static int text_space16(uint16_t c) {
+    return c <= 0x20u || c == 0x00a0u || c == 0x2028u || c == 0x2029u;
+}
+static int text_terminal16(uint16_t c) {
+    return c == '.' || c == '!' || c == '?' || c == 0x2026u ||
+           c == 0x3002u || c == 0xff01u || c == 0xff1fu;
+}
+static int text_closer16(uint16_t c) {
+    return c == '"' || c == '\'' || c == ')' || c == ']' || c == '}' ||
+           c == 0x00bbu || c == 0x2019u || c == 0x201du;
+}
+static int text_period_is_internal(const uint16_t *text, uint32_t pos,
+                                   uint32_t len) {
+    uint32_t i, letters = 0;
+    if (pos && pos + 1u < len &&
+        text[pos - 1u] >= '0' && text[pos - 1u] <= '9' &&
+        text[pos + 1u] >= '0' && text[pos + 1u] <= '9')
+        return 1;
+    i = pos;
+    while (i && ((text[i - 1u] >= 'A' && text[i - 1u] <= 'Z') ||
+                 (text[i - 1u] >= 'a' && text[i - 1u] <= 'z'))) {
+        --i; ++letters;
+    }
+    /* Do not split initials such as "z. B." or "A. Smith". */
+    return letters == 1u;
+}
+static uint32_t next_text_chunk(const uint16_t *text, uint32_t len) {
+    uint32_t i, j, last_terminal = 0, last_soft = 0, last_word = 0;
+    for (i = 0; i < len; ++i) {
+        uint16_t c = text[i];
+        if (c == '\r' || c == '\n' || c == 0x2028u || c == 0x2029u) {
+            j = i + 1u;
+            if (c == '\r' && j < len && text[j] == '\n') ++j;
+            while (j < len && text_space16(text[j])) ++j;
+            return j;
+        }
+        if (text_space16(c)) last_word = i + 1u;
+        if ((c == ';' || c == ':') && i + 1u >= NOKIA_TEXT_CHUNK_TARGET)
+            last_soft = i + 1u;
+        if (text_terminal16(c) &&
+            !(c == '.' && text_period_is_internal(text, i, len))) {
+            j = i + 1u;
+            while (j < len &&
+                   (text_terminal16(text[j]) || text_closer16(text[j])))
+                ++j;
+            if (j == len || text_space16(text[j])) {
+                while (j < len && text_space16(text[j])) ++j;
+                last_terminal = j;
+                if (j >= NOKIA_TEXT_CHUNK_MIN) return j;
+                i = j ? j - 1u : i;
+                continue;
+            }
+        }
+        if (i + 1u >= NOKIA_TEXT_CHUNK_LIMIT) {
+            if (last_terminal) return last_terminal;
+            if (last_soft) return last_soft;
+            if (last_word) return last_word;
+            return i + 1u;
+        }
+    }
+    if (last_terminal && last_terminal < len) return last_terminal;
+    return len;
+}
+
+static int synthesize_text_chunk(NokiaRuntime *r, const uint16_t *text,
+                                 uint32_t len) {
     uint32_t txt=0,e8=0,e16=0,pt=0,seg=0,res=0,a[3],loops=0;
-    clock_t start;
-    if(!r||!text||!len||!r->dev){if(r)r->last_error=-3000;return 0;}
-    r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
-    start=clock();
+    clock_t start = clock();
+    r->done=0;r->pending_count=0;
     txt=ptrc16(r,text,len);e8=ptrc8(r);e16=ptrc16(r,(const uint16_t*)L"",0);
     if(!txt||!e8||!e16){r->last_error=-3001;goto failed;}
     a[0]=txt;a[1]=e8;a[2]=e16;if(!native_call_l(r,r->pt_new,a,3,&pt)||!pt)goto failed;
@@ -452,10 +524,10 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     a[0]=seg;a[1]=txt;if(!native_call(r,r->seg_set_text_ptr,a,2,&res))goto failed;
     a[0]=pt;a[1]=seg;a[2]=0;if(!native_call_l(r,r->pt_add_segment,a,3,&res))goto failed;
     a[0]=r->dev;a[1]=pt;if(!native_call_l(r,r->dev_prime,a,2,&res))goto failed;
+    r->frontend_ticks += (uint64_t)(clock()-start);
     /* Neutral-rate native-only milestone: pitch is already applied in the
        Klatt callback. The existing prosody-rate scaler will move here next. */
     a[0]=r->dev;a[1]=1;if(!native_call_l(r,r->dev_synthesize,a,2,&res))goto failed;
-    r->frontend_ticks=(uint64_t)(clock()-start);
     while(!r->done&&!r->cancelled){
         if(!drain(r))goto failed;
         a[0]=r->scheduler_error;a[1]=(uint32_t)(int32_t)-100;
@@ -467,11 +539,34 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     if(r->cancelled){a[0]=r->dev;native_call(r,r->dev_stop,a,1,&res);}
     a[0]=pt;native_call(r,r->pt_delete,a,1,&res);pt=0;
     if(seg){rt_free(r,seg);seg=0;}free_desc(r,txt);free_desc(r,e8);free_desc(r,e16);
-    r->callbacks=NULL;return r->done||r->cancelled;
+    return r->done||r->cancelled;
 failed:
     if(pt){a[0]=pt;native_call(r,r->pt_delete,a,1,&res);}
     if(seg)rt_free(r,seg);if(txt)free_desc(r,txt);if(e8)free_desc(r,e8);if(e16)free_desc(r,e16);
-    r->callbacks=NULL;if(!r->last_error)r->last_error=-3099;return 0;
+    if(!r->last_error)r->last_error=-3099;return 0;
+}
+
+NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
+    NokiaRuntime *r,const uint16_t *text,uint32_t len,const NokiaRuntimeCallbacks *cb) {
+    uint32_t offset = 0, chunk, remaining;
+    int incremental;
+    if(!r||!text||!len||!r->dev){if(r)r->last_error=-3000;return 0;}
+    r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
+    r->first_pcm_ticks=0;r->first_pcm_seen=0;r->text_chunks=0;
+    r->speak_started=clock();
+    incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
+    while(offset < len && !r->cancelled) {
+        remaining = len - offset;
+        chunk = incremental ? next_text_chunk(text + offset, remaining) : remaining;
+        if(!chunk || chunk > remaining){r->last_error=-3010;goto failed;}
+        ++r->text_chunks;
+        if(!synthesize_text_chunk(r,text + offset,chunk))goto failed;
+        offset += chunk;
+    }
+    r->callbacks=NULL;
+    return offset == len || r->cancelled;
+failed:
+    r->callbacks=NULL;return 0;
 }
 
 NOKIA_RUNTIME_EXPORT int nokia_runtime_last_error(const NokiaRuntime *r){return r?r->last_error:-1;}
@@ -481,3 +576,5 @@ NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_count(const NokiaRuntime *r){r
 NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_klatt_gain(const NokiaRuntime *r){return r?r->klatt_gain:0;}
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_frontend_ticks(const NokiaRuntime *r){return r?r->frontend_ticks:0;}
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_audio_ticks(const NokiaRuntime *r){return r?r->audio_ticks:0;}
+NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_first_pcm_ticks(const NokiaRuntime *r){return r?r->first_pcm_ticks:0;}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_text_chunks(const NokiaRuntime *r){return r?r->text_chunks:0;}

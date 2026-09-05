@@ -68,6 +68,10 @@ def main() -> None:
     dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_last_error.restype = ctypes.c_int
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
+    dll.nokia_runtime_text_chunks.argtypes = [ctypes.c_void_p]
+    dll.nokia_runtime_text_chunks.restype = ctypes.c_uint32
+    dll.nokia_runtime_first_pcm_ticks.argtypes = [ctypes.c_void_p]
+    dll.nokia_runtime_first_pcm_ticks.restype = ctypes.c_uint64
 
     first_unsupported = optional_u32(dll, 'nokia_frontend_first_unsupported_pc_value')
     last_pc = optional_u32(dll, 'nokia_frontend_last_pc_value')
@@ -117,7 +121,13 @@ def main() -> None:
     def on_index(_user, _index):
         pass
     callbacks = Callbacks(on_pcm, on_index, None)
-    text = 'Hallo Welt'.encode('utf-16-le')
+    text = (
+        'Dies ist der erste Satz und er prueft die schnelle Analyse. '
+        'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '
+        'Auch der dritte Satz wird innerhalb derselben nativen Engine erzeugt. '
+        'Ein vierter Satz macht den Block lang genug fuer die inkrementelle Verarbeitung. '
+        'Zum Abschluss prueft dieser Satz, ob die Ausgabe vollstaendig bleibt.'
+    ).encode('utf-16-le')
     words = (ctypes.c_uint16 * (len(text)//2)).from_buffer_copy(text)
     try:
         ok = dll.nokia_runtime_speak_utf16(runtime, words, len(words),
@@ -138,13 +148,20 @@ def main() -> None:
             diagnostics.append(f'yields={yield_count()}')
         for label, fn in debug_values:
             diagnostics.append(f'{label}={fn():#x}')
+        chunks = dll.nokia_runtime_text_chunks(runtime)
+        first_pcm_ticks = dll.nokia_runtime_first_pcm_ticks(runtime)
         print('native speak result:', ok, 'error:', error,
               'pcm callbacks:', calls[0], 'samples:', samples[0],
+              'text chunks:', chunks, 'first PCM ticks:', first_pcm_ticks,
               ' '.join(diagnostics))
         if not ok or samples[0] <= 0:
             raise SystemExit(
                 f'native synthesis failed: error={error}, samples={samples[0]}, '
                 + ', '.join(diagnostics))
+        if chunks < 2:
+            raise SystemExit(
+                f'long-text synthesis did not segment internally: chunks={chunks}'
+            )
     finally:
         dll.nokia_runtime_destroy(runtime)
 

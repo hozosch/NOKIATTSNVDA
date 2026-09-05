@@ -62,6 +62,10 @@ NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_frontend_ticks(
     const NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_audio_ticks(
     const NokiaRuntime *runtime);
+NOKIA_RUNTIME_EXPORT uint64_t nokia_runtime_first_pcm_ticks(
+    const NokiaRuntime *runtime);
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_text_chunks(
+    const NokiaRuntime *runtime);
 
 #ifdef __cplusplus
 }
