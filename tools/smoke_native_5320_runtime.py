@@ -116,10 +116,13 @@ def main() -> None:
     rom_buf, rom_ptr = blob_arg(rom_data)
     snap_buf, snap_ptr = blob_arg(snapshot_data)
     dll.nokia_runtime_rom_trace_reset()
-    runtime = dll.nokia_runtime_create_5320_snapshot(
-        rom_ptr, len(rom_data), snap_ptr, len(snapshot_data))
-    if not runtime:
-        raise SystemExit('native snapshot constructor failed')
+
+    def create_runtime():
+        runtime = dll.nokia_runtime_create_5320_snapshot(
+            rom_ptr, len(rom_data), snap_ptr, len(snapshot_data))
+        if not runtime:
+            raise SystemExit('native snapshot constructor failed')
+        return runtime
 
     samples = [0]
     calls = [0]
@@ -134,24 +137,31 @@ def main() -> None:
         pass
     callbacks = Callbacks(on_pcm, on_index, None)
 
-    def speak_case(label: str, value: str) -> None:
+    def speak_case(label: str, value: str, runtime=None) -> None:
+        owned_runtime = runtime is None
+        if owned_runtime:
+            runtime = create_runtime()
         encoded = value.encode('utf-16-le')
         words = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
         samples_before = samples[0]
         calls_before = calls[0]
-        ok = dll.nokia_runtime_speak_utf16(
-            runtime, words, len(words), ctypes.byref(callbacks))
-        error = dll.nokia_runtime_last_error(runtime)
-        produced = samples[0] - samples_before
-        print(
-            f'native case {label!r}: result={ok} error={error} '
-            f'pcm callbacks={calls[0] - calls_before} samples={produced}'
-        )
-        if not ok or produced <= 0:
-            raise SystemExit(
-                f'native synthesis failed for {label!r}: '
-                f'error={error}, samples={produced}'
+        try:
+            ok = dll.nokia_runtime_speak_utf16(
+                runtime, words, len(words), ctypes.byref(callbacks))
+            error = dll.nokia_runtime_last_error(runtime)
+            produced = samples[0] - samples_before
+            print(
+                f'native case {label!r}: result={ok} error={error} '
+                f'pcm callbacks={calls[0] - calls_before} samples={produced}'
             )
+            if not ok or produced <= 0:
+                raise SystemExit(
+                    f'native synthesis failed for {label!r}: '
+                    f'error={error}, samples={produced}'
+                )
+        finally:
+            if owned_runtime:
+                dll.nokia_runtime_destroy(runtime)
 
     # Exercise the letter-name path one character at a time. Embedding the
     # alphabet in a sentence does not use the same Nokia frontend branch and
@@ -174,8 +184,9 @@ def main() -> None:
         'Komma Punkt Doppelpunkt Bindestrich Klammer Fragezeichen Ausrufezeichen. '
         'Grossbuchstaben ABCDEFGHIJKLMNOPQRSTUVWXYZ und Umlaute Ä Ö Ü ä ö ü ß.'
     )
+    runtime = create_runtime()
     try:
-        speak_case('long German block', text)
+        speak_case('long German block', text, runtime)
         ok = 1
         error = dll.nokia_runtime_last_error(runtime)
         diagnostics = []
