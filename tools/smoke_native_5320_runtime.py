@@ -133,6 +133,33 @@ def main() -> None:
     def on_index(_user, _index):
         pass
     callbacks = Callbacks(on_pcm, on_index, None)
+
+    def speak_case(label: str, value: str) -> None:
+        encoded = value.encode('utf-16-le')
+        words = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
+        samples_before = samples[0]
+        calls_before = calls[0]
+        ok = dll.nokia_runtime_speak_utf16(
+            runtime, words, len(words), ctypes.byref(callbacks))
+        error = dll.nokia_runtime_last_error(runtime)
+        produced = samples[0] - samples_before
+        print(
+            f'native case {label!r}: result={ok} error={error} '
+            f'pcm callbacks={calls[0] - calls_before} samples={produced}'
+        )
+        if not ok or produced <= 0:
+            raise SystemExit(
+                f'native synthesis failed for {label!r}: '
+                f'error={error}, samples={produced}'
+            )
+
+    # Exercise the letter-name path one character at a time. Embedding the
+    # alphabet in a sentence does not use the same Nokia frontend branch and
+    # therefore failed to reveal missing compact-ROM pages needed by "H".
+    for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ':
+        speak_case(f'isolated letter {letter}', letter)
+    speak_case('known crash word', 'Einstellungen')
+
     text = (
         'Dies ist der erste Satz und er prueft die schnelle Analyse. '
         'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '
@@ -146,11 +173,10 @@ def main() -> None:
         'Null eins zwei drei vier fuenf sechs sieben acht neun zehn hundert tausend '
         'Komma Punkt Doppelpunkt Bindestrich Klammer Fragezeichen Ausrufezeichen. '
         'Grossbuchstaben ABCDEFGHIJKLMNOPQRSTUVWXYZ und Umlaute Ä Ö Ü ä ö ü ß.'
-    ).encode('utf-16-le')
-    words = (ctypes.c_uint16 * (len(text)//2)).from_buffer_copy(text)
+    )
     try:
-        ok = dll.nokia_runtime_speak_utf16(runtime, words, len(words),
-                                            ctypes.byref(callbacks))
+        speak_case('long German block', text)
+        ok = 1
         error = dll.nokia_runtime_last_error(runtime)
         diagnostics = []
         if first_unsupported:

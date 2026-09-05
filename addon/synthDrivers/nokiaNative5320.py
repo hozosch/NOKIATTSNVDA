@@ -14,7 +14,7 @@ from pathlib import Path
 import config
 from logHandler import log
 import nvwave
-from speech.commands import IndexCommand
+from speech.commands import IndexCommand, PitchCommand
 from synthDriverHandler import (
 	SynthDriver as BaseSynthDriver,
 	synthDoneSpeaking,
@@ -44,7 +44,7 @@ class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
 	description = "Nokia 5320 Native (experimental)"
 	supportedSettings = (BaseSynthDriver.PitchSetting(),)
-	supportedCommands = {IndexCommand}
+	supportedCommands = {IndexCommand, PitchCommand}
 	supportedNotifications = {synthIndexReached, synthDoneSpeaking}
 
 	@classmethod
@@ -250,22 +250,36 @@ class SynthDriver(BaseSynthDriver):
 		return 2.0 ** ((value - 50) / 50.0)
 
 	def speak(self, speechSequence):
+		runs = []
 		parts = []
 		indexes = []
+		currentPitch = self._pitch
+
+		def flushText():
+			if not parts:
+				return
+			text = "".join(parts)
+			parts.clear()
+			if text:
+				runs.append((text, self._pitchFactor(currentPitch)))
+
 		for item in speechSequence:
 			if isinstance(item, str):
 				parts.append(item)
 			elif isinstance(item, IndexCommand):
 				indexes.append(item.index)
-		text = "".join(parts)
-		if not text:
+			elif isinstance(item, PitchCommand):
+				flushText()
+				currentPitch = max(0, min(100, int(item.newValue)))
+		flushText()
+		if not runs:
 			for index in indexes:
 				synthIndexReached.notify(synth=self, index=index)
 			synthDoneSpeaking.notify(synth=self)
 			return
 		with self._lock:
 			generation = self._generation
-		self._requests.put((generation, text, tuple(indexes), self._pitch))
+		self._requests.put((generation, tuple(runs), tuple(indexes)))
 
 	def cancel(self):
 		with self._lock:
@@ -296,16 +310,16 @@ class SynthDriver(BaseSynthDriver):
 			request = self._requests.get()
 			if request is None:
 				break
-			generation, text, indexes, pitch = request
+			generation, runs, indexes = request
 			with self._lock:
 				if generation != self._generation:
 					continue
 			try:
-				self._runUtterance(generation, text, indexes, pitch)
+				self._runUtterance(generation, runs, indexes)
 			except Exception:
 				log.error("Native Nokia 5320 synthesis failed", exc_info=True)
 
-	def _runUtterance(self, generation, text, indexes, pitch):
+	def _runUtterance(self, generation, runs, indexes):
 		runtime = self._dll.nokia_runtime_create_5320_snapshot(
 			self._rom,
 			len(self._romBytes),
@@ -332,41 +346,45 @@ class SynthDriver(BaseSynthDriver):
 		pcmCallback = _PcmCallback(onPcm)
 		indexCallback = _IndexCallback(onIndex)
 		callbacks = _Callbacks(pcmCallback, indexCallback, None)
-		encoded = text.encode("utf-16-le")
-		units = len(encoded) // 2
-		textBuffer = (ctypes.c_uint16 * units).from_buffer_copy(encoded)
 		try:
-			self._dll.nokia_runtime_set_pitch(runtime, self._pitchFactor(pitch))
-			ok = self._dll.nokia_runtime_speak_utf16(
-				runtime,
-				textBuffer,
-				units,
-				ctypes.byref(callbacks),
-			)
-			if not ok and generation == self._generation:
-				error = self._dll.nokia_runtime_last_error(runtime)
-				klattDiagnostics = [
-					f"klattFailure=0x{self._dll.nokia_runtime_klatt_failure(runtime):08x}",
-					*(
-						f"klattR{label}=0x{self._dll.nokia_runtime_klatt_reg(runtime, index):08x}"
-						for index, label in enumerate(("0", "1", "2", "3", "Sp"))
-					),
-					f"klattCount=0x{self._dll.nokia_runtime_klatt_count(runtime):08x}",
-					f"klattGain=0x{self._dll.nokia_runtime_klatt_gain(runtime):08x}",
-				]
-				diagnostics = ", ".join([
-					f"runtimeArch={self._arch}",
-					f"runtimeDll={self._dllPath.name}",
-					*klattDiagnostics,
-					*(
-						f"{label}=0x{function():08x}"
-						for label, function in self._diagnosticFunctions.items()
-					),
-				])
-				raise RuntimeError(
-					f"Native runtime error {error}"
-					+ (f"; {diagnostics}" if diagnostics else "")
+			for text, pitchFactor in runs:
+				if generation != self._generation:
+					return
+				encoded = text.encode("utf-16-le")
+				units = len(encoded) // 2
+				textBuffer = (ctypes.c_uint16 * units).from_buffer_copy(encoded)
+				if not self._dll.nokia_runtime_set_pitch(runtime, pitchFactor):
+					raise RuntimeError("Native runtime rejected pitch change")
+				ok = self._dll.nokia_runtime_speak_utf16(
+					runtime,
+					textBuffer,
+					units,
+					ctypes.byref(callbacks),
 				)
+				if not ok and generation == self._generation:
+					error = self._dll.nokia_runtime_last_error(runtime)
+					klattDiagnostics = [
+						f"klattFailure=0x{self._dll.nokia_runtime_klatt_failure(runtime):08x}",
+						*(
+							f"klattR{label}=0x{self._dll.nokia_runtime_klatt_reg(runtime, index):08x}"
+							for index, label in enumerate(("0", "1", "2", "3", "Sp"))
+						),
+						f"klattCount=0x{self._dll.nokia_runtime_klatt_count(runtime):08x}",
+						f"klattGain=0x{self._dll.nokia_runtime_klatt_gain(runtime):08x}",
+					]
+					diagnostics = ", ".join([
+						f"runtimeArch={self._arch}",
+						f"runtimeDll={self._dllPath.name}",
+						*klattDiagnostics,
+						*(
+							f"{label}=0x{function():08x}"
+							for label, function in self._diagnosticFunctions.items()
+						),
+					])
+					raise RuntimeError(
+						f"Native runtime error {error}"
+						+ (f"; {diagnostics}" if diagnostics else "")
+					)
 			if generation == self._generation:
 				for index in indexes:
 					synthIndexReached.notify(synth=self, index=index)
