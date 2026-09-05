@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import re
 from pathlib import Path
 
@@ -51,6 +52,7 @@ def main() -> None:
     ap.add_argument('rom', type=Path)
     ap.add_argument('snapshot', type=Path)
     ap.add_argument('data_dir', type=Path)
+    ap.add_argument('--rom-trace', type=Path)
     args = ap.parse_args()
 
     dll = ctypes.CDLL(str(args.dll.resolve()))
@@ -72,6 +74,14 @@ def main() -> None:
     dll.nokia_runtime_text_chunks.restype = ctypes.c_uint32
     dll.nokia_runtime_first_pcm_ticks.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_first_pcm_ticks.restype = ctypes.c_uint64
+    dll.nokia_runtime_rom_trace_reset.argtypes = []
+    dll.nokia_runtime_rom_trace_reset.restype = None
+    dll.nokia_runtime_rom_trace_page_size.argtypes = []
+    dll.nokia_runtime_rom_trace_page_size.restype = ctypes.c_uint32
+    dll.nokia_runtime_rom_trace_page_used.argtypes = [ctypes.c_uint32]
+    dll.nokia_runtime_rom_trace_page_used.restype = ctypes.c_uint32
+    dll.nokia_runtime_rom_trace_touched_pages.argtypes = []
+    dll.nokia_runtime_rom_trace_touched_pages.restype = ctypes.c_uint32
 
     first_unsupported = optional_u32(dll, 'nokia_frontend_first_unsupported_pc_value')
     last_pc = optional_u32(dll, 'nokia_frontend_last_pc_value')
@@ -104,6 +114,7 @@ def main() -> None:
     snapshot_data = args.snapshot.read_bytes()
     rom_buf, rom_ptr = blob_arg(rom_data)
     snap_buf, snap_ptr = blob_arg(snapshot_data)
+    dll.nokia_runtime_rom_trace_reset()
     runtime = dll.nokia_runtime_create_5320_snapshot(
         rom_ptr, len(rom_data), snap_ptr, len(snapshot_data))
     if not runtime:
@@ -150,9 +161,18 @@ def main() -> None:
             diagnostics.append(f'{label}={fn():#x}')
         chunks = dll.nokia_runtime_text_chunks(runtime)
         first_pcm_ticks = dll.nokia_runtime_first_pcm_ticks(runtime)
+        page_size = dll.nokia_runtime_rom_trace_page_size()
+        total_pages = (len(rom_data) + page_size - 1) // page_size
+        used_pages = [
+            page for page in range(total_pages)
+            if dll.nokia_runtime_rom_trace_page_used(page)
+        ]
+        touched_pages = dll.nokia_runtime_rom_trace_touched_pages()
         print('native speak result:', ok, 'error:', error,
               'pcm callbacks:', calls[0], 'samples:', samples[0],
               'text chunks:', chunks, 'first PCM ticks:', first_pcm_ticks,
+              'ROM pages:', touched_pages, '/', total_pages,
+              'ROM bytes:', touched_pages * page_size,
               ' '.join(diagnostics))
         if not ok or samples[0] <= 0:
             raise SystemExit(
@@ -162,6 +182,28 @@ def main() -> None:
             raise SystemExit(
                 f'long-text synthesis did not segment internally: chunks={chunks}'
             )
+        if touched_pages != len(used_pages):
+            raise SystemExit(
+                f'ROM trace count mismatch: export={touched_pages}, '
+                f'enumerated={len(used_pages)}'
+            )
+        if args.rom_trace:
+            ranges = []
+            for page in used_pages:
+                if ranges and page == ranges[-1][1] + 1:
+                    ranges[-1][1] = page
+                else:
+                    ranges.append([page, page])
+            args.rom_trace.parent.mkdir(parents=True, exist_ok=True)
+            args.rom_trace.write_text(json.dumps({
+                'format': 'nokia-rom-pages-v1',
+                'pageSize': page_size,
+                'virtualSize': len(rom_data),
+                'usedPageCount': len(used_pages),
+                'usedPages': used_pages,
+                'usedRanges': ranges,
+            }, indent=2) + '\n', encoding='utf-8')
+            print('wrote ROM trace:', args.rom_trace)
     finally:
         dll.nokia_runtime_destroy(runtime)
 

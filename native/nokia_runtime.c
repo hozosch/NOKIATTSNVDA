@@ -19,6 +19,51 @@
 #define SAMPLE_RATE 16000u
 #define SNAP_WORDS 27u
 
+#define ROM_TRACE_PAGE_SHIFT 12u
+#define ROM_TRACE_PAGE_SIZE  (1u << ROM_TRACE_PAGE_SHIFT)
+#define ROM_TRACE_MAX_PAGES  65536u
+
+static uint8_t nokia_rom_trace_pages[ROM_TRACE_MAX_PAGES];
+static uint32_t nokia_rom_trace_touched;
+
+NOKIA_RUNTIME_EXPORT void nokia_runtime_rom_trace_reset(void) {
+    memset(nokia_rom_trace_pages, 0, sizeof(nokia_rom_trace_pages));
+    nokia_rom_trace_touched = 0;
+}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_rom_trace_page_size(void) {
+    return ROM_TRACE_PAGE_SIZE;
+}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_rom_trace_page_used(uint32_t page) {
+    return page < ROM_TRACE_MAX_PAGES && nokia_rom_trace_pages[page] != 0;
+}
+NOKIA_RUNTIME_EXPORT uint32_t nokia_runtime_rom_trace_touched_pages(void) {
+    return nokia_rom_trace_touched;
+}
+
+/* Called by the generated frontend and Klatt AOT memory readers. */
+void nokia_runtime_trace_rom_read(const uint8_t *rom, size_t rom_size,
+                                  uint32_t rom_base, uint32_t address,
+                                  unsigned size) {
+    uint64_t offset, last;
+    uint32_t first_page, last_page, page;
+    (void)rom;
+    if (!size || address < rom_base) return;
+    offset = (uint64_t)address - rom_base;
+    if (offset >= rom_size) return;
+    last = offset + (uint64_t)size - 1u;
+    if (last >= rom_size) last = rom_size - 1u;
+    first_page = (uint32_t)(offset >> ROM_TRACE_PAGE_SHIFT);
+    last_page = (uint32_t)(last >> ROM_TRACE_PAGE_SHIFT);
+    if (first_page >= ROM_TRACE_MAX_PAGES) return;
+    if (last_page >= ROM_TRACE_MAX_PAGES) last_page = ROM_TRACE_MAX_PAGES - 1u;
+    for (page = first_page; page <= last_page; ++page) {
+        if (!nokia_rom_trace_pages[page]) {
+            nokia_rom_trace_pages[page] = 1u;
+            ++nokia_rom_trace_touched;
+        }
+    }
+}
+
 extern int nokia_klatt_generate_aot(
     int16_t *, int32_t *, uint8_t[122], uint8_t[564], uint32_t,
     const uint8_t *, uint32_t, size_t, uint32_t[5]);
