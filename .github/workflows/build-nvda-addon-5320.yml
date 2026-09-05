@@ -7,6 +7,7 @@ on:
       - "addon/synthDrivers/**"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/scripts/instrument_runtime_lifecycle.py"
+      - "tools/patch_5320_klatt_normalization_loop.py"
       - ".github/workflows/build-nvda-addon-5320.yml"
 
 permissions:
@@ -51,6 +52,7 @@ jobs:
           }
           gzip -dk native/generated/nokia_klatt_5320.c.gz
           python tools/patch_5320_klatt_normalization_loop.py native/generated/nokia_klatt_5320.c
+          if ($LASTEXITCODE -ne 0) { throw 'Klatt loop repair failed' }
           python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
           if ($LASTEXITCODE -ne 0) { throw 'runtime instrumentation failed' }
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
@@ -157,6 +159,7 @@ jobs:
           }
           gzip -dk native/generated/nokia_klatt_5320.c.gz
           python tools/patch_5320_klatt_normalization_loop.py native/generated/nokia_klatt_5320.c
+          if ($LASTEXITCODE -ne 0) { throw 'Klatt loop repair failed' }
           python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
           if ($LASTEXITCODE -ne 0) { throw 'runtime instrumentation failed' }
           $front = Get-ChildItem native/generated/full/nokia_frontend_5320_full*.c | ForEach-Object { $_.FullName }
@@ -194,7 +197,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data/config", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test27' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test28' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -205,8 +208,8 @@ jobs:
           Copy-Item $snapshot "$stage/data/5320-de-male.snapshot"
           Copy-Item build/test18-addon/data/SYM.ROM "$stage/data/SYM.ROM"
           Copy-Item build/test18-addon/data/config/srsf_*_*.bin "$stage/data/config/"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test27.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test27.zip build/nokiaNative5320-0.1.0-test27.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test28.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test28.zip build/nokiaNative5320-0.1.0-test28.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -227,11 +230,11 @@ jobs:
           $configCount = @(Get-ChildItem build/addon/data/config/srsf_*_*.bin).Count
           if ($configCount -eq 0) { throw 'No srsf configuration blobs packaged' }
           Write-Host "Packaged configuration blobs: $configCount"
-          Get-Item build/nokiaNative5320-0.1.0-test27.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test28.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test27
-          path: build/nokiaNative5320-0.1.0-test27.nvda-addon
+          name: nokiaNative5320-0.1.0-test28
+          path: build/nokiaNative5320-0.1.0-test28.nvda-addon
           if-no-files-found: error
