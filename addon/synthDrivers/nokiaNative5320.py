@@ -227,22 +227,51 @@ class SynthDriver(BaseSynthDriver):
 
 	def _registerConfigBlobs(self):
 		count = 0
-		for path in sorted((self._root / "data" / "config").glob("srsf_*_*.bin")):
-			match = re.fullmatch(r"srsf_(\d+)_(\d+)\.bin", path.name, re.IGNORECASE)
-			if not match:
-				continue
-			data = path.read_bytes()
+		for typeId, dataId, data, name in self._iterConfigBlobs():
 			buffer = ctypes.create_string_buffer(data)
 			if not self._dll.nokia_register_config_blob(
-				int(match.group(1)),
-				int(match.group(2)),
+				typeId,
+				dataId,
 				buffer,
 				len(data),
 			):
-				raise RuntimeError(f"Could not register Nokia configuration {path.name}")
+				raise RuntimeError(f"Could not register Nokia configuration {name}")
 			count += 1
 		if not count:
 			raise RuntimeError("No Nokia srsf configuration blobs were packaged")
+
+	def _iterConfigBlobs(self):
+		packPath = self._root / "data" / "5320-config.ncf"
+		if not packPath.is_file():
+			for path in sorted((self._root / "data" / "config").glob("srsf_*_*.bin")):
+				match = re.fullmatch(r"srsf_(\d+)_(\d+)\.bin", path.name, re.IGNORECASE)
+				if match:
+					yield int(match.group(1)), int(match.group(2)), path.read_bytes(), path.name
+			return
+		raw = packPath.read_bytes()
+		header = struct.Struct("<8sIIII")
+		entry = struct.Struct("<III")
+		blob = struct.Struct("<II")
+		if len(raw) < header.size:
+			raise RuntimeError("Nokia configuration pack is truncated")
+		magic, version, entryCount, blobCount, payloadOffset = header.unpack_from(raw)
+		tableEnd = header.size + entryCount * entry.size + blobCount * blob.size
+		if magic != b"NKCFGP1\0" or version != 1 or payloadOffset != tableEnd or tableEnd > len(raw):
+			raise RuntimeError("Nokia configuration pack is invalid")
+		blobs = [
+			blob.unpack_from(raw, header.size + entryCount * entry.size + index * blob.size)
+			for index in range(blobCount)
+		]
+		for index in range(entryCount):
+			typeId, dataId, blobIndex = entry.unpack_from(raw, header.size + index * entry.size)
+			if blobIndex >= blobCount:
+				raise RuntimeError("Nokia configuration pack contains an invalid reference")
+			offset, size = blobs[blobIndex]
+			start = payloadOffset + offset
+			end = start + size
+			if start < payloadOffset or end > len(raw):
+				raise RuntimeError("Nokia configuration pack contains an invalid payload")
+			yield typeId, dataId, raw[start:end], f"srsf_{typeId}_{dataId}.bin"
 
 	def _get_pitch(self):
 		return self._pitch

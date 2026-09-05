@@ -90,7 +90,7 @@ int main(void) {
     put_i16(runtime.pool, 0x260u, pitch_time, 3u);
     put_i16(runtime.pool, 0x280u, amplitude, 2u);
     put_i16(runtime.pool, 0x2a0u, amplitude_time, 2u);
-    assert(apply_prosody_rate(&runtime));
+    assert(apply_prosody_rate(&runtime, 0));
     assert(((int16_t *)(runtime.pool + 0x220u))[0] == 50);
     assert(((int16_t *)(runtime.pool + 0x220u))[1] == 101);
     assert(((int16_t *)(runtime.pool + 0x220u))[2] == 1);
@@ -100,6 +100,19 @@ int main(void) {
     /* F0 and amplitude values are deliberately not rate-scaled. */
     assert(((int16_t *)(runtime.pool + 0x240u))[1] == 1100);
     assert(((int16_t *)(runtime.pool + 0x280u))[1] == 120);
+#if NOKIA_CONTINUE_PROSODY
+    {
+        int16_t continuation_pitch[6] = {1140, 1320, 1140, 1320, 880, 880};
+        int16_t continuation_time[6] = {0, 100, 200, 300, 400, 500};
+        put_i16(runtime.pool, 0x240u, continuation_pitch, 6u);
+        put_i16(runtime.pool, 0x260u, continuation_time, 6u);
+        assert(continue_prosody_pitch(
+            &runtime, POOL_BASE + 0x240u, POOL_BASE + 0x260u, 6u
+        ));
+        assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1230);
+        assert(((int16_t *)(runtime.pool + 0x240u))[5] == 1140);
+    }
+#endif
     free(runtime.pool);
     puts("runtime output filters passed");
     return 0;

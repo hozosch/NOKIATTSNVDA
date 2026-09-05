@@ -13,6 +13,8 @@ import re
 import struct
 from pathlib import Path
 
+from build_config_pack import read as read_config_pack
+
 
 class Callbacks(ctypes.Structure):
     pass
@@ -112,17 +114,26 @@ def main() -> None:
             klatt_debug_values.append((label, fn))
 
     held = []
-    for path in sorted(args.data_dir.glob('srsf_*_*.bin')):
-        match = re.fullmatch(r'srsf_(\d+)_(\d+)\.bin', path.name, re.I)
-        if not match:
-            continue
-        data = path.read_bytes()
+    if args.data_dir.is_file():
+        config_blobs = [
+            (type_id, data_id, data, f'srsf_{type_id}_{data_id}.bin')
+            for type_id, data_id, data in read_config_pack(args.data_dir)
+        ]
+    else:
+        config_blobs = []
+        for path in sorted(args.data_dir.glob('srsf_*_*.bin')):
+            match = re.fullmatch(r'srsf_(\d+)_(\d+)\.bin', path.name, re.I)
+            if match:
+                config_blobs.append((
+                    int(match.group(1)), int(match.group(2)),
+                    path.read_bytes(), path.name,
+                ))
+    for type_id, data_id, data, name in config_blobs:
         buf = ctypes.create_string_buffer(data)
         held.append(buf)
-        if not dll.nokia_register_config_blob(int(match.group(1)),
-                                               int(match.group(2)),
+        if not dll.nokia_register_config_blob(type_id, data_id,
                                                buf, len(data)):
-            raise SystemExit(f'failed registering {path.name}')
+            raise SystemExit(f'failed registering {name}')
     print('registered config blobs:', len(held))
 
     rom_data = args.rom.read_bytes()

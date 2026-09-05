@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef NOKIA_DEBUG_PROSODY
+#include <stdio.h>
+#endif
 
 #define HEAP_BASE  0x50000000u
 #define VT_BASE    0x51000000u
@@ -18,6 +21,10 @@
 #define STACK_SIZE 0x100000u
 #define SAMPLE_RATE 16000u
 #define SNAP_WORDS 27u
+
+#ifndef NOKIA_CONTINUE_PROSODY
+#define NOKIA_CONTINUE_PROSODY 0
+#endif
 
 
 #define ROM_PACK_HEADER_SIZE 24u
@@ -726,10 +733,18 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_set_rate(NokiaRuntime *r,double f){if(!r)
 NOKIA_RUNTIME_EXPORT int nokia_runtime_set_pitch(NokiaRuntime *r,double f){if(!r)return 0;if(f<0.5)f=0.5;if(f>2.0)f=2.0;r->pitch_factor=f;return 1;}
 NOKIA_RUNTIME_EXPORT void nokia_runtime_cancel(NokiaRuntime *r){if(r)r->cancelled=1;}
 
+#ifndef NOKIA_LONG_TEXT_THRESHOLD
 #define NOKIA_LONG_TEXT_THRESHOLD 256u
+#endif
+#ifndef NOKIA_TEXT_CHUNK_MIN
 #define NOKIA_TEXT_CHUNK_MIN       96u
+#endif
+#ifndef NOKIA_TEXT_CHUNK_TARGET
 #define NOKIA_TEXT_CHUNK_TARGET   192u
+#endif
+#ifndef NOKIA_TEXT_CHUNK_LIMIT
 #define NOKIA_TEXT_CHUNK_LIMIT    384u
+#endif
 
 static int text_space16(uint16_t c) {
     return c <= 0x20u || c == 0x00a0u || c == 0x2028u || c == 0x2029u;
@@ -869,17 +884,72 @@ static int scale_prosody_array(NokiaRuntime *r, uint32_t address,
     return 1;
 }
 
+#if NOKIA_CONTINUE_PROSODY
+/* PrimeSynthesisL gives every independently analysed chunk a low utterance-
+   final F0 tail.  For a non-final chunk, retain Nokia's contour but guide
+   only that tail back to the chunk's own opening baseline. */
+static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
+                                  uint32_t time_address, uint32_t count) {
+    int16_t *pitch, *times, opening[6];
+    uint32_t opening_count, i, j, anchor = count, end_time, start_time;
+    int32_t target, from, span;
+    if (count < 3u) return 1;
+    if (!prosody_array(r, pitch_address, count, &pitch) ||
+        !prosody_array(r, time_address, count, &times))
+        return 0;
+    opening_count = count < 6u ? count : 6u;
+    for (i = 0; i < opening_count; ++i) {
+        opening[i] = pitch[i];
+        for (j = i; j && opening[j - 1u] > opening[j]; --j) {
+            int16_t swap = opening[j - 1u];
+            opening[j - 1u] = opening[j];
+            opening[j] = swap;
+        }
+    }
+    target = opening[(opening_count - 1u) / 2u];
+    end_time = (uint32_t)times[count - 1u];
+    start_time = end_time > 1200u ? end_time - 1200u : 0u;
+    for (i = count; i-- > 0u;) {
+        if ((uint32_t)times[i] < start_time) break;
+        if (pitch[i] >= target + 60) {
+            anchor = i;
+            break;
+        }
+    }
+    if (anchor == count) {
+        for (i = 0; i < count; ++i)
+            if ((uint32_t)times[i] >= start_time) {
+                anchor = i;
+                break;
+            }
+    }
+    if (anchor == count || anchor + 1u >= count) return 1;
+    from = pitch[anchor];
+    span = times[count - 1u] - times[anchor];
+    if (span <= 0) return 1;
+    for (i = anchor + 1u; i < count; ++i) {
+        int32_t elapsed = times[i] - times[anchor];
+        int32_t floor = from + (target - from) * elapsed / span;
+        if (pitch[i] < floor) pitch[i] = (int16_t)floor;
+    }
+    return 1;
+}
+#endif
+
 /* Change speed in Nokia's own parameter domain: scale phoneme durations and
    both prosody timelines after PrimeSynthesisL, before any Klatt frame exists.
    F0 and amplitude values remain untouched. */
-static int apply_prosody_rate(NokiaRuntime *r) {
+static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     uint8_t *object;
     uint32_t pool_size, address = 0, score = 0, candidate_score, offset;
-    uint32_t n0, n1, n2, durations, time1, time2;
+    uint32_t n0, n1, n2, durations, pitch, time1, time2;
     double factor = r->rate_factor;
     if (factor < 0.4) factor = 0.4;
     if (factor > 4.0) factor = 4.0;
-    if (factor > 0.999 && factor < 1.001) return 1;
+#ifndef NOKIA_DEBUG_PROSODY
+    if (factor > 0.999 && factor < 1.001 &&
+        !(NOKIA_CONTINUE_PROSODY && continuation)) return 1;
+#endif
     pool_size = r->pool_next > POOL_BASE ? r->pool_next - POOL_BASE : 0u;
     if (!pool_size || pool_size > POOL_SIZE) return 0;
     for (offset = 0; offset + 0x28u <= pool_size; offset += 4u) {
@@ -893,15 +963,54 @@ static int apply_prosody_rate(NokiaRuntime *r) {
     if (!address || !(object = guest_ptr(r, address, 0x28u, 1))) return 0;
     n0 = rd16(object); n1 = rd16(object + 2u); n2 = rd16(object + 4u);
     durations = rd32(object + 0x0cu);
+    pitch = rd32(object + 0x10u);
     time1 = rd32(object + 0x14u);
     time2 = rd32(object + 0x20u);
+#ifdef NOKIA_DEBUG_PROSODY
+    {
+        int16_t *pitch_values, *pitch_times;
+        uint32_t i, first = n1 > 16u ? n1 - 16u : 0u;
+        if (prosody_array(r, rd32(object + 0x10u), n1, &pitch_values) &&
+            prosody_array(r, time1, n1, &pitch_times)) {
+            fprintf(stderr, "prosody chunk=%u n0=%u n1=%u:",
+                    r->text_chunks, n0, n1);
+            for (i = 0; i < n1 && i < 6u; ++i)
+                fprintf(stderr, " %d@%d", pitch_values[i], pitch_times[i]);
+            fprintf(stderr, " ...");
+            for (i = first; i < n1; ++i)
+                fprintf(stderr, " %d@%d", pitch_values[i], pitch_times[i]);
+            fputc('\n', stderr);
+        }
+    }
+#endif
+#if NOKIA_CONTINUE_PROSODY
+    if (continuation && !continue_prosody_pitch(r, pitch, time1, n1))
+        return 0;
+#ifdef NOKIA_DEBUG_PROSODY
+    if (continuation) {
+        int16_t *pitch_values, *pitch_times;
+        uint32_t i, first = n1 > 8u ? n1 - 8u : 0u;
+        if (prosody_array(r, pitch, n1, &pitch_values) &&
+            prosody_array(r, time1, n1, &pitch_times)) {
+            fprintf(stderr, "continued chunk=%u:", r->text_chunks);
+            for (i = first; i < n1; ++i)
+                fprintf(stderr, " %d@%d", pitch_values[i], pitch_times[i]);
+            fputc('\n', stderr);
+        }
+    }
+#endif
+#else
+    (void)continuation;
+    (void)pitch;
+#endif
+    if (factor > 0.999 && factor < 1.001) return 1;
     return scale_prosody_array(r, durations, n0, factor, 1) &&
            scale_prosody_array(r, time1, n1, factor, 0) &&
            scale_prosody_array(r, time2, n2, factor, 0);
 }
 
 static int synthesize_text_chunk(NokiaRuntime *r, const uint16_t *text,
-                                 uint32_t len) {
+                                 uint32_t len, int continuation) {
     uint32_t txt=0,e8=0,e16=0,pt=0,seg=0,res=0,a[3],loops=0;
     clock_t start = clock();
     r->done=0;r->pending_count=0;
@@ -913,7 +1022,7 @@ static int synthesize_text_chunk(NokiaRuntime *r, const uint16_t *text,
     a[0]=seg;a[1]=txt;if(!native_call(r,r->seg_set_text_ptr,a,2,&res))goto failed;
     a[0]=pt;a[1]=seg;a[2]=0;if(!native_call_l(r,r->pt_add_segment,a,3,&res))goto failed;
     a[0]=r->dev;a[1]=pt;if(!native_call_l(r,r->dev_prime,a,2,&res))goto failed;
-    if(!apply_prosody_rate(r)){r->last_error=-3007;goto failed;}
+    if(!apply_prosody_rate(r,continuation)){r->last_error=-3007;goto failed;}
     r->frontend_ticks += (uint64_t)(clock()-start);
     a[0]=r->dev;a[1]=1;if(!native_call_l(r,r->dev_synthesize,a,2,&res))goto failed;
     while(!r->done&&!r->cancelled){
@@ -952,7 +1061,7 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
         chunk = incremental ? next_text_chunk(text + offset, remaining) : remaining;
         if(!chunk || chunk > remaining){r->last_error=-3010;goto failed;}
         ++r->text_chunks;
-        if(!synthesize_text_chunk(r,text + offset,chunk))goto failed;
+        if(!synthesize_text_chunk(r,text + offset,chunk,offset+chunk<len))goto failed;
         offset += chunk;
         if(!r->cancelled && !seam_finish_chunk(r,offset==len)){
             r->last_error=-3006;goto failed;
