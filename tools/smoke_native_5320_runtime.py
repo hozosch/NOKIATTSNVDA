@@ -207,6 +207,11 @@ def main() -> None:
         'Komma Punkt Doppelpunkt Bindestrich Klammer Fragezeichen Ausrufezeichen. '
         'Grossbuchstaben ABCDEFGHIJKLMNOPQRSTUVWXYZ und Umlaute Ä Ö Ü ä ö ü ß.'
     )
+    # NVDA rate 65 maps to this native factor.  It previously exercised the
+    # missing signed-saturation edge at 0x830fa214 in the traced Klatt AOT.
+    nvda_rate_65 = 2.0 ** ((65.0 - 50.0) / 25.0)
+    speak_case('NVDA rate 65 regression', text, rate=nvda_rate_65)
+    speak_case('maximum native rate regression', text, rate=4.0)
     runtime = create_runtime()
     try:
         speak_case('long German block', text, runtime)
