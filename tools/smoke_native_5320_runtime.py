@@ -10,6 +10,7 @@ import argparse
 import ctypes
 import json
 import re
+import struct
 from pathlib import Path
 
 
@@ -137,7 +138,14 @@ def main() -> None:
         'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '
         'Auch der dritte Satz wird innerhalb derselben nativen Engine erzeugt. '
         'Ein vierter Satz macht den Block lang genug fuer die inkrementelle Verarbeitung. '
-        'Zum Abschluss prueft dieser Satz, ob die Ausgabe vollstaendig bleibt.'
+        'Zum Abschluss prueft dieser Satz, ob die Ausgabe vollstaendig bleibt. '
+        'Einstellungen, Geschwindigkeit, Tonhoehe, Sprache, Woerterbuch und Aussprache. '
+        'Abfahrt Bahnhof Computer Datei E-Mail Fenster GitHub Hilfe Internet Kalender '
+        'Lautstaerke Menue Nokia Optionen Pruefung Quelle Runtime Synthesizer Telefon '
+        'Unicode Verbindung Windows Xylophon Ypsilon Zuerich. '
+        'Null eins zwei drei vier fuenf sechs sieben acht neun zehn hundert tausend '
+        'Komma Punkt Doppelpunkt Bindestrich Klammer Fragezeichen Ausrufezeichen. '
+        'Grossbuchstaben ABCDEFGHIJKLMNOPQRSTUVWXYZ und Umlaute Ä Ö Ü ä ö ü ß.'
     ).encode('utf-16-le')
     words = (ctypes.c_uint16 * (len(text)//2)).from_buffer_copy(text)
     try:
@@ -162,7 +170,12 @@ def main() -> None:
         chunks = dll.nokia_runtime_text_chunks(runtime)
         first_pcm_ticks = dll.nokia_runtime_first_pcm_ticks(runtime)
         page_size = dll.nokia_runtime_rom_trace_page_size()
-        total_pages = (len(rom_data) + page_size - 1) // page_size
+        virtual_size = (
+            struct.unpack_from('<I', rom_data, 16)[0]
+            if len(rom_data) >= 24 and rom_data[:8] == b'NKROMP1\0'
+            else len(rom_data)
+        )
+        total_pages = (virtual_size + page_size - 1) // page_size
         used_pages = [
             page for page in range(total_pages)
             if dll.nokia_runtime_rom_trace_page_used(page)
@@ -198,7 +211,7 @@ def main() -> None:
             args.rom_trace.write_text(json.dumps({
                 'format': 'nokia-rom-pages-v1',
                 'pageSize': page_size,
-                'virtualSize': len(rom_data),
+                'virtualSize': virtual_size,
                 'usedPageCount': len(used_pages),
                 'usedPages': used_pages,
                 'usedRanges': ranges,

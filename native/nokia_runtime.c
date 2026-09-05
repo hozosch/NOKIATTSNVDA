@@ -19,6 +19,104 @@
 #define SAMPLE_RATE 16000u
 #define SNAP_WORDS 27u
 
+
+#define ROM_PACK_HEADER_SIZE 24u
+#define ROM_PACK_PAGE_SIZE   4096u
+static const uint8_t nokia_rom_pack_magic[8] =
+    {'N','K','R','O','M','P','1','\0'};
+
+static uint32_t rom_pack_u32(const uint8_t *p) {
+    uint32_t value;
+    memcpy(&value, p, sizeof(value));
+    return value;
+}
+static int rom_pack_info(const uint8_t *rom, size_t rom_size,
+                         uint32_t *virtual_size, uint32_t *page_count,
+                         const uint8_t **index, const uint8_t **pages) {
+    uint32_t version, page_size, size, count;
+    uint64_t table_end, data_end;
+    if (!rom || rom_size < ROM_PACK_HEADER_SIZE ||
+        memcmp(rom, nokia_rom_pack_magic, sizeof(nokia_rom_pack_magic)) != 0)
+        return 0;
+    version = rom_pack_u32(rom + 8u);
+    page_size = rom_pack_u32(rom + 12u);
+    size = rom_pack_u32(rom + 16u);
+    count = rom_pack_u32(rom + 20u);
+    table_end = ROM_PACK_HEADER_SIZE + (uint64_t)count * 4u;
+    data_end = table_end + (uint64_t)count * ROM_PACK_PAGE_SIZE;
+    if (version != 1u || page_size != ROM_PACK_PAGE_SIZE || !size ||
+        count > 65536u || data_end > rom_size)
+        return 0;
+    if (virtual_size) *virtual_size = size;
+    if (page_count) *page_count = count;
+    if (index) *index = rom + ROM_PACK_HEADER_SIZE;
+    if (pages) *pages = rom + table_end;
+    return 1;
+}
+static int rom_pack_validate(const uint8_t *rom, size_t rom_size) {
+    const uint8_t *index;
+    uint32_t size, count, i, previous = 0;
+    if (!rom_pack_info(rom, rom_size, &size, &count, &index, NULL))
+        return 0;
+    for (i = 0; i < count; ++i) {
+        uint32_t page = rom_pack_u32(index + i * 4u);
+        if (page >= (size + ROM_PACK_PAGE_SIZE - 1u) / ROM_PACK_PAGE_SIZE ||
+            (i && page <= previous))
+            return 0;
+        previous = page;
+    }
+    return 1;
+}
+int nokia_runtime_rom_is_flat(const uint8_t *rom, size_t rom_size) {
+    return !(rom && rom_size >= sizeof(nokia_rom_pack_magic) &&
+             memcmp(rom, nokia_rom_pack_magic,
+                    sizeof(nokia_rom_pack_magic)) == 0);
+}
+static size_t nokia_runtime_rom_virtual_size(const uint8_t *rom,
+                                             size_t rom_size) {
+    uint32_t virtual_size;
+    return rom_pack_info(rom, rom_size, &virtual_size, NULL, NULL, NULL)
+        ? (size_t)virtual_size : rom_size;
+}
+int nokia_runtime_rom_read(const uint8_t *rom, size_t rom_size,
+                           uint32_t rom_base, uint32_t address,
+                           void *output, unsigned size) {
+    const uint8_t *index, *pages;
+    uint8_t *destination = (uint8_t *)output;
+    uint32_t virtual_size, count;
+    uint64_t offset;
+    if (!output || !size || address < rom_base) return 0;
+    offset = (uint64_t)address - rom_base;
+    if (nokia_runtime_rom_is_flat(rom, rom_size)) {
+        if (offset + size > rom_size) return 0;
+        memcpy(output, rom + offset, size);
+        return 1;
+    }
+    if (!rom_pack_info(rom, rom_size, &virtual_size, &count, &index, &pages) ||
+        offset + size > virtual_size)
+        return 0;
+    while (size) {
+        uint32_t page = (uint32_t)(offset / ROM_PACK_PAGE_SIZE);
+        uint32_t within = (uint32_t)(offset % ROM_PACK_PAGE_SIZE);
+        uint32_t take = ROM_PACK_PAGE_SIZE - within;
+        uint32_t low = 0, high = count, found = count;
+        while (low < high) {
+            uint32_t middle = low + (high - low) / 2u;
+            uint32_t candidate = rom_pack_u32(index + middle * 4u);
+            if (candidate < page) low = middle + 1u;
+            else { high = middle; if (candidate == page) found = middle; }
+        }
+        if (found == count) return 0;
+        if (take > size) take = size;
+        memcpy(destination, pages + (uint64_t)found * ROM_PACK_PAGE_SIZE + within,
+               take);
+        destination += take;
+        offset += take;
+        size -= take;
+    }
+    return 1;
+}
+
 #define ROM_TRACE_PAGE_SHIFT 12u
 #define ROM_TRACE_PAGE_SIZE  (1u << ROM_TRACE_PAGE_SHIFT)
 #define ROM_TRACE_MAX_PAGES  65536u
@@ -45,13 +143,13 @@ void nokia_runtime_trace_rom_read(const uint8_t *rom, size_t rom_size,
                                   uint32_t rom_base, uint32_t address,
                                   unsigned size) {
     uint64_t offset, last;
+    size_t virtual_size = nokia_runtime_rom_virtual_size(rom, rom_size);
     uint32_t first_page, last_page, page;
-    (void)rom;
     if (!size || address < rom_base) return;
     offset = (uint64_t)address - rom_base;
-    if (offset >= rom_size) return;
+    if (offset >= virtual_size) return;
     last = offset + (uint64_t)size - 1u;
-    if (last >= rom_size) last = rom_size - 1u;
+    if (last >= virtual_size) last = virtual_size - 1u;
     first_page = (uint32_t)(offset >> ROM_TRACE_PAGE_SHIFT);
     last_page = (uint32_t)(last >> ROM_TRACE_PAGE_SHIFT);
     if (first_page >= ROM_TRACE_MAX_PAGES) return;
@@ -141,15 +239,17 @@ static uint8_t *guest_ptr(NokiaRuntime *r, uint32_t a, uint32_t n, int write) {
         return r->pool + (a - POOL_BASE);
     if (a >= STACK_BASE && e <= (uint64_t)STACK_BASE + STACK_SIZE)
         return r->stack + (a - STACK_BASE);
-    if (!write && a >= ROM_BASE && e <= (uint64_t)ROM_BASE + r->rom_size)
+    if (!write && nokia_runtime_rom_is_flat(r->rom, r->rom_size) &&
+        a >= ROM_BASE && e <= (uint64_t)ROM_BASE + r->rom_size)
         return r->rom + (a - ROM_BASE);
     return NULL;
 }
 
 static int guest_read(NokiaRuntime *r, uint32_t a, void *out, uint32_t n) {
     uint8_t *p = guest_ptr(r, a, n, 0);
-    if (!p) return 0;
-    memcpy(out, p, n); return 1;
+    if (p) { memcpy(out, p, n); return 1; }
+    return nokia_runtime_rom_read(
+        r->rom, r->rom_size, ROM_BASE, a, out, (unsigned)n);
 }
 static int guest_write(NokiaRuntime *r, uint32_t a, const void *in, uint32_t n) {
     uint8_t *p = guest_ptr(r, a, n, 1);
@@ -365,7 +465,10 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
 
 static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size) {
     NokiaRuntime *r;
-    if (!rom || !rom_size) return NULL;
+    if (!rom || !rom_size ||
+        (!nokia_runtime_rom_is_flat(rom, rom_size) &&
+         !rom_pack_validate(rom, rom_size)))
+        return NULL;
     r = (NokiaRuntime *)calloc(1, sizeof(*r)); if (!r) return NULL;
     r->rom = (uint8_t *)malloc(rom_size);
     r->heap = (uint8_t *)calloc(1, HEAP_SIZE);

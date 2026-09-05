@@ -52,8 +52,9 @@ class SynthDriver(BaseSynthDriver):
 		try:
 			root = Path(__file__).resolve().parent.parent
 			return (root / "data" / "5320-de-male.snapshot").is_file() and (
-				root / "data" / "SYM.ROM"
-			).is_file()
+				(root / "data" / "5320-core.nrp").is_file()
+				or (root / "data" / "SYM.ROM").is_file()
+			)
 		except Exception:
 			return False
 
@@ -73,7 +74,10 @@ class SynthDriver(BaseSynthDriver):
 			) from error
 		self._bindApi()
 		self._registerConfigBlobs()
-		self._romBytes = (self._root / "data" / "SYM.ROM").read_bytes()
+		romPath = self._root / "data" / "5320-core.nrp"
+		if not romPath.is_file():
+			romPath = self._root / "data" / "SYM.ROM"
+		self._romBytes = romPath.read_bytes()
 		self._snapshotBytes = (self._root / "data" / "5320-de-male.snapshot").read_bytes()
 		self._rom = (ctypes.c_uint8 * len(self._romBytes)).from_buffer_copy(self._romBytes)
 		self._snapshot = (ctypes.c_uint8 * len(self._snapshotBytes)).from_buffer_copy(
