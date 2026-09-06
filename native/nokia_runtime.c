@@ -200,6 +200,7 @@ typedef struct {
 #define PCM_TAIL_SAMPLES 64u
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
+#define PROSODY_TIME_BACKSTEP_MAX 32
 
 static int quiet_sample(int16_t sample);
 
@@ -918,7 +919,11 @@ static int prosody_object_valid(NokiaRuntime *r, uint32_t address,
     object = guest_ptr(r, address, 0x28u, 1);
     if (!object || !prosody_range_used(r, address, 0x28u / 2u)) return 0;
     n0 = rd16(object); n1 = rd16(object + 2u); n2 = rd16(object + 4u);
-    if (!n0) return 0;
+    /* Normal speech objects always contain all three curves.  Requiring them
+       rejects unrelated C++ objects whose first halfword happens to look like
+       a phone count.  A genuinely silent frontend result needs no rate or
+       continuation processing and is safely ignored by the caller. */
+    if (!n0 || !n1 || !n2) return 0;
     for (i = 0; i < 6u; ++i) pointers[i] = rd32(object + pointer_offsets[i]);
     if (!prosody_range_used(r, pointers[0], n0) ||
         !prosody_range_used(r, pointers[1], n0) ||
@@ -933,18 +938,27 @@ static int prosody_object_valid(NokiaRuntime *r, uint32_t address,
         (n2 && (!prosody_array(r, pointers[4], n2, &amplitude) ||
                 !prosody_array(r, pointers[5], n2, &time2))))
         return 0;
-    (void)phones;
-    (void)durations;
+    for (i = 0; i < n0; ++i) {
+        if (phones[i] < 0 || phones[i] > 255 ||
+            durations[i] < 0 || durations[i] > 4096)
+            return 0;
+    }
+    if (durations[n0 - 1u] <= 0) return 0;
     for (i = 0; i < n1; ++i) {
-        if (time1[i] < 0) return 0;
-        if (i && time1[i] < time1[i - 1u]) return 0;
+        if (pitch[i] <= 0 || pitch[i] > 8192 || time1[i] < 0) return 0;
+        /* Nokia occasionally places two final F0 control points a few time
+           units out of order (for example whatRust/WhatsAppRust: -8).  This
+           is a legitimate interpolation overlap, not a corrupt object. */
+        if (i && (int32_t)time1[i] + PROSODY_TIME_BACKSTEP_MAX <
+                     (int32_t)time1[i - 1u])
+            return 0;
     }
     for (i = 0; i < n2; ++i) {
-        if (time2[i] < 0) return 0;
-        if (i && time2[i] < time2[i - 1u]) return 0;
+        if (amplitude[i] < 0 || time2[i] < 0) return 0;
+        if (i && (int32_t)time2[i] + PROSODY_TIME_BACKSTEP_MAX <
+                     (int32_t)time2[i - 1u])
+            return 0;
     }
-    (void)pitch;
-    (void)amplitude;
     maximum = address;
     for (i = 0; i < 2u; ++i)
         if (pointers[i] > maximum) maximum = pointers[i];
@@ -964,6 +978,7 @@ static int scale_prosody_array(NokiaRuntime *r, uint32_t address,
     int16_t *values;
     uint32_t i;
     int16_t previous_original = 0, previous_scaled = 0;
+    if (!count) return 1;
     if (!prosody_array(r, address, count, &values)) return 0;
     for (i = 0; i < count; ++i) {
         int16_t original = values[i];
@@ -1051,12 +1066,11 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
             }
     }
     if (anchor == count || anchor + 1u >= count) return 1;
-    /* A merely neutral floor still leaves an audible fall from the last
-       accent.  Non-final chunks must remain perceptually open, so hold that
-       last accent through the artificial boundary.  The final real chunk is
-       never changed here and keeps Nokia's original closing cadence. */
+    /* Lift only Nokia's utterance-final low point to the chunk's own neutral
+       baseline.  Holding the complete last accent changes intonation which
+       was already correct in other parts of a long block. */
     for (i = anchor + 1u; i < count; ++i) {
-        if (pitch[i] < pitch[anchor]) pitch[i] = pitch[anchor];
+        if (pitch[i] < target) pitch[i] = (int16_t)target;
     }
     return 1;
 }

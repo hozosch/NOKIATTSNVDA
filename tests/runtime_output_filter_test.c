@@ -64,10 +64,11 @@ int main(void) {
     NokiaRuntime runtime;
     NokiaRuntimeCallbacks callbacks = {pcm, NULL, NULL};
     int16_t first[1100], second[1300];
-    int16_t phones[3] = {1, -1, 300};
-    int16_t durations[3] = {100, 201, 0};
+    int16_t phones[3] = {2, 19, 0};
+    int16_t durations[3] = {100, 201, 66};
     int16_t pitch[3] = {1000, 1100, 1200};
-    int16_t pitch_time[3] = {0, 101, 200};
+    /* Nokia can place two final control points a few units out of order. */
+    int16_t pitch_time[3] = {0, 101, 93};
     int16_t amplitude[2] = {100, 120};
     int16_t amplitude_time[2] = {0, 151};
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
@@ -141,10 +142,10 @@ int main(void) {
     assert(apply_prosody_rate(&runtime, 0));
     assert(((int16_t *)(runtime.pool + 0x220u))[0] == 50);
     assert(((int16_t *)(runtime.pool + 0x220u))[1] == 101);
-    /* Zero/negative entries are frontend control markers, not durations. */
-    assert(((int16_t *)(runtime.pool + 0x220u))[2] == 0);
+    /* The final zero-phone duration is the resonator drain and stays intact. */
+    assert(((int16_t *)(runtime.pool + 0x220u))[2] == 66);
     assert(((int16_t *)(runtime.pool + 0x260u))[1] == 51);
-    assert(((int16_t *)(runtime.pool + 0x260u))[2] == 100);
+    assert(((int16_t *)(runtime.pool + 0x260u))[2] == 47);
     assert(((int16_t *)(runtime.pool + 0x2a0u))[1] == 76);
     /* F0 and amplitude values are deliberately not rate-scaled. */
     assert(((int16_t *)(runtime.pool + 0x240u))[1] == 1100);
@@ -158,8 +159,8 @@ int main(void) {
         assert(continue_prosody_pitch(
             &runtime, POOL_BASE + 0x240u, POOL_BASE + 0x260u, 6u
         ));
-        assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1320);
-        assert(((int16_t *)(runtime.pool + 0x240u))[5] == 1320);
+        assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1140);
+        assert(((int16_t *)(runtime.pool + 0x240u))[5] == 1140);
 
         /* The neutral continuation floor also catches a cadence which starts
            more than 1.2 seconds before the artificial text boundary. */
@@ -175,8 +176,8 @@ int main(void) {
             assert(continue_prosody_pitch(
                 &runtime, POOL_BASE + 0x240u, POOL_BASE + 0x260u, 8u
             ));
-            assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1320);
-            assert(((int16_t *)(runtime.pool + 0x240u))[7] == 1320);
+            assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1140);
+            assert(((int16_t *)(runtime.pool + 0x240u))[7] == 1140);
         }
 
         {

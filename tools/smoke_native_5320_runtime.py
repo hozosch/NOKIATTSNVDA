@@ -336,6 +336,32 @@ def main() -> None:
             'NVDA-rate-80 acoustic regression failed for '
             f'"Geschwindigkeit 80": {last_metrics}'
         )
+    # Regression for Nokia timelines whose final F0 points overlap slightly.
+    # The strict monotonicity check used to reject the real prosody object and
+    # then report -3007 before producing the first PCM callback.
+    mastodon_text = (
+        'Amir, And apparently, the "fine, I\'ll build my own WhatsApp" movement '
+        'is not limited to PyQt6. We\'ve got not one, but two more projects '
+        'taking the Rust route: whatRust and whatsapp-rust. Because seemingly '
+        'wrapping WhatsApp Web wasn\'t enough. Now we need to rebuild the whole '
+        'thing in Rust too. When users start saying "fine, I\'ll write my own" '
+        'in two or three different programming languages, maybe it\'s time to '
+        'take the hint. https://github.com/karem505/whatRust '
+        'https://github.com/oxidezap/whatsapp-rust, Quoting Amir: Apparently, '
+        'people have become so thoroughly fed up with WhatsApp Desktop and '
+        'WhatsApp Web that they\'ve reached the "fine, I\'ll build my own '
+        'WhatsApp" stage. ZapZap is one of those attempts, built with PyQt6 '
+        'and QtWebEngine to turn WhatsApp Web into a more proper desktop '
+        'experience, with things like multiple accounts, native notifications, '
+        'system tray integration, and more. I haven\'t tested its accessibility '
+        'yet, so that\'s a completely separate adventure. '
+        'https://github.com/rafatosta/zapzap, 1 week ago, 3 replies, 4 boosts, '
+        '1 favorite'
+    )
+    speak_case(
+        'NVDA rate 80 Mastodon prosody overlap', mastodon_text,
+        rate=nvda_rate_80,
+    )
     text = (
         'Dies ist der erste Satz und er prueft die schnelle Analyse. '
         'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '
