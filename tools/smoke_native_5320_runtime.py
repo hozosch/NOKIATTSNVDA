@@ -301,6 +301,20 @@ def main() -> None:
                 f'high-rate PCM does not end at zero for {click_text!r}: '
                 f'{last_metrics["final"]}'
             )
+    nvda_rate_80 = 2.0 ** ((80.0 - 50.0) / 25.0)
+    speak_case(
+        'NVDA rate 80 Geschwindigkeit 80',
+        'Geschwindigkeit 80',
+        rate=nvda_rate_80,
+        measure=True,
+    )
+    if (last_metrics['large_jumps'] or last_metrics['clipped'] or
+            last_metrics['final'] != 0 or
+            last_metrics['max_delta'] >= 14000):
+        raise SystemExit(
+            'NVDA-rate-80 acoustic regression failed for '
+            f'"Geschwindigkeit 80": {last_metrics}'
+        )
     text = (
         'Dies ist der erste Satz und er prueft die schnelle Analyse. '
         'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '

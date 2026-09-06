@@ -88,8 +88,8 @@ int main(void) {
     assert(seam_feed(&runtime, second, 1300));
     assert(seam_finish_chunk(&runtime, 1));
     assert(finish_pcm_output(&runtime));
-    assert(output_samples == 464u);
-    assert(runtime.seam_trimmed_samples == 1936u);
+    assert(output_samples == 432u);
+    assert(runtime.seam_trimmed_samples == 1968u);
     free(runtime.seam_quiet);
     free(runtime.pcm_pending);
 
@@ -106,7 +106,7 @@ int main(void) {
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);
     assert(seam_feed(&runtime, abrupt, 128u));
-    assert(output_samples == 64u);
+    assert(output_samples == 0u);
     assert(finish_pcm_output(&runtime));
     assert(output_samples == 128u);
     assert(output_final == 0);
@@ -158,8 +158,26 @@ int main(void) {
         assert(continue_prosody_pitch(
             &runtime, POOL_BASE + 0x240u, POOL_BASE + 0x260u, 6u
         ));
-        assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1230);
+        assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1140);
         assert(((int16_t *)(runtime.pool + 0x240u))[5] == 1140);
+
+        /* The neutral continuation floor also catches a cadence which starts
+           more than 1.2 seconds before the artificial text boundary. */
+        {
+            int16_t long_pitch[8] = {
+                1140, 1320, 1140, 1320, 880, 880, 880, 880
+            };
+            int16_t long_time[8] = {
+                0, 300, 600, 1200, 1500, 1800, 2200, 2600
+            };
+            put_i16(runtime.pool, 0x240u, long_pitch, 8u);
+            put_i16(runtime.pool, 0x260u, long_time, 8u);
+            assert(continue_prosody_pitch(
+                &runtime, POOL_BASE + 0x240u, POOL_BASE + 0x260u, 8u
+            ));
+            assert(((int16_t *)(runtime.pool + 0x240u))[4] == 1140);
+            assert(((int16_t *)(runtime.pool + 0x240u))[7] == 1140);
+        }
     }
 #endif
     free(runtime.pool);

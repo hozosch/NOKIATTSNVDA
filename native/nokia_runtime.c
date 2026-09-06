@@ -196,8 +196,14 @@ typedef struct {
 } RuntimeBlock;
 
 #define SEAM_QUIET_LEVEL 16
-#define SEAM_PREROLL     32u
-#define PCM_TAIL_SAMPLES 64u
+#define SEAM_PREROLL     16u
+#define PCM_TAIL_SAMPLES 160u
+#define PCM_DECLICK_ATTACK 16u
+#define PCM_DECLICK_RELEASE 64u
+#define PCM_DECLICK_GAIN_Q15 16384u
+#define PROSODY_CONTINUATION_TAIL 1600u
+
+static int quiet_sample(int16_t sample);
 
 struct NokiaRuntime {
     uint8_t *rom;
@@ -229,10 +235,10 @@ struct NokiaRuntime {
     uint32_t seam_leading_count;
     int16_t *pcm_pending;
     size_t pcm_pending_count, pcm_pending_capacity;
-    uint32_t pcm_wrap_repairs;
+    uint32_t pcm_wrap_repairs, pcm_declick_release;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
-    uint8_t pcm_unwrapped_have;
+    uint8_t pcm_unwrapped_have, pcm_wrap_just_repaired;
     NokiaFrontendHost host;
 };
 
@@ -440,16 +446,19 @@ static int deliver_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
    crossed that boundary; ordinary consonant attacks remain unchanged. */
 static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
     int32_t unwrapped = (int32_t)sample + r->pcm_wrap_offset;
+    r->pcm_wrap_just_repaired = 0u;
     if (r->pcm_unwrapped_have) {
         int32_t delta = unwrapped - r->pcm_unwrapped_previous;
         if (delta > 32768) {
             r->pcm_wrap_offset -= 65536;
             unwrapped -= 65536;
             ++r->pcm_wrap_repairs;
+            r->pcm_wrap_just_repaired = 1u;
         } else if (delta < -32768) {
             r->pcm_wrap_offset += 65536;
             unwrapped += 65536;
             ++r->pcm_wrap_repairs;
+            r->pcm_wrap_just_repaired = 1u;
         }
     }
     r->pcm_unwrapped_previous = unwrapped;
@@ -459,18 +468,56 @@ static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
     return (int16_t)unwrapped;
 }
 
-/* Keep four milliseconds of PCM uncommitted.  This is short enough not to
-   affect responsiveness, but lets the real utterance end reach zero instead
-   of stopping on an arbitrary high-rate sample. */
+static int16_t scale_pcm_q15(int16_t sample, uint32_t gain) {
+    int32_t value = (int32_t)sample * (int32_t)gain;
+    value += value >= 0 ? 16384 : -16384;
+    return (int16_t)(value / 32768);
+}
+
+/* A repaired wrap can still leave a tiny hard-clipped plateau.  Attenuate
+   only the immediate neighbourhood of an observed wrap, with a one-ms attack
+   applied retroactively inside the held PCM tail and a four-ms release. */
+static void soften_pcm_wrap(NokiaRuntime *r, size_t current) {
+    size_t available, back, distance;
+    uint32_t range = 32768u - PCM_DECLICK_GAIN_Q15;
+    if (r->pcm_declick_release) return;
+    available = current < PCM_DECLICK_ATTACK ? current : PCM_DECLICK_ATTACK;
+    for (back = available; back; --back) {
+        uint32_t gain;
+        distance = back;
+        gain = PCM_DECLICK_GAIN_Q15 +
+            range * (uint32_t)distance / PCM_DECLICK_ATTACK;
+        r->pcm_pending[current - back] =
+            scale_pcm_q15(r->pcm_pending[current - back], gain);
+    }
+}
+
+/* Keep ten milliseconds of PCM uncommitted.  This is short enough not to
+   affect responsiveness, but gives finalization a complete nearby waveform
+   period in which to find a real zero crossing. */
 static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
     size_t total, release, i;
     if (!count) return 1;
     total = r->pcm_pending_count + count;
     if (!reserve_i16(&r->pcm_pending, &r->pcm_pending_capacity, total))
         return 0;
-    for (i = 0; i < count; ++i)
-        r->pcm_pending[r->pcm_pending_count + i] =
-            declick_pcm_sample(r, samples[i]);
+    for (i = 0; i < count; ++i) {
+        size_t current = r->pcm_pending_count + i;
+        int16_t filtered = declick_pcm_sample(r, samples[i]);
+        if (r->pcm_wrap_just_repaired) {
+            soften_pcm_wrap(r, current);
+            r->pcm_declick_release = PCM_DECLICK_RELEASE;
+        }
+        if (r->pcm_declick_release) {
+            uint32_t elapsed = PCM_DECLICK_RELEASE - r->pcm_declick_release;
+            uint32_t gain = PCM_DECLICK_GAIN_Q15 +
+                (32768u - PCM_DECLICK_GAIN_Q15) * elapsed /
+                PCM_DECLICK_RELEASE;
+            filtered = scale_pcm_q15(filtered, gain);
+            --r->pcm_declick_release;
+        }
+        r->pcm_pending[current] = filtered;
+    }
     r->pcm_pending_count = total;
     if (total <= PCM_TAIL_SAMPLES) return 1;
     release = total - PCM_TAIL_SAMPLES;
@@ -482,17 +529,39 @@ static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
 }
 
 static int finish_pcm_output(NokiaRuntime *r) {
-    uint32_t i, denominator;
+    size_t i, output_count;
     if (!r->pcm_pending_count) return 1;
-    denominator = r->pcm_pending_count > 1u
-        ? (uint32_t)r->pcm_pending_count - 1u : 1u;
-    for (i = 0; i < r->pcm_pending_count; ++i) {
-        int32_t value = r->pcm_pending[i];
-        value = value * (int32_t)(r->pcm_pending_count - 1u - i) /
-                (int32_t)denominator;
-        r->pcm_pending[i] = (int16_t)value;
+    output_count = r->pcm_pending_count;
+    if (!quiet_sample(r->pcm_pending[output_count - 1u])) {
+        for (i = output_count - 1u; i; --i) {
+            int32_t before = r->pcm_pending[i - 1u];
+            int32_t after = r->pcm_pending[i];
+            uint32_t before_abs = before < 0 ? (uint32_t)-before : (uint32_t)before;
+            uint32_t after_abs = after < 0 ? (uint32_t)-after : (uint32_t)after;
+            if (((before <= 0 && after >= 0) ||
+                 (before >= 0 && after <= 0)) &&
+                (before_abs <= 2048u || after_abs <= 2048u)) {
+                size_t zero = before_abs <= after_abs ? i - 1u : i;
+                r->pcm_pending[zero] = 0;
+                output_count = zero + 1u;
+                break;
+            }
+        }
     }
-    if (!deliver_pcm(r, r->pcm_pending, r->pcm_pending_count)) return 0;
+    if (!quiet_sample(r->pcm_pending[output_count - 1u])) {
+        uint32_t denominator = output_count > 1u
+            ? (uint32_t)output_count - 1u : 1u;
+        for (i = 0; i < output_count; ++i) {
+            uint32_t x = (uint32_t)(output_count - 1u - i) * 32768u /
+                         denominator;
+            uint32_t x2 = (uint32_t)(((uint64_t)x * x) >> 15);
+            uint32_t gain = (uint32_t)(((uint64_t)x2 *
+                (98304u - 2u * x)) >> 15);
+            r->pcm_pending[i] = scale_pcm_q15(r->pcm_pending[i], gain);
+        }
+        r->pcm_pending[output_count - 1u] = 0;
+    }
+    if (!deliver_pcm(r, r->pcm_pending, output_count)) return 0;
     r->pcm_pending_count = 0u;
     return 1;
 }
@@ -987,7 +1056,7 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
                                   uint32_t time_address, uint32_t count) {
     int16_t *pitch, *times, opening[6];
     uint32_t opening_count, i, j, anchor = count, end_time, start_time;
-    int32_t target, from, span;
+    int32_t target;
     if (count < 3u) return 1;
     if (!prosody_array(r, pitch_address, count, &pitch) ||
         !prosody_array(r, time_address, count, &times))
@@ -1003,7 +1072,8 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
     }
     target = opening[(opening_count - 1u) / 2u];
     end_time = (uint32_t)times[count - 1u];
-    start_time = end_time > 1200u ? end_time - 1200u : 0u;
+    start_time = end_time > PROSODY_CONTINUATION_TAIL
+        ? end_time - PROSODY_CONTINUATION_TAIL : 0u;
     for (i = count; i-- > 0u;) {
         if ((uint32_t)times[i] < start_time) break;
         if (pitch[i] >= target + 60) {
@@ -1019,13 +1089,13 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
             }
     }
     if (anchor == count || anchor + 1u >= count) return 1;
-    from = pitch[anchor];
-    span = times[count - 1u] - times[anchor];
-    if (span <= 0) return 1;
+    /* A descending interpolation from the last accent to the opening median
+       still sounds like Nokia's utterance-final cadence.  Keep accents above
+       the median intact, but lift only the low suffix points to a neutral
+       floor.  The next independently analysed chunk therefore joins without
+       pretending that the preceding text ended a sentence. */
     for (i = anchor + 1u; i < count; ++i) {
-        int32_t elapsed = times[i] - times[anchor];
-        int32_t floor = from + (target - from) * elapsed / span;
-        if (pitch[i] < floor) pitch[i] = (int16_t)floor;
+        if (pitch[i] < target) pitch[i] = (int16_t)target;
     }
     return 1;
 }
@@ -1170,6 +1240,7 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_trimmed_samples=0;r->seam_quiet_count=0;
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
+    r->pcm_declick_release=0;r->pcm_wrap_just_repaired=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
