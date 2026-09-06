@@ -160,6 +160,7 @@ def main() -> None:
     pcm_final = [0]
     pcm_position = [0]
     pcm_large_jumps = [0]
+    pcm_trailing_quiet = [0]
     pcm_max_transition = [0, 0, 0]
     pcm_recent = []
     pcm_jump_windows = []
@@ -192,6 +193,10 @@ def main() -> None:
                 pcm_previous[0] = current
                 pcm_have_previous[0] = True
                 pcm_final[0] = current
+                if abs(current) <= 16:
+                    pcm_trailing_quiet[0] += 1
+                else:
+                    pcm_trailing_quiet[0] = 0
                 pcm_position[0] += 1
                 pcm_recent.append(current)
                 del pcm_recent[:-8]
@@ -217,6 +222,7 @@ def main() -> None:
         pcm_max_delta[0] = pcm_max_absolute[0] = pcm_clipped[0] = 0
         pcm_final[0] = 0
         pcm_position[0] = pcm_large_jumps[0] = 0
+        pcm_trailing_quiet[0] = 0
         pcm_max_transition[:] = [0, 0, 0]
         pcm_recent.clear()
         pcm_jump_windows.clear()
@@ -236,6 +242,7 @@ def main() -> None:
                     f' maxDelta={pcm_max_delta[0]} '
                     f'maxAbs={pcm_max_absolute[0]} '
                     f'clipped={pcm_clipped[0]} final={pcm_final[0]} '
+                    f'trailingQuiet={pcm_trailing_quiet[0]} '
                     f'largeJumps={pcm_large_jumps[0]} '
                     f'maxAt={pcm_max_transition[0]} '
                     f'maxPair={pcm_max_transition[1]}:{pcm_max_transition[2]}'
@@ -260,6 +267,7 @@ def main() -> None:
                     max_absolute=pcm_max_absolute[0],
                     clipped=pcm_clipped[0],
                     final=pcm_final[0],
+                    trailing_quiet=pcm_trailing_quiet[0],
                     large_jumps=pcm_large_jumps[0],
                 )
             return produced
@@ -303,6 +311,18 @@ def main() -> None:
             )
     nvda_rate_80 = 2.0 ** ((80.0 - 50.0) / 25.0)
     speak_case(
+        'NVDA rate 50 Geschwindigkeit 50',
+        'Geschwindigkeit 50',
+        measure=True,
+    )
+    if (last_metrics['large_jumps'] or last_metrics['clipped'] or
+            last_metrics['final'] != 0 or
+            last_metrics['max_delta'] >= 10000):
+        raise SystemExit(
+            'NVDA-rate-50 acoustic regression failed for '
+            f'"Geschwindigkeit 50": {last_metrics}'
+        )
+    speak_case(
         'NVDA rate 80 Geschwindigkeit 80',
         'Geschwindigkeit 80',
         rate=nvda_rate_80,
@@ -310,6 +330,7 @@ def main() -> None:
     )
     if (last_metrics['large_jumps'] or last_metrics['clipped'] or
             last_metrics['final'] != 0 or
+            last_metrics['trailing_quiet'] < 400 or
             last_metrics['max_delta'] >= 14000):
         raise SystemExit(
             'NVDA-rate-80 acoustic regression failed for '

@@ -197,10 +197,8 @@ typedef struct {
 
 #define SEAM_QUIET_LEVEL 16
 #define SEAM_PREROLL     16u
-#define PCM_TAIL_SAMPLES 160u
-#define PCM_DECLICK_ATTACK 16u
-#define PCM_DECLICK_RELEASE 64u
-#define PCM_DECLICK_GAIN_Q15 16384u
+#define PCM_TAIL_SAMPLES 64u
+#define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 
 static int quiet_sample(int16_t sample);
@@ -235,10 +233,10 @@ struct NokiaRuntime {
     uint32_t seam_leading_count;
     int16_t *pcm_pending;
     size_t pcm_pending_count, pcm_pending_capacity;
-    uint32_t pcm_wrap_repairs, pcm_declick_release;
+    uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
-    uint8_t pcm_unwrapped_have, pcm_wrap_just_repaired;
+    uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
 };
 
@@ -446,19 +444,16 @@ static int deliver_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
    crossed that boundary; ordinary consonant attacks remain unchanged. */
 static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
     int32_t unwrapped = (int32_t)sample + r->pcm_wrap_offset;
-    r->pcm_wrap_just_repaired = 0u;
     if (r->pcm_unwrapped_have) {
         int32_t delta = unwrapped - r->pcm_unwrapped_previous;
         if (delta > 32768) {
             r->pcm_wrap_offset -= 65536;
             unwrapped -= 65536;
             ++r->pcm_wrap_repairs;
-            r->pcm_wrap_just_repaired = 1u;
         } else if (delta < -32768) {
             r->pcm_wrap_offset += 65536;
             unwrapped += 65536;
             ++r->pcm_wrap_repairs;
-            r->pcm_wrap_just_repaired = 1u;
         }
     }
     r->pcm_unwrapped_previous = unwrapped;
@@ -468,56 +463,17 @@ static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
     return (int16_t)unwrapped;
 }
 
-static int16_t scale_pcm_q15(int16_t sample, uint32_t gain) {
-    int32_t value = (int32_t)sample * (int32_t)gain;
-    value += value >= 0 ? 16384 : -16384;
-    return (int16_t)(value / 32768);
-}
-
-/* A repaired wrap can still leave a tiny hard-clipped plateau.  Attenuate
-   only the immediate neighbourhood of an observed wrap, with a one-ms attack
-   applied retroactively inside the held PCM tail and a four-ms release. */
-static void soften_pcm_wrap(NokiaRuntime *r, size_t current) {
-    size_t available, back, distance;
-    uint32_t range = 32768u - PCM_DECLICK_GAIN_Q15;
-    if (r->pcm_declick_release) return;
-    available = current < PCM_DECLICK_ATTACK ? current : PCM_DECLICK_ATTACK;
-    for (back = available; back; --back) {
-        uint32_t gain;
-        distance = back;
-        gain = PCM_DECLICK_GAIN_Q15 +
-            range * (uint32_t)distance / PCM_DECLICK_ATTACK;
-        r->pcm_pending[current - back] =
-            scale_pcm_q15(r->pcm_pending[current - back], gain);
-    }
-}
-
-/* Keep ten milliseconds of PCM uncommitted.  This is short enough not to
-   affect responsiveness, but gives finalization a complete nearby waveform
-   period in which to find a real zero crossing. */
+/* Keep four milliseconds of PCM uncommitted so a genuinely abrupt final
+   sample can still be faded without delaying the first audio callback. */
 static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
     size_t total, release, i;
     if (!count) return 1;
     total = r->pcm_pending_count + count;
     if (!reserve_i16(&r->pcm_pending, &r->pcm_pending_capacity, total))
         return 0;
-    for (i = 0; i < count; ++i) {
-        size_t current = r->pcm_pending_count + i;
-        int16_t filtered = declick_pcm_sample(r, samples[i]);
-        if (r->pcm_wrap_just_repaired) {
-            soften_pcm_wrap(r, current);
-            r->pcm_declick_release = PCM_DECLICK_RELEASE;
-        }
-        if (r->pcm_declick_release) {
-            uint32_t elapsed = PCM_DECLICK_RELEASE - r->pcm_declick_release;
-            uint32_t gain = PCM_DECLICK_GAIN_Q15 +
-                (32768u - PCM_DECLICK_GAIN_Q15) * elapsed /
-                PCM_DECLICK_RELEASE;
-            filtered = scale_pcm_q15(filtered, gain);
-            --r->pcm_declick_release;
-        }
-        r->pcm_pending[current] = filtered;
-    }
+    for (i = 0; i < count; ++i)
+        r->pcm_pending[r->pcm_pending_count + i] =
+            declick_pcm_sample(r, samples[i]);
     r->pcm_pending_count = total;
     if (total <= PCM_TAIL_SAMPLES) return 1;
     release = total - PCM_TAIL_SAMPLES;
@@ -529,39 +485,19 @@ static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
 }
 
 static int finish_pcm_output(NokiaRuntime *r) {
-    size_t i, output_count;
+    size_t i, count;
     if (!r->pcm_pending_count) return 1;
-    output_count = r->pcm_pending_count;
-    if (!quiet_sample(r->pcm_pending[output_count - 1u])) {
-        for (i = output_count - 1u; i; --i) {
-            int32_t before = r->pcm_pending[i - 1u];
-            int32_t after = r->pcm_pending[i];
-            uint32_t before_abs = before < 0 ? (uint32_t)-before : (uint32_t)before;
-            uint32_t after_abs = after < 0 ? (uint32_t)-after : (uint32_t)after;
-            if (((before <= 0 && after >= 0) ||
-                 (before >= 0 && after <= 0)) &&
-                (before_abs <= 2048u || after_abs <= 2048u)) {
-                size_t zero = before_abs <= after_abs ? i - 1u : i;
-                r->pcm_pending[zero] = 0;
-                output_count = zero + 1u;
-                break;
-            }
-        }
+    count = r->pcm_pending_count;
+    if (!quiet_sample(r->pcm_pending[count - 1u])) {
+        uint32_t denominator = count > 1u ? (uint32_t)count - 1u : 1u;
+        for (i = 0; i < count; ++i)
+            r->pcm_pending[i] = (int16_t)(
+                (int32_t)r->pcm_pending[i] *
+                (int32_t)(count - 1u - i) / (int32_t)denominator
+            );
+        r->pcm_pending[count - 1u] = 0;
     }
-    if (!quiet_sample(r->pcm_pending[output_count - 1u])) {
-        uint32_t denominator = output_count > 1u
-            ? (uint32_t)output_count - 1u : 1u;
-        for (i = 0; i < output_count; ++i) {
-            uint32_t x = (uint32_t)(output_count - 1u - i) * 32768u /
-                         denominator;
-            uint32_t x2 = (uint32_t)(((uint64_t)x * x) >> 15);
-            uint32_t gain = (uint32_t)(((uint64_t)x2 *
-                (98304u - 2u * x)) >> 15);
-            r->pcm_pending[i] = scale_pcm_q15(r->pcm_pending[i], gain);
-        }
-        r->pcm_pending[output_count - 1u] = 0;
-    }
-    if (!deliver_pcm(r, r->pcm_pending, output_count)) return 0;
+    if (!deliver_pcm(r, r->pcm_pending, count)) return 0;
     r->pcm_pending_count = 0u;
     return 1;
 }
@@ -1048,6 +984,32 @@ static int scale_prosody_array(NokiaRuntime *r, uint32_t address,
     return 1;
 }
 
+/* Speed up Nokia's phone durations without collapsing its shortest transition
+   frames into one-to-four-unit parameter steps.  The last phone is the
+   frontend's resonator drain; keeping its original duration lets Klatt settle
+   naturally, while artificial long-text silence is still removed later. */
+static int scale_phone_durations(NokiaRuntime *r, uint32_t phone_address,
+                                 uint32_t duration_address, uint32_t count,
+                                 double factor) {
+    int16_t *phones, *durations;
+    uint32_t i;
+    if (!prosody_array(r, phone_address, count, &phones) ||
+        !prosody_array(r, duration_address, count, &durations))
+        return 0;
+    for (i = 0; i < count; ++i) {
+        int16_t original = durations[i];
+        int32_t scaled;
+        if (original <= 0) continue;
+        if (i + 1u == count && phones[i] == 0) continue;
+        scaled = (int32_t)(original / factor + 0.5);
+        if (scaled < PROSODY_MIN_DURATION)
+            scaled = PROSODY_MIN_DURATION;
+        if (scaled > 32767) scaled = 32767;
+        durations[i] = (int16_t)scaled;
+    }
+    return 1;
+}
+
 #if NOKIA_CONTINUE_PROSODY
 /* PrimeSynthesisL gives every independently analysed chunk a low utterance-
    final F0 tail.  For a non-final chunk, retain Nokia's contour but guide
@@ -1089,13 +1051,12 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
             }
     }
     if (anchor == count || anchor + 1u >= count) return 1;
-    /* A descending interpolation from the last accent to the opening median
-       still sounds like Nokia's utterance-final cadence.  Keep accents above
-       the median intact, but lift only the low suffix points to a neutral
-       floor.  The next independently analysed chunk therefore joins without
-       pretending that the preceding text ended a sentence. */
+    /* A merely neutral floor still leaves an audible fall from the last
+       accent.  Non-final chunks must remain perceptually open, so hold that
+       last accent through the artificial boundary.  The final real chunk is
+       never changed here and keeps Nokia's original closing cadence. */
     for (i = anchor + 1u; i < count; ++i) {
-        if (pitch[i] < target) pitch[i] = (int16_t)target;
+        if (pitch[i] < pitch[anchor]) pitch[i] = pitch[anchor];
     }
     return 1;
 }
@@ -1107,7 +1068,7 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
 static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     uint8_t *object;
     uint32_t address = 0, score = 0, candidate_score, i, offset;
-    uint32_t n0, n1, n2, durations, pitch, time1, time2;
+    uint32_t n0, n1, n2, phones, durations, pitch, time1, time2;
     double factor = r->rate_factor;
     if (factor < 0.4) factor = 0.4;
     if (factor > 4.0) factor = 4.0;
@@ -1148,14 +1109,26 @@ static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
        reach Nokia's own SynthesizeL instead of becoming error -3007. */
     if (!address || !(object = guest_ptr(r, address, 0x28u, 1))) return 1;
     n0 = rd16(object); n1 = rd16(object + 2u); n2 = rd16(object + 4u);
+    phones = rd32(object + 0x08u);
     durations = rd32(object + 0x0cu);
     pitch = rd32(object + 0x10u);
     time1 = rd32(object + 0x14u);
     time2 = rd32(object + 0x20u);
 #ifdef NOKIA_DEBUG_PROSODY
     {
+        int16_t *phone_values, *duration_values;
         int16_t *pitch_values, *pitch_times;
+        int16_t *amplitude_values, *amplitude_times;
         uint32_t i, first = n1 > 16u ? n1 - 16u : 0u;
+        uint32_t phone_first = n0 > 24u ? n0 - 24u : 0u;
+        if (prosody_array(r, rd32(object + 0x08u), n0, &phone_values) &&
+            prosody_array(r, durations, n0, &duration_values)) {
+            fprintf(stderr, "phones chunk=%u n0=%u:", r->text_chunks, n0);
+            for (i = phone_first; i < n0; ++i)
+                fprintf(stderr, " %d:%d", phone_values[i],
+                        duration_values[i]);
+            fputc('\n', stderr);
+        }
         if (prosody_array(r, rd32(object + 0x10u), n1, &pitch_values) &&
             prosody_array(r, time1, n1, &pitch_times)) {
             fprintf(stderr, "prosody chunk=%u n0=%u n1=%u:",
@@ -1165,6 +1138,17 @@ static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
             fprintf(stderr, " ...");
             for (i = first; i < n1; ++i)
                 fprintf(stderr, " %d@%d", pitch_values[i], pitch_times[i]);
+            fputc('\n', stderr);
+        }
+        if (prosody_array(r, rd32(object + 0x1cu), n2,
+                          &amplitude_values) &&
+            prosody_array(r, time2, n2, &amplitude_times)) {
+            uint32_t amplitude_first = n2 > 16u ? n2 - 16u : 0u;
+            fprintf(stderr, "amplitude chunk=%u n2=%u:",
+                    r->text_chunks, n2);
+            for (i = amplitude_first; i < n2; ++i)
+                fprintf(stderr, " %d@%d", amplitude_values[i],
+                        amplitude_times[i]);
             fputc('\n', stderr);
         }
     }
@@ -1190,7 +1174,7 @@ static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     (void)pitch;
 #endif
     if (factor > 0.999 && factor < 1.001) return 1;
-    return scale_prosody_array(r, durations, n0, factor, 1) &&
+    return scale_phone_durations(r, phones, durations, n0, factor) &&
            scale_prosody_array(r, time1, n1, factor, 0) &&
            scale_prosody_array(r, time2, n2, factor, 0);
 }
@@ -1240,7 +1224,6 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_trimmed_samples=0;r->seam_quiet_count=0;
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
-    r->pcm_declick_release=0;r->pcm_wrap_just_repaired=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
