@@ -21,11 +21,25 @@ int nokia_frontend_aot(uint8_t *a, uint8_t *b, uint8_t *c, uint8_t *d,
 }
 
 static size_t output_samples;
+static int16_t output_previous, output_final;
+static int output_have_previous;
+static int32_t output_max_delta;
 
 static void pcm(void *user, const int16_t *samples, uint32_t count,
                 uint32_t rate) {
-    (void)user;(void)samples;
+    uint32_t i;
+    (void)user;
     assert(rate == 16000u);
+    for (i = 0; i < count; ++i) {
+        int32_t delta;
+        if (output_have_previous) {
+            delta = (int32_t)samples[i] - output_previous;
+            if (delta < 0) delta = -delta;
+            if (delta > output_max_delta) output_max_delta = delta;
+        }
+        output_previous = output_final = samples[i];
+        output_have_previous = 1;
+    }
     output_samples += count;
 }
 
@@ -36,6 +50,9 @@ static void reset_runtime(NokiaRuntime *r, NokiaRuntimeCallbacks *callbacks,
     r->rate_factor = 1.0;
     r->seam_enabled = seams ? 1u : 0u;
     output_samples = 0;
+    output_previous = output_final = 0;
+    output_have_previous = 0;
+    output_max_delta = 0;
 }
 
 static void put_i16(uint8_t *base, size_t offset, const int16_t *values,
@@ -47,12 +64,15 @@ int main(void) {
     NokiaRuntime runtime;
     NokiaRuntimeCallbacks callbacks = {pcm, NULL, NULL};
     int16_t first[1100], second[1300];
-    int16_t phones[3] = {1, 2, 3};
-    int16_t durations[3] = {100, 201, 1};
+    int16_t phones[3] = {1, -1, 300};
+    int16_t durations[3] = {100, 201, 0};
     int16_t pitch[3] = {1000, 1100, 1200};
     int16_t pitch_time[3] = {0, 101, 200};
     int16_t amplitude[2] = {100, 120};
     int16_t amplitude_time[2] = {0, 151};
+    int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
+    int16_t corrected[6];
+    int16_t abrupt[128];
     uint8_t *object;
     size_t i;
 
@@ -67,15 +87,43 @@ int main(void) {
     assert(seam_finish_chunk(&runtime, 0));
     assert(seam_feed(&runtime, second, 1300));
     assert(seam_finish_chunk(&runtime, 1));
+    assert(finish_pcm_output(&runtime));
     assert(output_samples == 464u);
     assert(runtime.seam_trimmed_samples == 1936u);
     free(runtime.seam_quiet);
+    free(runtime.pcm_pending);
+
+    reset_runtime(&runtime, &callbacks, 0);
+    for (i = 0; i < 6u; ++i)
+        corrected[i] = declick_pcm_sample(&runtime, wrapped[i]);
+    assert(runtime.pcm_wrap_repairs == 2u);
+    for (i = 1; i < 6u; ++i) {
+        int32_t delta = (int32_t)corrected[i] - corrected[i - 1u];
+        if (delta < 0) delta = -delta;
+        assert(delta < 10000);
+    }
+
+    for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
+    reset_runtime(&runtime, &callbacks, 0);
+    assert(seam_feed(&runtime, abrupt, 128u));
+    assert(output_samples == 64u);
+    assert(finish_pcm_output(&runtime));
+    assert(output_samples == 128u);
+    assert(output_final == 0);
+    free(runtime.pcm_pending);
 
     reset_runtime(&runtime, &callbacks, 0);
     runtime.pool = (uint8_t *)calloc(1, 0x400u);
     assert(runtime.pool);
     runtime.pool_next = POOL_BASE + 0x400u;
     runtime.rate_factor = 2.0;
+    assert(add_block(&runtime, POOL_BASE + 0x100u, 0x30u, 1));
+    assert(add_block(&runtime, POOL_BASE + 0x200u, 0x20u, 1));
+    assert(add_block(&runtime, POOL_BASE + 0x220u, 0x20u, 1));
+    assert(add_block(&runtime, POOL_BASE + 0x240u, 0x20u, 1));
+    assert(add_block(&runtime, POOL_BASE + 0x260u, 0x20u, 1));
+    assert(add_block(&runtime, POOL_BASE + 0x280u, 0x20u, 1));
+    assert(add_block(&runtime, POOL_BASE + 0x2a0u, 0x20u, 1));
     object = runtime.pool + 0x100u;
     memcpy(object, "\003\000\003\000\002\000", 6u);
     wr32(object + 0x08u, POOL_BASE + 0x200u);
@@ -93,7 +141,8 @@ int main(void) {
     assert(apply_prosody_rate(&runtime, 0));
     assert(((int16_t *)(runtime.pool + 0x220u))[0] == 50);
     assert(((int16_t *)(runtime.pool + 0x220u))[1] == 101);
-    assert(((int16_t *)(runtime.pool + 0x220u))[2] == 1);
+    /* Zero/negative entries are frontend control markers, not durations. */
+    assert(((int16_t *)(runtime.pool + 0x220u))[2] == 0);
     assert(((int16_t *)(runtime.pool + 0x260u))[1] == 51);
     assert(((int16_t *)(runtime.pool + 0x260u))[2] == 100);
     assert(((int16_t *)(runtime.pool + 0x2a0u))[1] == 76);
@@ -113,6 +162,17 @@ int main(void) {
         assert(((int16_t *)(runtime.pool + 0x240u))[5] == 1140);
     }
 #endif
+    free(runtime.pool);
+    free(runtime.blocks);
+
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.pool = (uint8_t *)calloc(1, 0x100u);
+    assert(runtime.pool);
+    runtime.pool_next = POOL_BASE + 0x100u;
+    runtime.rate_factor = 4.0;
+    /* Optional speed/intonation post-processing must never reject an
+       otherwise valid silent or unfamiliar frontend result as -3007. */
+    assert(apply_prosody_rate(&runtime, 1));
     free(runtime.pool);
     puts("runtime output filters passed");
     return 0;

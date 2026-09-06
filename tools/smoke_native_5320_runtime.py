@@ -151,10 +151,50 @@ def main() -> None:
 
     samples = [0]
     calls = [0]
+    measure_pcm = [False]
+    pcm_previous = [0]
+    pcm_have_previous = [False]
+    pcm_max_delta = [0]
+    pcm_max_absolute = [0]
+    pcm_clipped = [0]
+    pcm_final = [0]
+    pcm_position = [0]
+    pcm_large_jumps = [0]
+    pcm_max_transition = [0, 0, 0]
+    pcm_recent = []
+    pcm_jump_windows = []
+    last_metrics = {}
     @PCM
     def on_pcm(_user, _samples, count, rate):
         if rate != 16000:
             raise RuntimeError(f'unexpected sample rate {rate}')
+        if measure_pcm[0]:
+            for i in range(count):
+                current = int(_samples[i])
+                for window in pcm_jump_windows:
+                    if len(window[1]) < 17:
+                        window[1].append(current)
+                pcm_max_absolute[0] = max(pcm_max_absolute[0], abs(current))
+                if abs(current) >= 32760:
+                    pcm_clipped[0] += 1
+                if pcm_have_previous[0]:
+                    delta = abs(current - pcm_previous[0])
+                    if delta > pcm_max_delta[0]:
+                        pcm_max_delta[0] = delta
+                        pcm_max_transition[:] = [
+                            pcm_position[0], pcm_previous[0], current
+                        ]
+                    if delta > 32768:
+                        pcm_large_jumps[0] += 1
+                        pcm_jump_windows.append(
+                            (pcm_position[0], list(pcm_recent) + [current])
+                        )
+                pcm_previous[0] = current
+                pcm_have_previous[0] = True
+                pcm_final[0] = current
+                pcm_position[0] += 1
+                pcm_recent.append(current)
+                del pcm_recent[:-8]
         samples[0] += int(count)
         calls[0] += 1
     @INDEX
@@ -163,7 +203,7 @@ def main() -> None:
     callbacks = Callbacks(on_pcm, on_index, None)
 
     def speak_case(label: str, value: str, runtime=None,
-                   rate: float = 1.0) -> int:
+                   rate: float = 1.0, measure: bool = False) -> int:
         owned_runtime = runtime is None
         if owned_runtime:
             runtime = create_runtime()
@@ -171,6 +211,15 @@ def main() -> None:
         words = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
         samples_before = samples[0]
         calls_before = calls[0]
+        measure_pcm[0] = measure
+        pcm_previous[0] = 0
+        pcm_have_previous[0] = False
+        pcm_max_delta[0] = pcm_max_absolute[0] = pcm_clipped[0] = 0
+        pcm_final[0] = 0
+        pcm_position[0] = pcm_large_jumps[0] = 0
+        pcm_max_transition[:] = [0, 0, 0]
+        pcm_recent.clear()
+        pcm_jump_windows.clear()
         try:
             if not dll.nokia_runtime_set_rate(runtime, rate):
                 raise SystemExit(
@@ -183,6 +232,15 @@ def main() -> None:
             print(
                 f'native case {label!r}: result={ok} error={error} '
                 f'pcm callbacks={calls[0] - calls_before} samples={produced}'
+                + (
+                    f' maxDelta={pcm_max_delta[0]} '
+                    f'maxAbs={pcm_max_absolute[0]} '
+                    f'clipped={pcm_clipped[0]} final={pcm_final[0]} '
+                    f'largeJumps={pcm_large_jumps[0]} '
+                    f'maxAt={pcm_max_transition[0]} '
+                    f'maxPair={pcm_max_transition[1]}:{pcm_max_transition[2]}'
+                    if measure else ''
+                )
             )
             if not ok or produced <= 0:
                 details = ', '.join(
@@ -193,8 +251,20 @@ def main() -> None:
                     f'error={error}, samples={produced}'
                     + (f', {details}' if details else '')
                 )
+            if measure:
+                if pcm_jump_windows:
+                    print(f'  wrap windows: {pcm_jump_windows}')
+                last_metrics.clear()
+                last_metrics.update(
+                    max_delta=pcm_max_delta[0],
+                    max_absolute=pcm_max_absolute[0],
+                    clipped=pcm_clipped[0],
+                    final=pcm_final[0],
+                    large_jumps=pcm_large_jumps[0],
+                )
             return produced
         finally:
+            measure_pcm[0] = False
             if owned_runtime:
                 dll.nokia_runtime_destroy(runtime)
 
@@ -217,7 +287,20 @@ def main() -> None:
             f'native 0.5x rate did not lengthen PCM: neutral={neutral_rate}, '
             f'slow={slow_rate}'
         )
-
+    for click_text in ('egal', 'Egel', 'legen', 'Regen', 'Begegnung', 'e g'):
+        speak_case(
+            f'high-rate click regression {click_text}', click_text,
+            rate=4.0, measure=True,
+        )
+        if last_metrics['large_jumps']:
+            raise SystemExit(
+                f'high-rate PCM still contains a signed wrap for {click_text!r}'
+            )
+        if last_metrics['final'] != 0:
+            raise SystemExit(
+                f'high-rate PCM does not end at zero for {click_text!r}: '
+                f'{last_metrics["final"]}'
+            )
     text = (
         'Dies ist der erste Satz und er prueft die schnelle Analyse. '
         'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '
@@ -236,7 +319,12 @@ def main() -> None:
     # missing signed-saturation edge at 0x830fa214 in the traced Klatt AOT.
     nvda_rate_65 = 2.0 ** ((65.0 - 50.0) / 25.0)
     speak_case('NVDA rate 65 regression', text, rate=nvda_rate_65)
-    speak_case('maximum native rate regression', text, rate=4.0)
+    speak_case('maximum native rate regression', text, rate=4.0, measure=True)
+    if last_metrics['large_jumps'] or last_metrics['final'] != 0:
+        raise SystemExit(
+            'maximum-rate corpus failed native PCM continuity checks: '
+            f'{last_metrics}'
+        )
     runtime = create_runtime()
     try:
         speak_case('long German block', text, runtime)

@@ -197,6 +197,7 @@ typedef struct {
 
 #define SEAM_QUIET_LEVEL 16
 #define SEAM_PREROLL     32u
+#define PCM_TAIL_SAMPLES 64u
 
 struct NokiaRuntime {
     uint8_t *rom;
@@ -226,7 +227,12 @@ struct NokiaRuntime {
     uint32_t seam_trimmed_samples, seam_leading_seen;
     int16_t seam_leading[SEAM_PREROLL];
     uint32_t seam_leading_count;
+    int16_t *pcm_pending;
+    size_t pcm_pending_count, pcm_pending_capacity;
+    uint32_t pcm_wrap_repairs;
+    int32_t pcm_unwrapped_previous, pcm_wrap_offset;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
+    uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
 };
 
@@ -421,10 +427,73 @@ static int reserve_i16(int16_t **buffer, size_t *capacity, size_t wanted) {
     return 1;
 }
 
-static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
+static int deliver_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
     if (count && r->callbacks && r->callbacks->pcm)
         r->callbacks->pcm(r->callbacks->user, samples,
                           (uint32_t)count, SAMPLE_RATE);
+    return 1;
+}
+
+/* The Klatt output is a 16-bit signal, but at short high-rate frames an
+   internal peak can occasionally wrap from one signed extreme to the other.
+   Follow the continuous 16-bit phase and saturate only samples that actually
+   crossed that boundary; ordinary consonant attacks remain unchanged. */
+static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
+    int32_t unwrapped = (int32_t)sample + r->pcm_wrap_offset;
+    if (r->pcm_unwrapped_have) {
+        int32_t delta = unwrapped - r->pcm_unwrapped_previous;
+        if (delta > 32768) {
+            r->pcm_wrap_offset -= 65536;
+            unwrapped -= 65536;
+            ++r->pcm_wrap_repairs;
+        } else if (delta < -32768) {
+            r->pcm_wrap_offset += 65536;
+            unwrapped += 65536;
+            ++r->pcm_wrap_repairs;
+        }
+    }
+    r->pcm_unwrapped_previous = unwrapped;
+    r->pcm_unwrapped_have = 1u;
+    if (unwrapped < -32768) return -32768;
+    if (unwrapped > 32767) return 32767;
+    return (int16_t)unwrapped;
+}
+
+/* Keep four milliseconds of PCM uncommitted.  This is short enough not to
+   affect responsiveness, but lets the real utterance end reach zero instead
+   of stopping on an arbitrary high-rate sample. */
+static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
+    size_t total, release, i;
+    if (!count) return 1;
+    total = r->pcm_pending_count + count;
+    if (!reserve_i16(&r->pcm_pending, &r->pcm_pending_capacity, total))
+        return 0;
+    for (i = 0; i < count; ++i)
+        r->pcm_pending[r->pcm_pending_count + i] =
+            declick_pcm_sample(r, samples[i]);
+    r->pcm_pending_count = total;
+    if (total <= PCM_TAIL_SAMPLES) return 1;
+    release = total - PCM_TAIL_SAMPLES;
+    if (!deliver_pcm(r, r->pcm_pending, release)) return 0;
+    memmove(r->pcm_pending, r->pcm_pending + release,
+            PCM_TAIL_SAMPLES * sizeof(*r->pcm_pending));
+    r->pcm_pending_count = PCM_TAIL_SAMPLES;
+    return 1;
+}
+
+static int finish_pcm_output(NokiaRuntime *r) {
+    uint32_t i, denominator;
+    if (!r->pcm_pending_count) return 1;
+    denominator = r->pcm_pending_count > 1u
+        ? (uint32_t)r->pcm_pending_count - 1u : 1u;
+    for (i = 0; i < r->pcm_pending_count; ++i) {
+        int32_t value = r->pcm_pending[i];
+        value = value * (int32_t)(r->pcm_pending_count - 1u - i) /
+                (int32_t)denominator;
+        r->pcm_pending[i] = (int16_t)value;
+    }
+    if (!deliver_pcm(r, r->pcm_pending, r->pcm_pending_count)) return 0;
+    r->pcm_pending_count = 0u;
     return 1;
 }
 
@@ -672,7 +741,7 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
 
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *r) {
     if (!r) return;
-    free(r->seam_quiet);
+    free(r->pcm_pending); free(r->seam_quiet);
     free(r->pending); free(r->blocks); free(r->heap); free(r->vtable);
     free(r->traps); free(r->pool); free(r->stack); free(r->rom); free(r);
 }
@@ -818,6 +887,21 @@ static int prosody_array(NokiaRuntime *r, uint32_t address, uint32_t count,
     return *out != NULL;
 }
 
+static int prosody_range_used(NokiaRuntime *r, uint32_t address,
+                              uint32_t count) {
+    uint64_t bytes = (uint64_t)count * sizeof(int16_t);
+    uint64_t end = (uint64_t)address + bytes;
+    uint32_t i;
+    if (!count) return 1;
+    for (i = 0; i < r->block_count; ++i) {
+        const RuntimeBlock *block = &r->blocks[i];
+        uint64_t block_end = (uint64_t)block->address + block->size;
+        if (block->used && address >= block->address && end <= block_end)
+            return 1;
+    }
+    return 0;
+}
+
 /* Validate the duration object produced by PrimeSynthesisL.  Its six arrays
    hold phone ids, durations, F0 values/times and amplitude values/times. */
 static int prosody_object_valid(NokiaRuntime *r, uint32_t address,
@@ -827,34 +911,44 @@ static int prosody_object_valid(NokiaRuntime *r, uint32_t address,
     int16_t *phones, *durations, *pitch, *time1, *amplitude, *time2;
     uint32_t n0, n1, n2, pointers[6], i, maximum;
     object = guest_ptr(r, address, 0x28u, 1);
-    if (!object) return 0;
+    if (!object || !prosody_range_used(r, address, 0x28u / 2u)) return 0;
     n0 = rd16(object); n1 = rd16(object + 2u); n2 = rd16(object + 4u);
-    if (!n0 || n0 > 4096u || !n1 || n1 > 1024u ||
-        !n2 || n2 > 1024u)
-        return 0;
+    if (!n0) return 0;
     for (i = 0; i < 6u; ++i) pointers[i] = rd32(object + pointer_offsets[i]);
-    if (!prosody_array(r, pointers[0], n0, &phones) ||
+    if (!prosody_range_used(r, pointers[0], n0) ||
+        !prosody_range_used(r, pointers[1], n0) ||
+        !prosody_range_used(r, pointers[2], n1) ||
+        !prosody_range_used(r, pointers[3], n1) ||
+        !prosody_range_used(r, pointers[4], n2) ||
+        !prosody_range_used(r, pointers[5], n2) ||
+        !prosody_array(r, pointers[0], n0, &phones) ||
         !prosody_array(r, pointers[1], n0, &durations) ||
-        !prosody_array(r, pointers[2], n1, &pitch) ||
-        !prosody_array(r, pointers[3], n1, &time1) ||
-        !prosody_array(r, pointers[4], n2, &amplitude) ||
-        !prosody_array(r, pointers[5], n2, &time2))
+        (n1 && (!prosody_array(r, pointers[2], n1, &pitch) ||
+                !prosody_array(r, pointers[3], n1, &time1))) ||
+        (n2 && (!prosody_array(r, pointers[4], n2, &amplitude) ||
+                !prosody_array(r, pointers[5], n2, &time2))))
         return 0;
-    for (i = 0; i < n0; ++i)
-        if (phones[i] < 0 || phones[i] > 255 ||
-            durations[i] <= 0 || durations[i] > 2000)
-            return 0;
+    (void)phones;
+    (void)durations;
     for (i = 0; i < n1; ++i) {
-        if (pitch[i] < 0 || pitch[i] > 5000 || time1[i] < 0) return 0;
+        if (time1[i] < 0) return 0;
         if (i && time1[i] < time1[i - 1u]) return 0;
     }
     for (i = 0; i < n2; ++i) {
-        if (amplitude[i] < 0 || time2[i] < 0) return 0;
+        if (time2[i] < 0) return 0;
         if (i && time2[i] < time2[i - 1u]) return 0;
     }
+    (void)pitch;
+    (void)amplitude;
     maximum = address;
-    for (i = 0; i < 6u; ++i)
+    for (i = 0; i < 2u; ++i)
         if (pointers[i] > maximum) maximum = pointers[i];
+    if (n1)
+        for (i = 2u; i < 4u; ++i)
+            if (pointers[i] > maximum) maximum = pointers[i];
+    if (n2)
+        for (i = 4u; i < 6u; ++i)
+            if (pointers[i] > maximum) maximum = pointers[i];
     *score = maximum;
     return 1;
 }
@@ -871,6 +965,7 @@ static int scale_prosody_array(NokiaRuntime *r, uint32_t address,
         double divided = original / factor;
         int32_t scaled = (int32_t)(divided +
             (divided >= 0.0 ? 0.5 : -0.5));
+        if (duration && original <= 0) continue;
         if (duration && scaled < 1) scaled = 1;
         if (!duration && i && original > previous_original &&
             scaled <= previous_scaled)
@@ -941,7 +1036,7 @@ static int continue_prosody_pitch(NokiaRuntime *r, uint32_t pitch_address,
    F0 and amplitude values remain untouched. */
 static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     uint8_t *object;
-    uint32_t pool_size, address = 0, score = 0, candidate_score, offset;
+    uint32_t address = 0, score = 0, candidate_score, i, offset;
     uint32_t n0, n1, n2, durations, pitch, time1, time2;
     double factor = r->rate_factor;
     if (factor < 0.4) factor = 0.4;
@@ -950,17 +1045,38 @@ static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     if (factor > 0.999 && factor < 1.001 &&
         !(NOKIA_CONTINUE_PROSODY && continuation)) return 1;
 #endif
-    pool_size = r->pool_next > POOL_BASE ? r->pool_next - POOL_BASE : 0u;
-    if (!pool_size || pool_size > POOL_SIZE) return 0;
-    for (offset = 0; offset + 0x28u <= pool_size; offset += 4u) {
-        uint32_t possible = POOL_BASE + offset;
+    /* Prime allocates this object at the beginning of a live pool block.  By
+       following allocator metadata first, the finder no longer depends on
+       language-specific phone values or arbitrary array-count ceilings. */
+    for (i = 0; i < r->block_count; ++i) {
+        uint32_t possible = r->blocks[i].address;
+        if (!r->blocks[i].used || r->blocks[i].size < 0x28u) continue;
         if (prosody_object_valid(r, possible, &candidate_score) &&
             (!address || candidate_score > score)) {
             address = possible;
             score = candidate_score;
         }
     }
-    if (!address || !(object = guest_ptr(r, address, 0x28u, 1))) return 0;
+    /* Keep a contained-object fallback for a future frontend whose C++ object
+       is embedded in a larger allocation rather than returned directly. */
+    if (!address) {
+        for (i = 0; i < r->block_count; ++i) {
+            const RuntimeBlock *block = &r->blocks[i];
+            if (!block->used || block->size < 0x28u) continue;
+            for (offset = 4u; offset + 0x28u <= block->size; offset += 4u) {
+                uint32_t possible = block->address + offset;
+                if (prosody_object_valid(r, possible, &candidate_score) &&
+                    (!address || candidate_score > score)) {
+                    address = possible;
+                    score = candidate_score;
+                }
+            }
+        }
+    }
+    /* Rate/continuation processing is an enhancement.  A chunk which contains
+       no speakable phones (or a future unfamiliar object layout) must still
+       reach Nokia's own SynthesizeL instead of becoming error -3007. */
+    if (!address || !(object = guest_ptr(r, address, 0x28u, 1))) return 1;
     n0 = rd16(object); n1 = rd16(object + 2u); n2 = rd16(object + 4u);
     durations = rd32(object + 0x0cu);
     pitch = rd32(object + 0x10u);
@@ -1053,6 +1169,8 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->first_pcm_ticks=0;r->first_pcm_seen=0;r->text_chunks=0;
     r->seam_trimmed_samples=0;r->seam_quiet_count=0;
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
+    r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
+    r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
     r->seam_enabled = incremental ? 1u : 0u;
@@ -1067,9 +1185,11 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
             r->last_error=-3006;goto failed;
         }
     }
+    if(!finish_pcm_output(r)){r->last_error=-3008;goto failed;}
     r->callbacks=NULL;
     return offset == len || r->cancelled;
 failed:
+    finish_pcm_output(r);
     r->callbacks=NULL;return 0;
 }
 
