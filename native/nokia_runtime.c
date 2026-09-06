@@ -198,6 +198,9 @@ typedef struct {
 #define SEAM_QUIET_LEVEL 16
 #define SEAM_PREROLL     16u
 #define PCM_TAIL_SAMPLES 64u
+#define PCM_NEUTRAL_EDGE_MIN 7000u
+#define PCM_NEUTRAL_EDGE_RATIO_NUM 9u
+#define PCM_NEUTRAL_EDGE_RATIO_DEN 5u
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -234,6 +237,7 @@ struct NokiaRuntime {
     uint32_t seam_leading_count;
     int16_t *pcm_pending;
     size_t pcm_pending_count, pcm_pending_capacity;
+    size_t pcm_neutral_checked;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
@@ -464,6 +468,51 @@ static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
     return (int16_t)unwrapped;
 }
 
+static uint32_t pcm_delta_abs(int32_t delta) {
+    return delta < 0 ? (uint32_t)-delta : (uint32_t)delta;
+}
+
+/* The original 5320 output occasionally contains one disproportionately steep
+   sample inside an otherwise continuous same-direction edge.  At neutral
+   speed this is audible in German "Gegen" even though it is neither a signed
+   wrap nor clipping.  Replace only that single outlier with the midpoint of
+   its neighbours.  Native high-rate output deliberately bypasses this path,
+   preserving the separate signed-wrap repair above byte for byte. */
+static void smooth_neutral_pcm_edges(NokiaRuntime *r) {
+    size_t i = r->pcm_neutral_checked;
+    if (i < 2u) i = 2u;
+    if (r->rate_factor < 0.999 || r->rate_factor > 1.001) {
+        r->pcm_neutral_checked = r->pcm_pending_count
+            ? r->pcm_pending_count - 1u : 0u;
+        return;
+    }
+    while (i + 1u < r->pcm_pending_count) {
+        int32_t before = (int32_t)r->pcm_pending[i - 1u] -
+                         r->pcm_pending[i - 2u];
+        int32_t edge = (int32_t)r->pcm_pending[i] -
+                       r->pcm_pending[i - 1u];
+        int32_t after = (int32_t)r->pcm_pending[i + 1u] -
+                        r->pcm_pending[i];
+        uint32_t flank = pcm_delta_abs(before);
+        uint32_t after_abs = pcm_delta_abs(after);
+        uint32_t edge_abs = pcm_delta_abs(edge);
+        int same_direction =
+            (before > 0 && edge > 0 && after > 0) ||
+            (before < 0 && edge < 0 && after < 0);
+        if (after_abs > flank) flank = after_abs;
+        if (same_direction && edge_abs >= PCM_NEUTRAL_EDGE_MIN &&
+            edge_abs * PCM_NEUTRAL_EDGE_RATIO_DEN >=
+                flank * PCM_NEUTRAL_EDGE_RATIO_NUM) {
+            r->pcm_pending[i] = (int16_t)(
+                ((int32_t)r->pcm_pending[i - 1u] +
+                 r->pcm_pending[i + 1u]) / 2
+            );
+        }
+        ++i;
+    }
+    r->pcm_neutral_checked = i;
+}
+
 /* Keep four milliseconds of PCM uncommitted so a genuinely abrupt final
    sample can still be faded without delaying the first audio callback. */
 static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
@@ -476,12 +525,15 @@ static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
         r->pcm_pending[r->pcm_pending_count + i] =
             declick_pcm_sample(r, samples[i]);
     r->pcm_pending_count = total;
+    smooth_neutral_pcm_edges(r);
     if (total <= PCM_TAIL_SAMPLES) return 1;
     release = total - PCM_TAIL_SAMPLES;
     if (!deliver_pcm(r, r->pcm_pending, release)) return 0;
     memmove(r->pcm_pending, r->pcm_pending + release,
             PCM_TAIL_SAMPLES * sizeof(*r->pcm_pending));
     r->pcm_pending_count = PCM_TAIL_SAMPLES;
+    r->pcm_neutral_checked = r->pcm_neutral_checked > release
+        ? r->pcm_neutral_checked - release : 2u;
     return 1;
 }
 
@@ -1238,6 +1290,7 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_trimmed_samples=0;r->seam_quiet_count=0;
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
+    r->pcm_neutral_checked=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;

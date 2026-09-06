@@ -73,6 +73,8 @@ int main(void) {
     int16_t amplitude_time[2] = {0, 151};
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
+    int16_t neutral_edge[4] = {-5561, -1664, 5685, 8559};
+    int16_t fast_edge[4];
     int16_t abrupt[128];
     uint8_t *object;
     size_t i;
@@ -103,6 +105,29 @@ int main(void) {
         if (delta < 0) delta = -delta;
         assert(delta < 10000);
     }
+
+    reset_runtime(&runtime, &callbacks, 0);
+    assert(reserve_i16(&runtime.pcm_pending,
+                       &runtime.pcm_pending_capacity, 4u));
+    memcpy(runtime.pcm_pending, neutral_edge, sizeof(neutral_edge));
+    runtime.pcm_pending_count = 4u;
+    smooth_neutral_pcm_edges(&runtime);
+    assert(runtime.pcm_pending[0] == -5561);
+    assert(runtime.pcm_pending[1] == -1664);
+    assert(runtime.pcm_pending[2] == 3447);
+    assert(runtime.pcm_pending[3] == 8559);
+    free(runtime.pcm_pending);
+
+    memcpy(fast_edge, neutral_edge, sizeof(fast_edge));
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.rate_factor = 2.0;
+    assert(reserve_i16(&runtime.pcm_pending,
+                       &runtime.pcm_pending_capacity, 4u));
+    memcpy(runtime.pcm_pending, fast_edge, sizeof(fast_edge));
+    runtime.pcm_pending_count = 4u;
+    smooth_neutral_pcm_edges(&runtime);
+    assert(!memcmp(runtime.pcm_pending, fast_edge, sizeof(fast_edge)));
+    free(runtime.pcm_pending);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);

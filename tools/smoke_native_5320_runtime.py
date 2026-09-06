@@ -295,6 +295,16 @@ def main() -> None:
             f'native 0.5x rate did not lengthen PCM: neutral={neutral_rate}, '
             f'slow={slow_rate}'
         )
+    speak_case(
+        'NVDA rate 50 Gegen click regression', 'Gegen', measure=True,
+    )
+    if (last_metrics['large_jumps'] or last_metrics['clipped'] or
+            last_metrics['final'] != 0 or
+            last_metrics['max_delta'] >= 7000):
+        raise SystemExit(
+            'NVDA-rate-50 acoustic regression failed for "Gegen": '
+            f'{last_metrics}'
+        )
     for click_text in ('egal', 'Egel', 'legen', 'Regen', 'Begegnung', 'e g'):
         speak_case(
             f'high-rate click regression {click_text}', click_text,
