@@ -21,7 +21,8 @@ def read_source(path: Path) -> str:
 
 
 def run_lifter(lifter: Path, source: Path, trace: Path, rom: Path,
-               output: Path, repair: bool = False) -> None:
+               output: Path, repair: bool = False,
+               include_dsp: bool = False) -> None:
     cmd = [
         sys.executable, str(lifter),
         "--source", str(source),
@@ -31,6 +32,8 @@ def run_lifter(lifter: Path, source: Path, trace: Path, rom: Path,
     ]
     if repair:
         cmd.append("--repair-fallthroughs")
+    if include_dsp:
+        cmd.append("--include-dsp")
     subprocess.run(cmd, check=True)
 
 
@@ -43,6 +46,7 @@ def main() -> None:
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--batch-size", type=int, default=700)
     ap.add_argument("--repair-fallthroughs", action="store_true")
+    ap.add_argument("--include-dsp", action="store_true")
     args = ap.parse_args()
 
     payload = json.loads(args.trace.read_text(encoding="utf-8"))
@@ -81,7 +85,14 @@ def main() -> None:
                 )
                 # Do not run the expensive whole-source fallthrough regexp for
                 # every batch. Cross-batch branches safely return to dispatch.
-                run_lifter(args.lifter, current, trace_path, args.rom, out_path)
+                run_lifter(
+                    args.lifter,
+                    current,
+                    trace_path,
+                    args.rom,
+                    out_path,
+                    include_dsp=args.include_dsp,
+                )
                 current = out_path
 
         if args.repair_fallthroughs:
@@ -89,7 +100,15 @@ def main() -> None:
             print("AOT final fallthrough repair", flush=True)
             # All trace labels are present now, so this pass adds no new lifted
             # instructions and only repairs terminals that became known later.
-            run_lifter(args.lifter, current, args.trace, args.rom, repaired, repair=True)
+            run_lifter(
+                args.lifter,
+                current,
+                args.trace,
+                args.rom,
+                repaired,
+                repair=True,
+                include_dsp=args.include_dsp,
+            )
             current = repaired
 
         if current.suffix == ".gz":

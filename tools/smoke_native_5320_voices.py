@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Smoke-test every packaged Nokia 5320 language and named voice."""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import hashlib
+import re
+from pathlib import Path
+
+from build_config_pack import read as read_config_pack
+
+
+SAMPLES = {
+    1: "Hello world",
+    2: "Bonjour le monde",
+    3: "Hallo Welt",
+    4: "Hola mundo",
+    5: "Ciao mondo",
+    6: "Hej världen",
+    7: "Hej verden",
+    8: "Hei verden",
+    9: "Hei maailma",
+    13: "Olá mundo",
+    14: "Merhaba dünya",
+    15: "Halló heimur",
+    16: "Привет мир",
+    17: "Helló világ",
+    18: "Hallo wereld",
+    25: "Ahoj světe",
+    26: "Ahoj svet",
+    27: "Witaj świecie",
+    28: "Pozdravljen svet",
+    37: "مرحبا بالعالم",
+    42: "Здравей свят",
+    44: "Hola món",
+    45: "Pozdrav svijete",
+    49: "Tere maailm",
+    54: "Γεια σου κόσμε",
+    57: "שלום עולם",
+    67: "Sveika pasaule",
+    68: "Labas pasauli",
+    78: "Salut lume",
+    79: "Здраво свете",
+    93: "Привіт світе",
+    401: "Kaixo mundua",
+    402: "Ola mundo",
+}
+GENDERS = ("male", "female")
+GERMAN_MALE_SHA256 = (
+    "3f3e908c133f7eb26c6bb990886f3bde06a5d31e93a65dbed2bc091f6cd738ee"
+)
+
+
+PCM = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int16),
+    ctypes.c_uint32,
+    ctypes.c_uint32,
+)
+INDEX = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint32)
+
+
+class Callbacks(ctypes.Structure):
+    _fields_ = [("pcm", PCM), ("index", INDEX), ("user", ctypes.c_void_p)]
+
+
+def byte_array(path: Path):
+    data = path.read_bytes()
+    return data, (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
+
+
+def config_blobs(path: Path):
+    if path.is_file():
+        yield from read_config_pack(path)
+        return
+    for item in sorted(path.glob("srsf_*_*.bin")):
+        match = re.fullmatch(r"srsf_(\d+)_(\d+)\.bin", item.name, re.I)
+        if match:
+            yield int(match.group(1)), int(match.group(2)), item.read_bytes()
+
+
+def bind(dll):
+    dll.nokia_register_config_blob.argtypes = [
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    ]
+    dll.nokia_register_config_blob.restype = ctypes.c_int
+    dll.nokia_runtime_create_5320_snapshot.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+    ]
+    dll.nokia_runtime_create_5320_snapshot.restype = ctypes.c_void_p
+    dll.nokia_runtime_speak_utf16.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint16),
+        ctypes.c_uint32,
+        ctypes.POINTER(Callbacks),
+    ]
+    dll.nokia_runtime_speak_utf16.restype = ctypes.c_int
+    dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
+    dll.nokia_runtime_last_error.restype = ctypes.c_int
+    dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
+
+
+def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str):
+    snapshot_data, snapshot = byte_array(snapshot_path)
+    runtime = dll.nokia_runtime_create_5320_snapshot(
+        rom,
+        rom_size,
+        snapshot,
+        len(snapshot_data),
+    )
+    if not runtime:
+        raise RuntimeError("snapshot restore failed")
+    pcm = []
+    callback_error = []
+
+    @PCM
+    def on_pcm(_user, samples, count, sample_rate):
+        if sample_rate != 16000:
+            callback_error.append(f"unexpected sample rate {sample_rate}")
+            return
+        pcm.append(ctypes.string_at(samples, count * 2))
+
+    @INDEX
+    def on_index(_user, _index):
+        pass
+
+    callbacks = Callbacks(on_pcm, on_index, None)
+    encoded = text.encode("utf-16-le")
+    units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
+    try:
+        ok = dll.nokia_runtime_speak_utf16(
+            runtime,
+            units,
+            len(units),
+            ctypes.byref(callbacks),
+        )
+        error = dll.nokia_runtime_last_error(runtime)
+        audio = b"".join(pcm)
+        if callback_error:
+            raise RuntimeError(callback_error[0])
+        if not ok or error or not audio or not any(audio):
+            raise RuntimeError(
+                f"synthesis result={ok}, error={error}, pcm_bytes={len(audio)}"
+            )
+        return audio
+    finally:
+        dll.nokia_runtime_destroy(runtime)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dll", type=Path)
+    parser.add_argument("rom", type=Path)
+    parser.add_argument("snapshot_dir", type=Path)
+    parser.add_argument("config", type=Path)
+    parser.add_argument(
+        "--skip-reference-hash",
+        action="store_true",
+        help="do not require bit-identical Test43 German male output",
+    )
+    args = parser.parse_args()
+
+    dll = ctypes.CDLL(str(args.dll.resolve()))
+    bind(dll)
+    held = []
+    for type_id, data_id, data in config_blobs(args.config):
+        buffer = ctypes.create_string_buffer(data)
+        held.append(buffer)
+        if not dll.nokia_register_config_blob(type_id, data_id, buffer, len(data)):
+            raise SystemExit(f"failed registering srsf_{type_id}_{data_id}.bin")
+    if not held:
+        raise SystemExit("no configuration blobs found")
+
+    rom_data, rom = byte_array(args.rom)
+    failures = []
+    hashes = {}
+    for language_id, text in SAMPLES.items():
+        for gender in GENDERS:
+            label = f"{language_id}-{gender}"
+            snapshot = args.snapshot_dir / f"5320-{label}.snapshot"
+            if not snapshot.is_file():
+                failures.append(f"{label}: snapshot missing")
+                continue
+            try:
+                audio = synthesize(dll, rom, len(rom_data), snapshot, text)
+            except Exception as error:
+                failures.append(f"{label}: {error}")
+                continue
+            digest = hashlib.sha256(audio).hexdigest()
+            hashes[label] = digest
+            print(f"{label}: pcm_bytes={len(audio)} sha256={digest}")
+
+    for language_id in SAMPLES:
+        male = hashes.get(f"{language_id}-male")
+        female = hashes.get(f"{language_id}-female")
+        if male is not None and male == female:
+            failures.append(f"{language_id}: male and female PCM are identical")
+    if not args.skip_reference_hash:
+        actual = hashes.get("3-male")
+        if actual is not None and actual != GERMAN_MALE_SHA256:
+            failures.append(
+                "3-male: Test43 reference changed: "
+                f"expected {GERMAN_MALE_SHA256}, got {actual}"
+            )
+
+    print(f"validated voices: {len(hashes)}; failures: {len(failures)}")
+    if failures:
+        raise SystemExit("\n".join(failures))
+
+
+if __name__ == "__main__":
+    main()

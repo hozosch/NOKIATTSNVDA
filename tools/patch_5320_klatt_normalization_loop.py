@@ -14,7 +14,7 @@ NORMALIZE_SOURCE = 0x830FA42A
 NORMALIZE_TARGET = 0x830FA426
 SATURATE_SOURCES = (0x830FA20E, 0x830FA214)
 SATURATE_TARGET = 0x830FA22C
-DIVISION_FALLTHROUGHS = (
+MISSING_FALLTHROUGHS = (
     (0x830F99EA, 0x830F99EC, 0x830F99F0, (
         "reg_r1 = (reg_r1 - UINT64_C(1)) & UINT64_C(0xffffffff);",
         "reg_r3 = UINT64_C(1);",
@@ -30,6 +30,16 @@ DIVISION_FALLTHROUGHS = (
     (0x830F9A2C, 0x830F9A2E, 0x830F9A32, (
         "reg_r1 = (reg_r1 - reg_r2) & UINT64_C(0xffffffff);",
         "reg_r0 = (reg_r0 + UINT64_C(1)) & UINT64_C(0xffffffff);",
+    )),
+    # The German trace only took the signed-greater-than branch at 0x830fa55a.
+    # Several Slavic voices also take its ordinary fallthrough, which sets r5
+    # to one before joining the already translated continuation.
+    (0x830FA55A, 0x830FA55C, 0x830FA55E, (
+        "reg_r5 = UINT64_C(1);",
+        "reg_tmpNG = UINT64_C(0);",
+        "reg_tmpZR = UINT64_C(0);",
+        "reg_ZR = reg_tmpZR;",
+        "reg_NG = reg_tmpNG;",
     )),
 )
 
@@ -118,7 +128,7 @@ def patch(path: Path) -> None:
     text = add_saturation_target(text)
     for source in SATURATE_SOURCES:
         text = replace_unsupported_edge(text, source, SATURATE_TARGET)
-    for source, target, continuation, operations in DIVISION_FALLTHROUGHS:
+    for source, target, continuation, operations in MISSING_FALLTHROUGHS:
         text = add_fallthrough_target(text, target, continuation, operations)
         text = replace_unsupported_edge(text, source, target)
     text = add_normalization_target(text)
@@ -127,8 +137,8 @@ def patch(path: Path) -> None:
     )
     path.write_text(text, encoding="utf-8")
     print(
-        "repaired Klatt signed-saturation, fixed-point division, and "
-        "normalization-loop edges"
+        "repaired Klatt signed-saturation, fixed-point division, comparison, "
+        "and normalization-loop edges"
     )
 
 

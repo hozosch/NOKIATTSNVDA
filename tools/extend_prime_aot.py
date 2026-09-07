@@ -193,7 +193,8 @@ def collect_function(rom: bytes, rom_base: int, entry: int,
 
 
 def extend(source_path: Path, trace_path: Path, rom_path: Path,
-           output_path: Path, repair_fallthroughs: bool = False) -> None:
+           output_path: Path, repair_fallthroughs: bool = False,
+           include_dsp: bool = False) -> None:
     source = read_text(source_path)
     trace = json.loads(trace_path.read_text(encoding="utf-8"))
     rom, rom_base = read_rom(rom_path)
@@ -230,7 +231,9 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
                  # Keep only the still-emulated Nokia DSP as a yield island.
                  # Everything observed before it (DevTTS, EUser and Common)
                  # belongs to the cohesive Prime boundary.
-                 not (0x830F7A48 <= item["address"] < 0x83102E00)]
+                 (include_dsp or not (
+                     0x830F7A48 <= item["address"] < 0x83102E00
+                 ))]
     known = existing | {item["address"] for item in additions}
     lifted = {}
     variables = set()
@@ -316,7 +319,7 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
     for match in terminal.finditer(source) if repair_fallthroughs else ():
         address = int(match.group(1), 16)
         item = traced.get(address)
-        if item is None or address + item["size"] not in lifted:
+        if item is None or address + item["size"] not in known:
             continue
         context = pypcode.Context(
             "ARM:LE:32:v8T" if item["thumb"] else "ARM:LE:32:v8")
@@ -356,7 +359,7 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
             if len(branches) != 1:
                 continue
             target = direct_target(branches[0].inputs[0])
-            if target not in lifted:
+            if target not in known:
                 continue
             conditional = re.search(
                 r"(?m)^(    if \(.*\)) goto unsupported;$", match.group(0))
@@ -382,9 +385,17 @@ def main() -> None:
     parser.add_argument("--rom", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repair-fallthroughs", action="store_true")
+    parser.add_argument(
+        "--include-dsp",
+        action="store_true",
+        help=(
+            "lift traced Nokia DSP wrapper paths too; the Klatt core itself "
+            "must already have been removed from the trace"
+        ),
+    )
     args = parser.parse_args()
     extend(args.source, args.trace, args.rom, args.output,
-           args.repair_fallthroughs)
+           args.repair_fallthroughs, args.include_dsp)
 
 
 if __name__ == "__main__":

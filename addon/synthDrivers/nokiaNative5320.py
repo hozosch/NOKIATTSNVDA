@@ -9,6 +9,7 @@ import re
 import struct
 import sys
 import threading
+from collections import OrderedDict
 from pathlib import Path
 
 import config
@@ -17,6 +18,7 @@ import nvwave
 from speech.commands import IndexCommand, PitchCommand
 from synthDriverHandler import (
 	SynthDriver as BaseSynthDriver,
+	VoiceInfo,
 	synthDoneSpeaking,
 	synthIndexReached,
 )
@@ -32,6 +34,52 @@ _PcmCallback = ctypes.CFUNCTYPE(
 _IndexCallback = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint32)
 
 
+# Languages present in the Nokia 5320 EMEA/Hispania configuration set.
+# The numeric values are Symbian TLanguage identifiers and also form part of
+# the stable voice IDs stored by NVDA.
+_LANGUAGES = (
+	(1, "English (UK)", "en_GB"),
+	(2, "French", "fr_FR"),
+	(3, "German", "de_DE"),
+	(4, "Spanish", "es_ES"),
+	(5, "Italian", "it_IT"),
+	(6, "Swedish", "sv_SE"),
+	(7, "Danish", "da_DK"),
+	(8, "Norwegian", "nb_NO"),
+	(9, "Finnish", "fi_FI"),
+	(13, "Portuguese", "pt_PT"),
+	(14, "Turkish", "tr_TR"),
+	(15, "Icelandic", "is_IS"),
+	(16, "Russian", "ru_RU"),
+	(17, "Hungarian", "hu_HU"),
+	(18, "Dutch", "nl_NL"),
+	(25, "Czech", "cs_CZ"),
+	(26, "Slovak", "sk_SK"),
+	(27, "Polish", "pl_PL"),
+	(28, "Slovenian", "sl_SI"),
+	(37, "Arabic", "ar"),
+	(42, "Bulgarian", "bg_BG"),
+	(44, "Catalan", "ca_ES"),
+	(45, "Croatian", "hr_HR"),
+	(49, "Estonian", "et_EE"),
+	(54, "Greek", "el_GR"),
+	(57, "Hebrew", "he_IL"),
+	(67, "Latvian", "lv_LV"),
+	(68, "Lithuanian", "lt_LT"),
+	(78, "Romanian", "ro_RO"),
+	(79, "Serbian", "sr_RS"),
+	(93, "Ukrainian", "uk_UA"),
+	(401, "Basque", "eu_ES"),
+	(402, "Galician", "gl_ES"),
+)
+_GENDERS = ("male", "female")
+_DEFAULT_VOICE = "5320:3-male"
+
+
+def _voiceId(languageId, gender):
+	return f"5320:{languageId}-{gender}"
+
+
 class _Callbacks(ctypes.Structure):
 	_fields_ = [
 		("pcm", _PcmCallback),
@@ -44,6 +92,7 @@ class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
 	description = "Nokia 5320 Native (experimental)"
 	supportedSettings = (
+		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
 		BaseSynthDriver.PitchSetting(),
 	)
@@ -54,7 +103,11 @@ class SynthDriver(BaseSynthDriver):
 	def check(cls):
 		try:
 			root = Path(__file__).resolve().parent.parent
-			return (root / "data" / "5320-de-male.snapshot").is_file() and (
+			data = root / "data"
+			return (
+				(data / "5320-3-male.snapshot").is_file()
+				or (data / "5320-de-male.snapshot").is_file()
+			) and (
 				(root / "data" / "5320-core.nrp").is_file()
 				or (root / "data" / "SYM.ROM").is_file()
 			)
@@ -65,6 +118,15 @@ class SynthDriver(BaseSynthDriver):
 		self._rate = 50
 		self._pitch = 50
 		self._root = Path(__file__).resolve().parent.parent
+		self._voiceSnapshots = self._findVoiceSnapshots()
+		if not self._voiceSnapshots:
+			raise RuntimeError("No Nokia 5320 native voice snapshots were packaged")
+		self._voices = self._buildVoiceList()
+		self._voice = (
+			_DEFAULT_VOICE
+			if _DEFAULT_VOICE in self._voices
+			else next(iter(self._voices))
+		)
 		arch = self._getProcessArchitecture()
 		dllPath = self._root / "bin" / arch / f"nokia_runtime_5320_{arch}.dll"
 		self._arch = arch
@@ -82,11 +144,15 @@ class SynthDriver(BaseSynthDriver):
 		if not romPath.is_file():
 			romPath = self._root / "data" / "SYM.ROM"
 		self._romBytes = romPath.read_bytes()
-		self._snapshotBytes = (self._root / "data" / "5320-de-male.snapshot").read_bytes()
 		self._rom = (ctypes.c_uint8 * len(self._romBytes)).from_buffer_copy(self._romBytes)
-		self._snapshot = (ctypes.c_uint8 * len(self._snapshotBytes)).from_buffer_copy(
-			self._snapshotBytes
-		)
+		# Voice snapshots are about 2 MiB each. Cache only the selected one;
+		# loading all 66 would need roughly 140 MiB for almost no latency gain.
+		self._snapshotVoice = None
+		self._snapshotBytes = None
+		self._snapshot = None
+		# Preserve Test43's first-utterance behaviour: prepare the default voice
+		# during driver startup, while later voice changes remain lazy.
+		self._loadSnapshot(self._voice)
 		self._player = nvwave.WavePlayer(
 			channels=1,
 			samplesPerSec=16000,
@@ -104,6 +170,47 @@ class SynthDriver(BaseSynthDriver):
 			daemon=True,
 		)
 		self._thread.start()
+
+	def _findVoiceSnapshots(self):
+		data = self._root / "data"
+		paths = {}
+		for languageId, _name, _locale in _LANGUAGES:
+			for gender in _GENDERS:
+				voiceId = _voiceId(languageId, gender)
+				path = data / f"5320-{languageId}-{gender}.snapshot"
+				# Accept Test43's original filename as a compatibility fallback.
+				if languageId == 3 and gender == "male" and not path.is_file():
+					path = data / "5320-de-male.snapshot"
+				if path.is_file():
+					paths[voiceId] = path
+		return paths
+
+	def _buildVoiceList(self):
+		voices = OrderedDict()
+		self._voiceLocales = {}
+		for languageId, name, locale in sorted(_LANGUAGES, key=lambda row: row[1]):
+			for gender in _GENDERS:
+				voiceId = _voiceId(languageId, gender)
+				if voiceId in self._voiceSnapshots:
+					self._voiceLocales[voiceId] = locale
+					voices[voiceId] = VoiceInfo(
+						voiceId,
+						f"{name} {gender} (Nokia 5320)",
+						locale,
+					)
+		return voices
+
+	def _loadSnapshot(self, voiceId):
+		if voiceId != self._snapshotVoice:
+			path = self._voiceSnapshots.get(voiceId)
+			if path is None:
+				raise RuntimeError(f"Nokia 5320 voice snapshot is unavailable: {voiceId}")
+			self._snapshotBytes = path.read_bytes()
+			self._snapshot = (
+				ctypes.c_uint8 * len(self._snapshotBytes)
+			).from_buffer_copy(self._snapshotBytes)
+			self._snapshotVoice = voiceId
+		return self._snapshot, len(self._snapshotBytes)
 
 	@staticmethod
 	def _getProcessArchitecture():
@@ -285,6 +392,19 @@ class SynthDriver(BaseSynthDriver):
 	def _set_rate(self, value):
 		self._rate = max(0, min(100, int(value)))
 
+	def _get_availableVoices(self):
+		return self._voices
+
+	def _get_voice(self):
+		return self._voice
+
+	def _set_voice(self, value):
+		if value in self._voices:
+			self._voice = value
+
+	def _get_language(self):
+		return self._voiceLocales.get(self._voice)
+
 	@staticmethod
 	def _rateFactor(value):
 		# Match the useful range of the former hybrid driver: every 25 slider
@@ -326,12 +446,14 @@ class SynthDriver(BaseSynthDriver):
 			return
 		with self._lock:
 			generation = self._generation
-		self._requests.put((
-			generation,
-			tuple(runs),
-			tuple(indexes),
-			self._rateFactor(self._rate),
-		))
+			voiceId = self._voice
+			self._requests.put((
+				generation,
+				voiceId,
+				tuple(runs),
+				tuple(indexes),
+				self._rateFactor(self._rate),
+			))
 
 	def cancel(self):
 		with self._lock:
@@ -362,21 +484,28 @@ class SynthDriver(BaseSynthDriver):
 			request = self._requests.get()
 			if request is None:
 				break
-			generation, runs, indexes, rateFactor = request
+			generation, voiceId, runs, indexes, rateFactor = request
 			with self._lock:
 				if generation != self._generation:
 					continue
 			try:
-				self._runUtterance(generation, runs, indexes, rateFactor)
+				self._runUtterance(
+					generation,
+					voiceId,
+					runs,
+					indexes,
+					rateFactor,
+				)
 			except Exception:
 				log.error("Native Nokia 5320 synthesis failed", exc_info=True)
 
-	def _runUtterance(self, generation, runs, indexes, rateFactor):
+	def _runUtterance(self, generation, voiceId, runs, indexes, rateFactor):
+		snapshot, snapshotSize = self._loadSnapshot(voiceId)
 		runtime = self._dll.nokia_runtime_create_5320_snapshot(
 			self._rom,
 			len(self._romBytes),
-			self._snapshot,
-			len(self._snapshotBytes),
+			snapshot,
+			snapshotSize,
 		)
 		if not runtime:
 			raise RuntimeError("Could not restore the Nokia 5320 native snapshot")
