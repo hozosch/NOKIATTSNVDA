@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "native/**"
+      - "native/nokia_dsp.c"
+      - "native/test_dsp.c"
       - ".github/scripts/enter-msvc.ps1"
       - ".github/workflows/build-native-dsp.yml"
 

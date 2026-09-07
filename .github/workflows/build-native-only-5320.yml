@@ -2,15 +2,6 @@ name: Build native-only Nokia 5320 runtime
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "native/**"
-      - "tools/**"
-      - ".github/scripts/patch_5320_prime_iterator.py"
-      - ".github/scripts/patch_5320_prime_counterloop.py"
-      - ".github/scripts/patch_5320_exclusive_clear.py"
-      - ".github/scripts/patch_5320_zero_veneer.py"
-      - ".github/workflows/build-native-only-5320.yml"
 
 permissions:
   actions: read
