@@ -74,8 +74,8 @@ int main(void) {
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
     int16_t abrupt[128];
-    int16_t g_transition[7] = {0, 5000, 10000, 10000,
-                               -10000, -5000, 0};
+    int16_t gegen_peak[2] = {-9006, -1660};
+    int16_t gans_peak[5] = {-8264, -8558, -9007, 1459, 6449};
     uint8_t klatt_parameters[122];
     int16_t value;
     uint8_t *object;
@@ -108,7 +108,7 @@ int main(void) {
         assert(delta < 10000);
     }
 
-    /* Only steep samples in a neutral German G transition are limited. */
+    /* Only the isolated reversal peak after a neutral German G is repaired. */
     reset_runtime(&runtime, &callbacks, 0);
     runtime.language_id = 3u;
     memset(klatt_parameters, 0, sizeof(klatt_parameters));
@@ -119,23 +119,38 @@ int main(void) {
     assert(is_neutral_g_release(&runtime, klatt_parameters));
     track_neutral_g_transition(&runtime, klatt_parameters);
     assert(runtime.klatt_g_release_pending);
-    assert(runtime.klatt_g_transition_active);
-    apply_neutral_g_slew_limit(&runtime, g_transition, 7u);
-    assert(g_transition[0] == 0);
-    assert(g_transition[1] == KLATT_G_SLEW_LIMIT);
-    assert(g_transition[2] == 2 * KLATT_G_SLEW_LIMIT);
-    assert(g_transition[3] == 3 * KLATT_G_SLEW_LIMIT);
-    assert(g_transition[4] == 2 * KLATT_G_SLEW_LIMIT);
-    assert(g_transition[5] == KLATT_G_SLEW_LIMIT);
-    assert(g_transition[6] == 0);
+    assert(!runtime.klatt_g_peak_search_active);
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     value = 0;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     assert(!is_neutral_g_release(&runtime, klatt_parameters));
     track_neutral_g_transition(&runtime, klatt_parameters);
-    assert(runtime.klatt_g_transition_active);
+    assert(runtime.klatt_g_peak_search_active);
     assert(!runtime.klatt_g_release_pending);
+
+    /* The first captured Gegen peak crosses a Klatt frame boundary. */
+    runtime.klatt_g_previous_raw = -2936;
+    runtime.klatt_g_previous_output_valid = 1u;
+    runtime.klatt_g_peak_search_position = 50u;
+    apply_neutral_g_transition_peak(&runtime, gegen_peak, 2u);
+    assert(gegen_peak[0] == -2298);
+    assert(gegen_peak[1] == -1660);
+    assert(!runtime.klatt_g_peak_search_active);
+    assert(runtime.klatt_g_previous_raw == -1660);
+
+    /* A wider captured Gans trough is flattened without touching its tail. */
+    runtime.klatt_g_previous_raw = -6544;
+    runtime.klatt_g_previous_output_valid = 1u;
+    runtime.klatt_g_peak_search_position = 50u;
+    runtime.klatt_g_peak_search_active = 1u;
+    apply_neutral_g_transition_peak(&runtime, gans_peak, 5u);
+    assert(gans_peak[0] == -4544);
+    assert(gans_peak[1] == -2543);
+    assert(gans_peak[2] == -542);
+    assert(gans_peak[3] == 1459);
+    assert(gans_peak[4] == 6449);
+    assert(!runtime.klatt_g_peak_search_active);
 
     /* The high-rate path is untouched. */
     reset_runtime(&runtime, &callbacks, 0);
@@ -152,7 +167,7 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_transition(&runtime, klatt_parameters);
-    assert(!runtime.klatt_g_transition_active);
+    assert(!runtime.klatt_g_peak_search_active);
 
     /* A strong non-G release (for example /sp/) must not trigger a blend. */
     reset_runtime(&runtime, &callbacks, 0);
@@ -166,7 +181,7 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_transition(&runtime, klatt_parameters);
-    assert(!runtime.klatt_g_transition_active);
+    assert(!runtime.klatt_g_peak_search_active);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);

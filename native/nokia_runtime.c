@@ -201,9 +201,10 @@ typedef struct {
 #define KLATT_F0_OFFSET 0x18u
 #define KLATT_TL_OFFSET 0x20u
 #define KLATT_AF_OFFSET 0x28u
-#ifndef KLATT_G_SLEW_LIMIT
-#define KLATT_G_SLEW_LIMIT 3000
-#endif
+#define KLATT_G_PEAK_DELTA 5000
+#define KLATT_G_PEAK_SEARCH_START 35u
+#define KLATT_G_PEAK_SEARCH_SAMPLES 100u
+#define KLATT_G_PEAK_MAX_WIDTH 8u
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -242,8 +243,9 @@ struct NokiaRuntime {
     size_t pcm_pending_count, pcm_pending_capacity;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
-    int16_t klatt_g_previous_output;
-    uint8_t klatt_g_release_pending, klatt_g_transition_active;
+    int16_t klatt_g_previous_raw;
+    uint16_t klatt_g_peak_search_position;
+    uint8_t klatt_g_release_pending, klatt_g_peak_search_active;
     uint8_t klatt_g_previous_output_valid;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
@@ -655,51 +657,79 @@ static void track_neutral_g_transition(NokiaRuntime *r,
     if (r->language_id != 3u || r->rate_factor < 0.999 ||
         r->rate_factor > 1.001) {
         r->klatt_g_release_pending = 0u;
-        r->klatt_g_transition_active = 0u;
+        r->klatt_g_peak_search_active = 0u;
         return;
     }
     if (f0 <= 0) {
         if (is_neutral_g_release(r, parameters)) {
             r->klatt_g_release_pending = 1u;
-            r->klatt_g_transition_active = 1u;
         } else {
             r->klatt_g_release_pending = 0u;
-            r->klatt_g_transition_active = 0u;
         }
+        r->klatt_g_peak_search_active = 0u;
         return;
     }
     if (r->klatt_g_release_pending) {
         r->klatt_g_release_pending = 0u;
-        r->klatt_g_transition_active = 1u;
+        r->klatt_g_peak_search_position = 0u;
+        r->klatt_g_peak_search_active = 1u;
     }
 }
 
-/* The recording of Test 48 shows why a fixed attack window only moves the
-   click: the following vowel contains recurring hard closure pulses, so the
-   first unmodified pulse becomes the new edge.  Limit only those individual
-   sample-to-sample transients throughout the voiced G transition.  Ordinary
-   samples pass through byte-for-byte, there is no timed exit edge, and the
-   Klatt state remains untouched.  The same limiter also covers the short G
-   release immediately before voicing. */
-static void apply_neutral_g_slew_limit(NokiaRuntime *r, int16_t *output,
-                                       uint32_t count) {
+/* Test 49 distorted the complete following vowel because its slew limiter
+   reshaped every glottal closure.  The captured Test-48 signal instead exposes
+   a much narrower defect: the first G-to-vowel closure can contain a one- to
+   four-sample peak with an abrupt reversal (for example -2936, -9006, -1660).
+   Search only the first raw pitch period, then replace that peak's short run
+   by a line between its unchanged neighbours.  Later voice pulses and every
+   sample after the repair pass through untouched. */
+static void apply_neutral_g_transition_peak(NokiaRuntime *r, int16_t *output,
+                                            uint32_t count) {
     uint32_t i;
-    for (i = 0; i < count; ++i) {
-        int32_t sample = output[i];
-        if (r->klatt_g_transition_active &&
-            r->klatt_g_previous_output_valid) {
-            int32_t delta = sample - r->klatt_g_previous_output;
-            if (delta > KLATT_G_SLEW_LIMIT)
-                sample = (int32_t)r->klatt_g_previous_output +
-                         KLATT_G_SLEW_LIMIT;
-            else if (delta < -KLATT_G_SLEW_LIMIT)
-                sample = (int32_t)r->klatt_g_previous_output -
-                         KLATT_G_SLEW_LIMIT;
-            output[i] = (int16_t)sample;
+    int16_t previous_before_frame = r->klatt_g_previous_raw;
+    int16_t last_raw = count ? output[count - 1u] : previous_before_frame;
+    for (i = 0; i < count && r->klatt_g_peak_search_active; ++i) {
+        int32_t previous = i ? output[i - 1u] : previous_before_frame;
+        int32_t delta = (int32_t)output[i] - previous;
+        uint32_t position = r->klatt_g_peak_search_position + i;
+        if (position >= KLATT_G_PEAK_SEARCH_START && i &&
+            (delta >= KLATT_G_PEAK_DELTA ||
+             delta <= -KLATT_G_PEAK_DELTA)) {
+            uint32_t start = i - 1u, width, k;
+            int positive_peak = delta < 0;
+            while (start && i - start < KLATT_G_PEAK_MAX_WIDTH) {
+                int32_t step = (int32_t)output[start] - output[start - 1u];
+                if ((positive_peak && step <= 0) ||
+                    (!positive_peak && step >= 0)) break;
+                --start;
+            }
+            if (start || r->klatt_g_previous_output_valid) {
+                int32_t anchor = start ? output[start - 1u]
+                                       : previous_before_frame;
+                int32_t peak = output[i - 1u];
+                int32_t end = output[i];
+                int is_extreme = positive_peak ? peak > anchor : peak < anchor;
+                if (is_extreme) {
+                    width = i - start;
+                    for (k = 0; k < width; ++k) {
+                        output[start + k] = (int16_t)(anchor +
+                            (end - anchor) * (int32_t)(k + 1u) /
+                            (int32_t)(width + 1u));
+                    }
+                    r->klatt_g_peak_search_active = 0u;
+                }
+            }
         }
-        r->klatt_g_previous_output = (int16_t)sample;
-        r->klatt_g_previous_output_valid = 1u;
     }
+    if (r->klatt_g_peak_search_active) {
+        r->klatt_g_peak_search_position = (uint16_t)(
+            r->klatt_g_peak_search_position + count);
+        if (r->klatt_g_peak_search_position >=
+            KLATT_G_PEAK_SEARCH_SAMPLES)
+            r->klatt_g_peak_search_active = 0u;
+    }
+    r->klatt_g_previous_raw = last_raw;
+    if (count) r->klatt_g_previous_output_valid = 1u;
 }
 
 static int rt_klatt(void *ctx, uint32_t regs[17]) {
@@ -748,7 +778,7 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
                                   r->rom, ROM_BASE, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
-    apply_neutral_g_slew_limit(r, output, (uint32_t)count);
+    apply_neutral_g_transition_peak(r, output, (uint32_t)count);
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -1317,8 +1347,9 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
-    r->klatt_g_previous_output=0;r->klatt_g_release_pending=0;
-    r->klatt_g_transition_active=0;r->klatt_g_previous_output_valid=0;
+    r->klatt_g_previous_raw=0;r->klatt_g_peak_search_position=0;
+    r->klatt_g_release_pending=0;r->klatt_g_peak_search_active=0;
+    r->klatt_g_previous_output_valid=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
     r->seam_enabled = incremental ? 1u : 0u;
