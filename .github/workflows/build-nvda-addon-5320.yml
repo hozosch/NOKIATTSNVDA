@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           curl --fail --location --retry 3 \
-            https://dectalk.nu/nokiaklatt/nokiaKlatt-0.5.1.nvda-addon \
+            "https://www.dectalk.nu/Software%20and%20Manuals/Software/NVDA%20Add-ons/NVDA%202019.3%20and%20Beyond/nokiaKlatt-0.5.1.nvda-addon" \
             --output build/nokiaKlatt-0.5.1.nvda-addon
           echo "0082d3a3d2f11ce76c33e8a057ead29c90b80ce8c98f54b96b571d5d676764cd  build/nokiaKlatt-0.5.1.nvda-addon" | sha256sum --check
           mkdir -p build/upstream/addon
