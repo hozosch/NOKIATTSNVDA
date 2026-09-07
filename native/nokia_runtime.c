@@ -201,6 +201,11 @@ typedef struct {
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
+#define KLATT_F0_OFFSET 0x18u
+#define KLATT_AV_OFFSET 0x1au
+#define KLATT_TL_OFFSET 0x20u
+#define KLATT_AF_OFFSET 0x28u
+#define KLATT_G_VOICED_RAMP_FRAMES 4u
 
 static int quiet_sample(int16_t sample);
 
@@ -236,6 +241,9 @@ struct NokiaRuntime {
     size_t pcm_pending_count, pcm_pending_capacity;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
+    uint8_t soften_initial_g_voicing;
+    uint8_t klatt_g_voicing_pending, klatt_g_voicing_ramp_frame;
+    uint8_t klatt_g_voicing_done;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
@@ -626,14 +634,57 @@ static uint32_t rt_process(void *ctx, uint32_t descriptor) {
     return 0;
 }
 
+/* The German word-initial /g/ release briefly enters a voiced high-front
+   target before the following vowel. At neutral rate, fade in only Nokia's
+   cascade voicing amplitude across those first four voiced frames. Timing,
+   formants, aspiration/frication and the steady vowel remain unchanged. */
+static int prepare_initial_g_voicing(
+    NokiaRuntime *r, uint8_t parameters[122], int16_t *saved_av
+) {
+    static const int16_t attenuation[KLATT_G_VOICED_RAMP_FRAMES] = {
+        30, 16, 6, 1
+    };
+    int16_t f0, av, tl, af;
+    uint32_t frame;
+    if (!r->soften_initial_g_voicing || r->klatt_g_voicing_done)
+        return 0;
+    memcpy(&f0, parameters + KLATT_F0_OFFSET, sizeof(f0));
+    memcpy(&av, parameters + KLATT_AV_OFFSET, sizeof(av));
+    memcpy(&tl, parameters + KLATT_TL_OFFSET, sizeof(tl));
+    memcpy(&af, parameters + KLATT_AF_OFFSET, sizeof(af));
+    if (f0 <= 0) {
+        if (!r->klatt_g_voicing_ramp_frame && tl == 5 && af >= 60)
+            r->klatt_g_voicing_pending = 1u;
+        else if (!r->klatt_g_voicing_ramp_frame)
+            r->klatt_g_voicing_pending = 0u;
+        return 0;
+    }
+    if (r->klatt_g_voicing_pending) {
+        r->klatt_g_voicing_pending = 0u;
+        r->klatt_g_voicing_ramp_frame = 1u;
+    }
+    if (!r->klatt_g_voicing_ramp_frame || av <= 0)
+        return 0;
+    frame = r->klatt_g_voicing_ramp_frame - 1u;
+    *saved_av = av;
+    av = av > attenuation[frame] ? av - attenuation[frame] : 1;
+    memcpy(parameters + KLATT_AV_OFFSET, &av, sizeof(av));
+    if (++r->klatt_g_voicing_ramp_frame > KLATT_G_VOICED_RAMP_FRAMES) {
+        r->klatt_g_voicing_ramp_frame = 0u;
+        r->klatt_g_voicing_done = 1u;
+    }
+    return 1;
+}
+
 static int rt_klatt(void *ctx, uint32_t regs[17]) {
     NokiaRuntime *r = (NokiaRuntime *)ctx;
     uint8_t parameters[122], state[564];
-    int16_t output[8192], count, f0;
+    int16_t output[8192], count, f0, saved_av;
     int32_t peak, scaled;
     uint32_t gain, after[5];
     uint8_t *p0, *p1, *p2, *p3, *ps;
     uint32_t missing;
+    int g_voicing_modified;
     r->klatt_failure = 0;
     r->klatt_regs[0]=regs[0];r->klatt_regs[1]=regs[1];
     r->klatt_regs[2]=regs[2];r->klatt_regs[3]=regs[3];
@@ -660,17 +711,21 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
         r->klatt_failure=0x101u;r->last_error=-2101;return 0;
     }
     if (r->pitch_factor > 0.0 && r->pitch_factor != 1.0) {
-        memcpy(&f0, parameters + 0x18, 2);
+        memcpy(&f0, parameters + KLATT_F0_OFFSET, 2);
         if (f0 > 0) {
             scaled = (int32_t)(f0 * r->pitch_factor + 0.5);
             if (scaled < 300) scaled = 300; if (scaled > 5000) scaled = 5000;
-            f0 = (int16_t)scaled; memcpy(parameters + 0x18, &f0, 2);
+            f0 = (int16_t)scaled;
+            memcpy(parameters + KLATT_F0_OFFSET, &f0, 2);
         }
     }
+    g_voicing_modified = prepare_initial_g_voicing(r, parameters, &saved_av);
     if (!nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
                                   r->rom, ROM_BASE, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
+    if (g_voicing_modified)
+        memcpy(parameters + KLATT_AV_OFFSET, &saved_av, sizeof(saved_av));
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -1025,6 +1080,17 @@ static int scale_phone_durations(NokiaRuntime *r, uint32_t phone_address,
     return 1;
 }
 
+static int chunk_starts_with_ascii_g(const uint16_t *text, uint32_t len) {
+    uint32_t i;
+    for (i = 0; i < len; ++i) {
+        uint16_t c = text[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+            return c == 'G' || c == 'g';
+        if (c >= 0x80u) return 0;
+    }
+    return 0;
+}
+
 #if NOKIA_CONTINUE_PROSODY
 /* PrimeSynthesisL gives every independently analysed chunk a low utterance-
    final F0 tail.  For a non-final chunk, retain Nokia's contour but guide
@@ -1198,6 +1264,12 @@ static int synthesize_text_chunk(NokiaRuntime *r, const uint16_t *text,
     uint32_t txt=0,e8=0,e16=0,pt=0,seg=0,res=0,a[3],loops=0;
     clock_t start = clock();
     r->done=0;r->pending_count=0;
+    r->soften_initial_g_voicing =
+        r->language_id == 3u && r->rate_factor > 0.999 &&
+        r->rate_factor < 1.001 && chunk_starts_with_ascii_g(text, len);
+    r->klatt_g_voicing_pending = 0u;
+    r->klatt_g_voicing_ramp_frame = 0u;
+    r->klatt_g_voicing_done = 0u;
     txt=ptrc16(r,text,len);e8=ptrc8(r);e16=ptrc16(r,(const uint16_t*)L"",0);
     if(!txt||!e8||!e16){r->last_error=-3001;goto failed;}
     a[0]=txt;a[1]=e8;a[2]=e16;if(!native_call_l(r,r->pt_new,a,3,&pt)||!pt)goto failed;

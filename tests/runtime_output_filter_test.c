@@ -74,6 +74,8 @@ int main(void) {
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
     int16_t abrupt[128];
+    uint8_t g_parameters[122] = {0};
+    int16_t saved_av, parameter_value;
     uint8_t *object;
     size_t i;
 
@@ -93,6 +95,37 @@ int main(void) {
     assert(runtime.seam_trimmed_samples == 1968u);
     free(runtime.seam_quiet);
     free(runtime.pcm_pending);
+
+    /* Test55 changes only AV on the four voiced frames immediately following
+       Nokia's initial German /g/ release: 58 -> 28, 42, 52, 57 -> 58. */
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.soften_initial_g_voicing = 1u;
+    parameter_value = 5;
+    memcpy(g_parameters + KLATT_TL_OFFSET, &parameter_value, 2u);
+    parameter_value = 60;
+    memcpy(g_parameters + KLATT_AF_OFFSET, &parameter_value, 2u);
+    parameter_value = 58;
+    memcpy(g_parameters + KLATT_AV_OFFSET, &parameter_value, 2u);
+    assert(!prepare_initial_g_voicing(&runtime, g_parameters, &saved_av));
+    assert(runtime.klatt_g_voicing_pending == 1u);
+    parameter_value = 1050;
+    memcpy(g_parameters + KLATT_F0_OFFSET, &parameter_value, 2u);
+    {
+        static const int16_t expected_av[4] = {28, 42, 52, 57};
+        for (i = 0; i < 4u; ++i) {
+            assert(prepare_initial_g_voicing(
+                &runtime, g_parameters, &saved_av
+            ));
+            memcpy(&parameter_value, g_parameters + KLATT_AV_OFFSET, 2u);
+            assert(parameter_value == expected_av[i]);
+            assert(saved_av == 58);
+            memcpy(g_parameters + KLATT_AV_OFFSET, &saved_av, 2u);
+        }
+    }
+    assert(runtime.klatt_g_voicing_done == 1u);
+    assert(!prepare_initial_g_voicing(&runtime, g_parameters, &saved_av));
+    memcpy(&parameter_value, g_parameters + KLATT_AV_OFFSET, 2u);
+    assert(parameter_value == 58);
 
     reset_runtime(&runtime, &callbacks, 0);
     for (i = 0; i < 6u; ++i)
