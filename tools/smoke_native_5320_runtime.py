@@ -306,7 +306,9 @@ def main() -> None:
     )
     if (last_metrics['large_jumps'] or last_metrics['clipped'] or
             last_metrics['final'] != 0 or
-            last_metrics['max_delta'] >= 7000):
+            last_metrics['max_delta'] >= 7000 or
+            last_metrics['sha256'] !=
+            '2036ea26ea311f4288d1e92d87467ced0bfa363b204558aa7e7f4f584e43edae'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Gegen": '
             f'{last_metrics}'
@@ -316,9 +318,23 @@ def main() -> None:
     )
     if (last_metrics['large_jumps'] or last_metrics['clipped'] or
             last_metrics['final'] != 0 or
-            last_metrics['max_delta'] >= 7000):
+            last_metrics['max_delta'] >= 7000 or
+            last_metrics['sha256'] !=
+            'c562279ea6b0e7737564c9f7eb91c85b1c840de8952f6cf71939fd9967c728cc'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Google": '
+            f'{last_metrics}'
+        )
+    speak_case(
+        'NVDA rate 50 Gans delayed click regression', 'Gans', measure=True,
+    )
+    if (last_metrics['large_jumps'] or last_metrics['clipped'] or
+            last_metrics['final'] != 0 or
+            last_metrics['max_delta'] >= 8000 or
+            last_metrics['sha256'] !=
+            'c37097f923c583c13d55dbd50ea69660b0370ba03dc086764165d8b3833e5b0b'):
+        raise SystemExit(
+            'NVDA-rate-50 acoustic regression failed for "Gans": '
             f'{last_metrics}'
         )
     # These reproduce the vowel regression introduced by Test 44.  Neither

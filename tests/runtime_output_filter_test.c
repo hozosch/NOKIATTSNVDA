@@ -74,7 +74,8 @@ int main(void) {
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
     int16_t abrupt[128];
-    int16_t onset[KLATT_G_FADE_SAMPLES];
+    int16_t onset[KLATT_G_SMOOTH_SAMPLES];
+    int16_t release_samples[2] = {10000, 10000};
     uint8_t klatt_parameters[122];
     int16_t value;
     uint8_t *object;
@@ -116,18 +117,21 @@ int main(void) {
     value = 60;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     track_neutral_g_release(&runtime, klatt_parameters);
+    apply_neutral_g_onset_smoothing(&runtime, release_samples, 2u);
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     value = 0;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     track_neutral_g_release(&runtime, klatt_parameters);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
-    apply_neutral_g_onset_fade(
-        &runtime, onset, KLATT_G_FADE_SAMPLES);
-    assert(onset[0] == 10000);
-    assert(onset[KLATT_G_FADE_CENTER] == 7500);
-    assert(onset[KLATT_G_FADE_SAMPLES - 1u] == 10000);
-    assert(!runtime.klatt_g_fade_active);
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i)
+        onset[i] = (i & 1u) ? 10000 : -10000;
+    apply_neutral_g_onset_smoothing(
+        &runtime, onset, KLATT_G_SMOOTH_SAMPLES);
+    assert(onset[0] == 5000);
+    assert(onset[1] == 0);
+    assert(onset[KLATT_G_SMOOTH_HOLD] == 0);
+    assert(onset[KLATT_G_SMOOTH_SAMPLES - 1u] == 10000);
+    assert(!runtime.klatt_g_smooth_active);
 
     /* The high-rate path and a vowel following silence are untouched. */
     reset_runtime(&runtime, &callbacks, 0);
@@ -142,10 +146,10 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_release(&runtime, klatt_parameters);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
-    apply_neutral_g_onset_fade(
-        &runtime, onset, KLATT_G_FADE_SAMPLES);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i)
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_smoothing(
+        &runtime, onset, KLATT_G_SMOOTH_SAMPLES);
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i)
         assert(onset[i] == 10000);
     reset_runtime(&runtime, &callbacks, 0);
     runtime.language_id = 3u;
@@ -153,13 +157,13 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_release(&runtime, klatt_parameters);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
-    apply_neutral_g_onset_fade(
-        &runtime, onset, KLATT_G_FADE_SAMPLES);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i)
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_smoothing(
+        &runtime, onset, KLATT_G_SMOOTH_SAMPLES);
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i)
         assert(onset[i] == 10000);
 
-    /* A strong non-G release (for example /sp/) must not trigger the fade. */
+    /* A strong non-G release (for example /sp/) must not trigger smoothing. */
     reset_runtime(&runtime, &callbacks, 0);
     runtime.language_id = 3u;
     memset(klatt_parameters, 0, sizeof(klatt_parameters));
@@ -169,10 +173,10 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_release(&runtime, klatt_parameters);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
-    apply_neutral_g_onset_fade(
-        &runtime, onset, KLATT_G_FADE_SAMPLES);
-    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i)
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_smoothing(
+        &runtime, onset, KLATT_G_SMOOTH_SAMPLES);
+    for (i = 0; i < KLATT_G_SMOOTH_SAMPLES; ++i)
         assert(onset[i] == 10000);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
