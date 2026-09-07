@@ -201,9 +201,6 @@ typedef struct {
 #define KLATT_F0_OFFSET 0x18u
 #define KLATT_TL_OFFSET 0x20u
 #define KLATT_AF_OFFSET 0x28u
-#define KLATT_G_RELEASE_FRAMES 6u
-#define KLATT_G_SMOOTH_SAMPLES 600u
-#define KLATT_G_SMOOTH_HOLD 300u
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -242,11 +239,8 @@ struct NokiaRuntime {
     size_t pcm_pending_count, pcm_pending_capacity;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
-    int16_t klatt_previous_f0;
-    int16_t klatt_previous_output_sample[2];
-    uint16_t klatt_g_smooth_position;
-    uint8_t klatt_g_release_frames, klatt_g_smooth_active;
-    uint8_t klatt_previous_output_count;
+    int16_t klatt_previous_output_sample;
+    uint8_t klatt_previous_output_valid;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
@@ -637,69 +631,32 @@ static uint32_t rt_process(void *ctx, uint32_t descriptor) {
     return 0;
 }
 
-/* The 5320 German /g/ release has a stable Klatt signature (TL=5, AF=60).
-   Its following voiced onset can contain several unusually hard excitation
-   pulses; changing one sample merely moves the perceived click, while a gain
-   dip leaves the pulse shape intact.  At neutral speed, average adjacent raw
-   Klatt samples across the first 30 ms and then taper that smoothing out over
-   30 ms.  This covers the delayed hard pulse without changing overall level
-   or touching the later vowel.  Other languages, other releases and
-   non-neutral rates bypass the path. */
-static void track_neutral_g_release(NokiaRuntime *r,
-                                    const uint8_t parameters[122]) {
+/* The emulated reference confirms that the neutral-rate click is already in
+   the original 5320 German /g/ release.  That unvoiced release has a stable
+   Klatt signature (F0=0, TL=5, AF>=60) and lasts about 10 ms.  Average only
+   adjacent release samples to tame its high-frequency edge.  The following
+   voiced onset is not touched, nor are other languages or rates. */
+static int is_neutral_g_release(const NokiaRuntime *r,
+                                const uint8_t parameters[122]) {
     int16_t f0, tl, af;
     memcpy(&f0, parameters + KLATT_F0_OFFSET, sizeof(f0));
     memcpy(&tl, parameters + KLATT_TL_OFFSET, sizeof(tl));
     memcpy(&af, parameters + KLATT_AF_OFFSET, sizeof(af));
-    if (r->language_id != 3u || r->rate_factor < 0.999 ||
-        r->rate_factor > 1.001)
-        return;
-    if (f0 <= 0) {
-        r->klatt_previous_f0 = f0;
-        if (tl == 5 && af >= 60)
-            r->klatt_g_release_frames = KLATT_G_RELEASE_FRAMES;
-        else if (r->klatt_g_release_frames)
-            --r->klatt_g_release_frames;
-        r->klatt_g_smooth_active = 0u;
-        return;
-    }
-    if (r->klatt_previous_f0 <= 0) {
-        r->klatt_g_smooth_active = r->klatt_g_release_frames ? 1u : 0u;
-        r->klatt_g_smooth_position = 0u;
-        r->klatt_g_release_frames = 0u;
-    }
-    r->klatt_previous_f0 = f0;
+    return r->language_id == 3u && r->rate_factor >= 0.999 &&
+        r->rate_factor <= 1.001 && f0 <= 0 && tl == 5 && af >= 60;
 }
 
-static void apply_neutral_g_onset_smoothing(NokiaRuntime *r, int16_t *output,
-                                            uint32_t count) {
+static void apply_neutral_g_release_smoothing(NokiaRuntime *r,
+                                              int16_t *output,
+                                              uint32_t count, int active) {
     uint32_t i;
     for (i = 0; i < count; ++i) {
         int16_t raw = output[i];
-        if (r->klatt_g_smooth_active &&
-            r->klatt_previous_output_count == 2u) {
-            uint32_t position = r->klatt_g_smooth_position;
-            uint32_t mix;
-            int32_t filtered =
-                ((int32_t)r->klatt_previous_output_sample[0] +
-                 2 * (int32_t)r->klatt_previous_output_sample[1] + raw) / 4;
-            if (position <= KLATT_G_SMOOTH_HOLD) {
-                mix = 1000u;
-            } else {
-                mix = 1000u * (KLATT_G_SMOOTH_SAMPLES - 1u - position) /
-                    (KLATT_G_SMOOTH_SAMPLES - 1u - KLATT_G_SMOOTH_HOLD);
-            }
-            output[i] = (int16_t)(((int32_t)raw * (1000 - (int32_t)mix) +
-                                   filtered * (int32_t)mix) / 1000);
-            ++r->klatt_g_smooth_position;
-            if (r->klatt_g_smooth_position >= KLATT_G_SMOOTH_SAMPLES)
-                r->klatt_g_smooth_active = 0u;
-        }
-        r->klatt_previous_output_sample[0] =
-            r->klatt_previous_output_sample[1];
-        r->klatt_previous_output_sample[1] = raw;
-        if (r->klatt_previous_output_count < 2u)
-            ++r->klatt_previous_output_count;
+        if (active && r->klatt_previous_output_valid)
+            output[i] = (int16_t)(
+                ((int32_t)r->klatt_previous_output_sample + raw) / 2);
+        r->klatt_previous_output_sample = raw;
+        r->klatt_previous_output_valid = 1u;
     }
 }
 
@@ -708,6 +665,7 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
     uint8_t parameters[122], state[564];
     int16_t output[8192], count, f0;
     int32_t peak, scaled;
+    int g_release;
     uint32_t gain, after[5];
     uint8_t *p0, *p1, *p2, *p3, *ps;
     uint32_t missing;
@@ -744,12 +702,13 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
             f0 = (int16_t)scaled; memcpy(parameters + 0x18, &f0, 2);
         }
     }
-    track_neutral_g_release(r, parameters);
+    g_release = is_neutral_g_release(r, parameters);
     if (!nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
                                   r->rom, ROM_BASE, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
-    apply_neutral_g_onset_smoothing(r, output, (uint32_t)count);
+    apply_neutral_g_release_smoothing(
+        r, output, (uint32_t)count, g_release);
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -1318,12 +1277,8 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
-    r->klatt_previous_f0=0;r->klatt_g_release_frames=0;
-    r->klatt_previous_output_sample[0]=0;
-    r->klatt_previous_output_sample[1]=0;
-    r->klatt_previous_output_count=0;
-    r->klatt_g_smooth_position=0;
-    r->klatt_g_smooth_active=0;
+    r->klatt_previous_output_sample=0;
+    r->klatt_previous_output_valid=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
     r->seam_enabled = incremental ? 1u : 0u;

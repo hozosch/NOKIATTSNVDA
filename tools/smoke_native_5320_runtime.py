@@ -306,9 +306,9 @@ def main() -> None:
     )
     if (last_metrics['large_jumps'] or last_metrics['clipped'] or
             last_metrics['final'] != 0 or
-            last_metrics['max_delta'] >= 7000 or
+            last_metrics['max_delta'] >= 8000 or
             last_metrics['sha256'] !=
-            '2036ea26ea311f4288d1e92d87467ced0bfa363b204558aa7e7f4f584e43edae'):
+            '874f34157488d7724f34e4f9699066180eaff82b083edcc4d428cc84b9032c9d'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Gegen": '
             f'{last_metrics}'
@@ -320,7 +320,7 @@ def main() -> None:
             last_metrics['final'] != 0 or
             last_metrics['max_delta'] >= 7000 or
             last_metrics['sha256'] !=
-            'c562279ea6b0e7737564c9f7eb91c85b1c840de8952f6cf71939fd9967c728cc'):
+            'a26fade11b73e8eed1fc49fd79fde3563c44c5b29903f6d8b96227275a883a2e'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Google": '
             f'{last_metrics}'
@@ -330,9 +330,9 @@ def main() -> None:
     )
     if (last_metrics['large_jumps'] or last_metrics['clipped'] or
             last_metrics['final'] != 0 or
-            last_metrics['max_delta'] >= 8000 or
+            last_metrics['max_delta'] >= 11000 or
             last_metrics['sha256'] !=
-            'c37097f923c583c13d55dbd50ea69660b0370ba03dc086764165d8b3833e5b0b'):
+            'd2327d6e5dad75258cc0f46f5ecc367e0dcca3fe5ba56960a48277d73e58b825'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Gans": '
             f'{last_metrics}'
@@ -343,6 +343,7 @@ def main() -> None:
     neutral_vowel_pcm = {
         'während': 'ce7f686cb9ba329f32a75a0e56dd281cbf67d621594502e70afb9c4b7ca04914',
         'Später': '2dc7a9bc5654ea57a407d70f2f309107789ecab06334d83d8b1d615f709187f3',
+        'Käse': '3b3416e0228b9f8230045548403a390256ff30306c81e41e6777e444a58237f0',
     }
     for vowel_text, expected_pcm in neutral_vowel_pcm.items():
         speak_case(
