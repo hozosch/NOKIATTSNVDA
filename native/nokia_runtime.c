@@ -12,7 +12,8 @@
 #define TRAP_BASE  0x52000000u
 #define POOL_BASE  0x53000000u
 #define STACK_BASE 0x60000000u
-#define ROM_BASE   0x80000000u
+#define ROM_BASE_5320 0x80000000u
+#define ROM_BASE_5500 0xF80F1000u
 #define RET_MAGIC  0x7fff0000u
 #define HEAP_SIZE  0x100000u
 #define VT_SIZE    0x1000u
@@ -207,6 +208,7 @@ static int quiet_sample(int16_t sample);
 struct NokiaRuntime {
     uint8_t *rom;
     size_t rom_size;
+    uint32_t rom_base;
     uint8_t *heap, *vtable, *traps, *pool, *stack;
     RuntimeBlock *blocks;
     uint32_t block_count, block_capacity;
@@ -266,8 +268,8 @@ static uint8_t *guest_ptr(NokiaRuntime *r, uint32_t a, uint32_t n, int write) {
     if (a >= STACK_BASE && e <= (uint64_t)STACK_BASE + STACK_SIZE)
         return r->stack + (a - STACK_BASE);
     if (!write && nokia_runtime_rom_is_flat(r->rom, r->rom_size) &&
-        a >= ROM_BASE && e <= (uint64_t)ROM_BASE + r->rom_size)
-        return r->rom + (a - ROM_BASE);
+        a >= r->rom_base && e <= (uint64_t)r->rom_base + r->rom_size)
+        return r->rom + (a - r->rom_base);
     return NULL;
 }
 
@@ -275,7 +277,7 @@ static int guest_read(NokiaRuntime *r, uint32_t a, void *out, uint32_t n) {
     uint8_t *p = guest_ptr(r, a, n, 0);
     if (p) { memcpy(out, p, n); return 1; }
     return nokia_runtime_rom_read(
-        r->rom, r->rom_size, ROM_BASE, a, out, (unsigned)n);
+        r->rom, r->rom_size, r->rom_base, a, out, (unsigned)n);
 }
 static int guest_write(NokiaRuntime *r, uint32_t a, const void *in, uint32_t n) {
     uint8_t *p = guest_ptr(r, a, n, 1);
@@ -668,7 +670,7 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
         }
     }
     if (!nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
-                                  r->rom, ROM_BASE, r->rom_size, after)) {
+                                  r->rom, r->rom_base, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
     if (count) memcpy(p0, output, (size_t)count * 2u);
@@ -680,13 +682,15 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
     return 1;
 }
 
-static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size) {
+static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size,
+                                   uint32_t rom_base) {
     NokiaRuntime *r;
     if (!rom || !rom_size ||
         (!nokia_runtime_rom_is_flat(rom, rom_size) &&
          !rom_pack_validate(rom, rom_size)))
         return NULL;
     r = (NokiaRuntime *)calloc(1, sizeof(*r)); if (!r) return NULL;
+    r->rom_base = rom_base;
     r->rom = (uint8_t *)malloc(rom_size);
     r->heap = (uint8_t *)calloc(1, HEAP_SIZE);
     r->vtable = (uint8_t *)calloc(1, VT_SIZE);
@@ -707,19 +711,19 @@ static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size) {
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320(
     const uint8_t *rom, size_t rom_size, const char *root,
     uint32_t language_id, uint32_t voice_id) {
-    NokiaRuntime *r = alloc_runtime(rom, rom_size);
+    NokiaRuntime *r = alloc_runtime(rom, rom_size, ROM_BASE_5320);
     (void)root; (void)voice_id;
     if (r) { r->language_id = language_id; r->last_error = -1000; }
     return r;
 }
 
-NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
+static NokiaRuntime *create_snapshot(
     const uint8_t *rom, size_t rom_size,
-    const uint8_t *s, size_t snapshot_size) {
+    const uint8_t *s, size_t snapshot_size,
+    const uint8_t magic[8], uint32_t rom_base) {
     NokiaRuntime *r;
     const uint8_t *p, *end;
     uint32_t w[SNAP_WORDS], i, regions, used, freec;
-    static const uint8_t magic[8] = {'N','K','5','3','2','0','S','1'};
     if (!s || snapshot_size < 8u + SNAP_WORDS * 4u || memcmp(s, magic, 8)) return NULL;
     p = s + 8; end = s + snapshot_size;
     for (i = 0; i < SNAP_WORDS; ++i) { w[i] = rd32(p); p += 4; }
@@ -727,7 +731,7 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
     regions = w[24]; used = w[25]; freec = w[26];
     if ((uint64_t)(p - s) + (uint64_t)regions * 12u +
         (uint64_t)(used + freec) * 8u > snapshot_size) return NULL;
-    r = alloc_runtime(rom, rom_size); if (!r) return NULL;
+    r = alloc_runtime(rom, rom_size, rom_base); if (!r) return NULL;
     r->language_id=w[1];r->voice_applied=w[2];r->dev=w[3];r->observer=w[4];r->style_id=w[5];
     r->scheduler_error=w[6];r->thread_data=w[7];r->scheduler=w[8];r->trap_handler=w[9];r->pool_next=w[10];
     r->dev_synthesize=w[11];r->dev_prime=w[12];r->dev_stop=w[13];r->dev_buffer_processed=w[14];
@@ -743,6 +747,22 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
     for (i = 0; i < freec; ++i) { uint32_t a=rd32(p), n=rd32(p+4);p+=8;if(!add_block(r,a,n,0)){nokia_runtime_destroy(r);return NULL;} }
     (void)end;
     r->last_error = 0; return r;
+}
+
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *s, size_t snapshot_size) {
+    static const uint8_t magic[8] = {'N','K','5','3','2','0','S','1'};
+    return create_snapshot(
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_5320);
+}
+
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *s, size_t snapshot_size) {
+    static const uint8_t magic[8] = {'N','K','5','5','0','0','S','1'};
+    return create_snapshot(
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_5500);
 }
 
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *r) {
@@ -765,7 +785,7 @@ static int native_call(NokiaRuntime *r, uint32_t entry,
     }
     regs[13]=sp;regs[14]=RET_MAGIC;regs[15]=entry;regs[16]=0;
     status = nokia_frontend_aot(r->heap,r->vtable,r->traps,r->pool,r->stack,
-                                r->rom,ROM_BASE,r->rom_size,regs,RET_MAGIC,&r->host);
+                                r->rom,r->rom_base,r->rom_size,regs,RET_MAGIC,&r->host);
     if (status != 1) {
         if (!r->last_error) r->last_error = status == 2 ? -2002 : -2001;
         return 0;

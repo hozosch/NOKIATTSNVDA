@@ -10,6 +10,7 @@ Klatt engine generations preserved by DJ Graco.
 | Profile | Phone / platform | Upstream status | Native-port implication |
 |---|---|---|---|
 | `5320` | Nokia 5320 XpressMusic, Symbian 9.3 FP2 | 33 verified languages, male/female | Primary frontend-AOT target. Existing 14k+ instruction corpus and native Klatt core. |
+| `5500` | Nokia 5500 Sport, Symbian 9.1 | 5 verified languages, unnamed/default voice | Next target because it contributes a distinct second German engine variant. Its native Klatt core already exists; the frontend needs the older executive return convention and ROM base `0xF80F1000`. |
 | `6650` | Nokia 6650 Fold, Symbian 9.3 FP2 | 4 verified languages, male/female | Closest runtime generation to 5320. Reuse host ABI, allocator, executive and observer work; generate a profile-specific frontend corpus. |
 | `n85` | Nokia N85, Symbian 9.3 FP2 | Tagalog/Vietnamese verified, male/female | Same broad EKA2 generation as 5320. Good second/third frontend-AOT target after 6650. |
 | `e65` | Nokia E65, Symbian 9.1 | 30 verified languages, unnamed/default voice | Speech DLLs live in ROFS and are loaded by the harness' minimal E32 loader. Standalone runtime needs a native E32/ROFS image loader boundary and the older EKA2 executive ABI. |
@@ -42,14 +43,26 @@ profile descriptors or callbacks:
 
 1. **5320:** remove every normal-synthesis Unicorn yield and add a standalone
    native frontend host. Keep Unicorn only as an explicit reference/debug mode.
-2. **6650 + N85:** generate frontend traces/AOT using the same host ABI. Their
-   existing native Klatt cores make them the lowest-risk proof that the runtime
-   is truly model-independent.
-3. **E65:** implement the Symbian 9.1/E32-loader differences and port its
-   frontend. Its 30-language set makes this high value.
-4. **N95 8GB:** add the 9.2/VFP helper layer and port its frontend. This adds a
+2. **5500:** parameterise the runtime's ROM base and Symbian 9.1 executive
+   return convention, then capture and translate its frontend. It adds British
+   English, French, German, Spanish and Arabic; the build has one unnamed
+   default voice per language rather than male/female styles.
+
+   The five verified language lifecycles currently merge to 25,697 unique ROM
+   instructions. After the initialized snapshot, ordinary German synthesis
+   uses four executive services: fast Heap (`#1`), ActiveScheduler (`#5`),
+   TrapHandler (`#8`) and slow LeaveStart (`#0xdc`). The first three enter the
+   old ARM table stubs and must return directly to LR; LeaveStart is reached
+   through a wrapper which performs its own return. The trace format records
+   this per-stub convention so the 5500 AOT generator need not guess it.
+3. **6650 + N85:** generate frontend traces/AOT using the shared host ABI. Their
+   existing native Klatt cores remain the lowest-risk proof that the runtime
+   abstraction also works across the Symbian 9.3 FP2 family.
+4. **E65:** implement the remaining Symbian 9.1/E32-loader differences and
+   port its frontend. Its 30-language set makes this high value.
+5. **N95 8GB:** add the 9.2/VFP helper layer and port its frontend. This adds a
    second 30-language engine generation with a distinct sound.
-5. Revisit **N95**, then implement the missing **E5 ECOM** and **5800 9.4 euser**
+6. Revisit **N95**, then implement the missing **E5 ECOM** and **5800 9.4 euser**
    boundaries.
 
 ## Definition of "Unicorn-free"

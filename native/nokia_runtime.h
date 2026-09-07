@@ -39,6 +39,12 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
     const uint8_t *rom, size_t rom_size,
     const uint8_t *snapshot, size_t snapshot_size);
 
+/* Nokia 5500 snapshots use the same host-memory layout but retain the phone's
+   real ROM base. A 5500 frontend AOT is linked into a profile-specific DLL. */
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *snapshot, size_t snapshot_size);
+
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT int nokia_runtime_set_rate(
     NokiaRuntime *runtime, double factor);
