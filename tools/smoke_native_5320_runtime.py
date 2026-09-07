@@ -308,7 +308,7 @@ def main() -> None:
             last_metrics['final'] != 0 or
             last_metrics['max_delta'] >= 8000 or
             last_metrics['sha256'] !=
-            'dc51a389105bf0f575d118a475a11236e218622ce42f2e504897075226cca18e'):
+            'd0890cb60d3fbd33bc2f3273880b3cc3c12da2273b7eb967de993edc1fd553ff'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Gegen": '
             f'{last_metrics}'
@@ -320,7 +320,7 @@ def main() -> None:
             last_metrics['final'] != 0 or
             last_metrics['max_delta'] >= 7500 or
             last_metrics['sha256'] !=
-            '8254bc71b3ae1dffa540882fbbf221413ebc1e1b4718154bf0f9ef1bfe74351c'):
+            '8b8f0c91bb9432f6a899cc79a409de377b21fd56ea6cb403c20d98f3ae689efd'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Google": '
             f'{last_metrics}'
@@ -332,7 +332,7 @@ def main() -> None:
             last_metrics['final'] != 0 or
             last_metrics['max_delta'] >= 10500 or
             last_metrics['sha256'] !=
-            '1bbed797076a1ea6b71aa48e9c886a516677d331b257c95b9958dad7d83ed963'):
+            '010351375a0eedd0fceb4d3236f9a7f5c64d4a0258d48e1704005735cb9203a5'):
         raise SystemExit(
             'NVDA-rate-50 acoustic regression failed for "Gans": '
             f'{last_metrics}'

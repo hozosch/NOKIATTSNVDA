@@ -76,6 +76,7 @@ int main(void) {
     int16_t abrupt[128];
     int16_t gegen_peak[2] = {-9006, -1660};
     int16_t gans_peak[5] = {-8264, -8558, -9007, 1459, 6449};
+    int16_t g_release_tail[KLATT_G_DECLICK_RELEASE];
     uint8_t klatt_parameters[122];
     int16_t value;
     uint8_t *object;
@@ -131,26 +132,42 @@ int main(void) {
 
     /* The first captured Gegen peak crosses a Klatt frame boundary. */
     runtime.klatt_g_previous_raw = -2936;
-    runtime.klatt_g_previous_output_valid = 1u;
+    runtime.klatt_g_previous_raw_valid = 1u;
     runtime.klatt_g_peak_search_position = 50u;
-    apply_neutral_g_transition_peak(&runtime, gegen_peak, 2u);
+    apply_neutral_g_impulse_declick(&runtime, gegen_peak, 2u);
     assert(gegen_peak[0] == -2298);
-    assert(gegen_peak[1] == -1660);
+    assert(gegen_peak[1] == -830);
     assert(!runtime.klatt_g_peak_search_active);
+    assert(runtime.klatt_g_declick_release ==
+           KLATT_G_DECLICK_RELEASE - 1u);
     assert(runtime.klatt_g_previous_raw == -1660);
 
     /* A wider captured Gans trough is flattened without touching its tail. */
     runtime.klatt_g_previous_raw = -6544;
-    runtime.klatt_g_previous_output_valid = 1u;
+    runtime.klatt_g_previous_raw_valid = 1u;
     runtime.klatt_g_peak_search_position = 50u;
     runtime.klatt_g_peak_search_active = 1u;
-    apply_neutral_g_transition_peak(&runtime, gans_peak, 5u);
+    runtime.klatt_g_declick_release = 0u;
+    apply_neutral_g_impulse_declick(&runtime, gans_peak, 5u);
     assert(gans_peak[0] == -4544);
-    assert(gans_peak[1] == -2543);
-    assert(gans_peak[2] == -542);
-    assert(gans_peak[3] == 1459);
-    assert(gans_peak[4] == 6449);
+    assert(gans_peak[1] < 0 && gans_peak[1] > -2543);
+    assert(gans_peak[2] < 0 && gans_peak[2] > -542);
+    assert(gans_peak[3] > 0 && gans_peak[3] < 1459);
+    assert(gans_peak[4] > 0 && gans_peak[4] < 6449);
     assert(!runtime.klatt_g_peak_search_active);
+    assert(runtime.klatt_g_declick_release ==
+           KLATT_G_DECLICK_RELEASE - 2u);
+
+    /* Recovery reaches unity and then leaves subsequent voice untouched. */
+    for (i = 0; i < KLATT_G_DECLICK_RELEASE; ++i)
+        g_release_tail[i] = 10000;
+    apply_neutral_g_impulse_declick(
+        &runtime, g_release_tail, KLATT_G_DECLICK_RELEASE);
+    assert(g_release_tail[0] < 10000);
+    assert(g_release_tail[KLATT_G_DECLICK_RELEASE - 3u] < 10000);
+    assert(g_release_tail[KLATT_G_DECLICK_RELEASE - 2u] == 10000);
+    assert(g_release_tail[KLATT_G_DECLICK_RELEASE - 1u] == 10000);
+    assert(!runtime.klatt_g_declick_release);
 
     /* The high-rate path is untouched. */
     reset_runtime(&runtime, &callbacks, 0);
