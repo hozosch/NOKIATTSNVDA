@@ -162,7 +162,9 @@ jobs:
           echo "f6cca216a359be84797cabb54149ce5e062afb16cc7567eb7fc51cacb2d86b65  build/python-x64.zip" | sha256sum --check
           mkdir -p build/python-x64
           unzip -q build/python-x64.zip -d build/python-x64
+          echo "../../tools" >> build/python-x64/python313._pth
           build/python-x64/python.exe --version
+          build/python-x64/python.exe -c "import build_config_pack; print('portable Python tool imports verified')"
       - name: Smoke-test ARM64EC synthesis
         shell: bash
         run: |
