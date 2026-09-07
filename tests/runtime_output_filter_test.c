@@ -73,9 +73,10 @@ int main(void) {
     int16_t amplitude_time[2] = {0, 151};
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
-    int16_t neutral_edge[4] = {-5561, -1664, 5685, 8559};
-    int16_t fast_edge[4];
     int16_t abrupt[128];
+    int16_t onset[KLATT_G_FADE_SAMPLES];
+    uint8_t klatt_parameters[122];
+    int16_t value;
     uint8_t *object;
     size_t i;
 
@@ -106,28 +107,73 @@ int main(void) {
         assert(delta < 10000);
     }
 
+    /* The German G signature gets one smooth multi-pulse voiced onset. */
     reset_runtime(&runtime, &callbacks, 0);
-    assert(reserve_i16(&runtime.pcm_pending,
-                       &runtime.pcm_pending_capacity, 4u));
-    memcpy(runtime.pcm_pending, neutral_edge, sizeof(neutral_edge));
-    runtime.pcm_pending_count = 4u;
-    smooth_neutral_pcm_edges(&runtime);
-    assert(runtime.pcm_pending[0] == -5561);
-    assert(runtime.pcm_pending[1] == -1664);
-    assert(runtime.pcm_pending[2] == 3447);
-    assert(runtime.pcm_pending[3] == 8559);
-    free(runtime.pcm_pending);
+    runtime.language_id = 3u;
+    memset(klatt_parameters, 0, sizeof(klatt_parameters));
+    value = 5;
+    memcpy(klatt_parameters + KLATT_TL_OFFSET, &value, sizeof(value));
+    value = 60;
+    memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    value = 1050;
+    memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
+    value = 0;
+    memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_fade(
+        &runtime, onset, KLATT_G_FADE_SAMPLES);
+    assert(onset[0] == 10000);
+    assert(onset[KLATT_G_FADE_CENTER] == 7500);
+    assert(onset[KLATT_G_FADE_SAMPLES - 1u] == 10000);
+    assert(!runtime.klatt_g_fade_active);
 
-    memcpy(fast_edge, neutral_edge, sizeof(fast_edge));
+    /* The high-rate path and a vowel following silence are untouched. */
     reset_runtime(&runtime, &callbacks, 0);
+    runtime.language_id = 3u;
     runtime.rate_factor = 2.0;
-    assert(reserve_i16(&runtime.pcm_pending,
-                       &runtime.pcm_pending_capacity, 4u));
-    memcpy(runtime.pcm_pending, fast_edge, sizeof(fast_edge));
-    runtime.pcm_pending_count = 4u;
-    smooth_neutral_pcm_edges(&runtime);
-    assert(!memcmp(runtime.pcm_pending, fast_edge, sizeof(fast_edge)));
-    free(runtime.pcm_pending);
+    memset(klatt_parameters, 0, sizeof(klatt_parameters));
+    value = 5;
+    memcpy(klatt_parameters + KLATT_TL_OFFSET, &value, sizeof(value));
+    value = 60;
+    memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    value = 1050;
+    memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_fade(
+        &runtime, onset, KLATT_G_FADE_SAMPLES);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i)
+        assert(onset[i] == 10000);
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.language_id = 3u;
+    memset(klatt_parameters, 0, sizeof(klatt_parameters));
+    value = 1050;
+    memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_fade(
+        &runtime, onset, KLATT_G_FADE_SAMPLES);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i)
+        assert(onset[i] == 10000);
+
+    /* A strong non-G release (for example /sp/) must not trigger the fade. */
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.language_id = 3u;
+    memset(klatt_parameters, 0, sizeof(klatt_parameters));
+    value = 60;
+    memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    value = 1050;
+    memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
+    track_neutral_g_release(&runtime, klatt_parameters);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i) onset[i] = 10000;
+    apply_neutral_g_onset_fade(
+        &runtime, onset, KLATT_G_FADE_SAMPLES);
+    for (i = 0; i < KLATT_G_FADE_SAMPLES; ++i)
+        assert(onset[i] == 10000);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);

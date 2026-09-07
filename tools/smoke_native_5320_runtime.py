@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import re
 import struct
@@ -164,12 +165,14 @@ def main() -> None:
     pcm_max_transition = [0, 0, 0]
     pcm_recent = []
     pcm_jump_windows = []
+    pcm_hasher = [None]
     last_metrics = {}
     @PCM
     def on_pcm(_user, _samples, count, rate):
         if rate != 16000:
             raise RuntimeError(f'unexpected sample rate {rate}')
         if measure_pcm[0]:
+            pcm_hasher[0].update(ctypes.string_at(_samples, int(count) * 2))
             for i in range(count):
                 current = int(_samples[i])
                 for window in pcm_jump_windows:
@@ -226,6 +229,7 @@ def main() -> None:
         pcm_max_transition[:] = [0, 0, 0]
         pcm_recent.clear()
         pcm_jump_windows.clear()
+        pcm_hasher[0] = hashlib.sha256() if measure else None
         try:
             if not dll.nokia_runtime_set_rate(runtime, rate):
                 raise SystemExit(
@@ -245,7 +249,8 @@ def main() -> None:
                     f'trailingQuiet={pcm_trailing_quiet[0]} '
                     f'largeJumps={pcm_large_jumps[0]} '
                     f'maxAt={pcm_max_transition[0]} '
-                    f'maxPair={pcm_max_transition[1]}:{pcm_max_transition[2]}'
+                    f'maxPair={pcm_max_transition[1]}:{pcm_max_transition[2]} '
+                    f'sha256={pcm_hasher[0].hexdigest()}'
                     if measure else ''
                 )
             )
@@ -269,6 +274,7 @@ def main() -> None:
                     final=pcm_final[0],
                     trailing_quiet=pcm_trailing_quiet[0],
                     large_jumps=pcm_large_jumps[0],
+                    sha256=pcm_hasher[0].hexdigest(),
                 )
             return produced
         finally:
@@ -305,6 +311,35 @@ def main() -> None:
             'NVDA-rate-50 acoustic regression failed for "Gegen": '
             f'{last_metrics}'
         )
+    speak_case(
+        'NVDA rate 50 Google click regression', 'Google', measure=True,
+    )
+    if (last_metrics['large_jumps'] or last_metrics['clipped'] or
+            last_metrics['final'] != 0 or
+            last_metrics['max_delta'] >= 7000):
+        raise SystemExit(
+            'NVDA-rate-50 acoustic regression failed for "Google": '
+            f'{last_metrics}'
+        )
+    # These reproduce the vowel regression introduced by Test 44.  Neither
+    # word has the German G-release signature, so their Test-43 PCM must remain
+    # byte-for-byte unchanged.
+    neutral_vowel_pcm = {
+        'während': 'ce7f686cb9ba329f32a75a0e56dd281cbf67d621594502e70afb9c4b7ca04914',
+        'Später': '2dc7a9bc5654ea57a407d70f2f309107789ecab06334d83d8b1d615f709187f3',
+    }
+    for vowel_text, expected_pcm in neutral_vowel_pcm.items():
+        speak_case(
+            f'NVDA rate 50 vowel regression {vowel_text}', vowel_text,
+            measure=True,
+        )
+        if (last_metrics['large_jumps'] or last_metrics['clipped'] or
+                last_metrics['final'] != 0 or
+                last_metrics['sha256'] != expected_pcm):
+            raise SystemExit(
+                f'NVDA-rate-50 vowel regression failed for {vowel_text!r}: '
+                f'{last_metrics}'
+            )
     for click_text in ('egal', 'Egel', 'legen', 'Regen', 'Begegnung', 'e g'):
         speak_case(
             f'high-rate click regression {click_text}', click_text,

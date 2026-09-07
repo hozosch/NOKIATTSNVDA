@@ -198,9 +198,12 @@ typedef struct {
 #define SEAM_QUIET_LEVEL 16
 #define SEAM_PREROLL     16u
 #define PCM_TAIL_SAMPLES 64u
-#define PCM_NEUTRAL_EDGE_MIN 7000u
-#define PCM_NEUTRAL_EDGE_RATIO_NUM 9u
-#define PCM_NEUTRAL_EDGE_RATIO_DEN 5u
+#define KLATT_F0_OFFSET 0x18u
+#define KLATT_TL_OFFSET 0x20u
+#define KLATT_AF_OFFSET 0x28u
+#define KLATT_G_RELEASE_FRAMES 6u
+#define KLATT_G_FADE_SAMPLES 600u
+#define KLATT_G_FADE_CENTER 250u
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -237,9 +240,11 @@ struct NokiaRuntime {
     uint32_t seam_leading_count;
     int16_t *pcm_pending;
     size_t pcm_pending_count, pcm_pending_capacity;
-    size_t pcm_neutral_checked;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
+    int16_t klatt_previous_f0;
+    uint16_t klatt_g_fade_position;
+    uint8_t klatt_g_release_frames, klatt_g_fade_active;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
@@ -468,51 +473,6 @@ static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
     return (int16_t)unwrapped;
 }
 
-static uint32_t pcm_delta_abs(int32_t delta) {
-    return delta < 0 ? (uint32_t)-delta : (uint32_t)delta;
-}
-
-/* The original 5320 output occasionally contains one disproportionately steep
-   sample inside an otherwise continuous same-direction edge.  At neutral
-   speed this is audible in German "Gegen" even though it is neither a signed
-   wrap nor clipping.  Replace only that single outlier with the midpoint of
-   its neighbours.  Native high-rate output deliberately bypasses this path,
-   preserving the separate signed-wrap repair above byte for byte. */
-static void smooth_neutral_pcm_edges(NokiaRuntime *r) {
-    size_t i = r->pcm_neutral_checked;
-    if (i < 2u) i = 2u;
-    if (r->rate_factor < 0.999 || r->rate_factor > 1.001) {
-        r->pcm_neutral_checked = r->pcm_pending_count
-            ? r->pcm_pending_count - 1u : 0u;
-        return;
-    }
-    while (i + 1u < r->pcm_pending_count) {
-        int32_t before = (int32_t)r->pcm_pending[i - 1u] -
-                         r->pcm_pending[i - 2u];
-        int32_t edge = (int32_t)r->pcm_pending[i] -
-                       r->pcm_pending[i - 1u];
-        int32_t after = (int32_t)r->pcm_pending[i + 1u] -
-                        r->pcm_pending[i];
-        uint32_t flank = pcm_delta_abs(before);
-        uint32_t after_abs = pcm_delta_abs(after);
-        uint32_t edge_abs = pcm_delta_abs(edge);
-        int same_direction =
-            (before > 0 && edge > 0 && after > 0) ||
-            (before < 0 && edge < 0 && after < 0);
-        if (after_abs > flank) flank = after_abs;
-        if (same_direction && edge_abs >= PCM_NEUTRAL_EDGE_MIN &&
-            edge_abs * PCM_NEUTRAL_EDGE_RATIO_DEN >=
-                flank * PCM_NEUTRAL_EDGE_RATIO_NUM) {
-            r->pcm_pending[i] = (int16_t)(
-                ((int32_t)r->pcm_pending[i - 1u] +
-                 r->pcm_pending[i + 1u]) / 2
-            );
-        }
-        ++i;
-    }
-    r->pcm_neutral_checked = i;
-}
-
 /* Keep four milliseconds of PCM uncommitted so a genuinely abrupt final
    sample can still be faded without delaying the first audio callback. */
 static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
@@ -525,15 +485,12 @@ static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
         r->pcm_pending[r->pcm_pending_count + i] =
             declick_pcm_sample(r, samples[i]);
     r->pcm_pending_count = total;
-    smooth_neutral_pcm_edges(r);
     if (total <= PCM_TAIL_SAMPLES) return 1;
     release = total - PCM_TAIL_SAMPLES;
     if (!deliver_pcm(r, r->pcm_pending, release)) return 0;
     memmove(r->pcm_pending, r->pcm_pending + release,
             PCM_TAIL_SAMPLES * sizeof(*r->pcm_pending));
     r->pcm_pending_count = PCM_TAIL_SAMPLES;
-    r->pcm_neutral_checked = r->pcm_neutral_checked > release
-        ? r->pcm_neutral_checked - release : 2u;
     return 1;
 }
 
@@ -678,6 +635,62 @@ static uint32_t rt_process(void *ctx, uint32_t descriptor) {
     return 0;
 }
 
+/* The 5320 German /g/ release has a stable Klatt signature (TL=5, AF=60).
+   Its following voiced onset can contain several unusually hard excitation
+   pulses; changing only one merely moves the perceived click.  At neutral
+   speed, mark a short, phase-safe gain dip across that complete onset.  The
+   gain starts and ends at unity, leaving the Klatt state and unrelated vowel
+   cycles intact.  Other languages and non-neutral rates deliberately bypass
+   this profile-specific path. */
+static void track_neutral_g_release(NokiaRuntime *r,
+                                    const uint8_t parameters[122]) {
+    int16_t f0, tl, af;
+    memcpy(&f0, parameters + KLATT_F0_OFFSET, sizeof(f0));
+    memcpy(&tl, parameters + KLATT_TL_OFFSET, sizeof(tl));
+    memcpy(&af, parameters + KLATT_AF_OFFSET, sizeof(af));
+    if (r->language_id != 3u || r->rate_factor < 0.999 ||
+        r->rate_factor > 1.001)
+        return;
+    if (f0 <= 0) {
+        r->klatt_previous_f0 = f0;
+        if (tl == 5 && af >= 60)
+            r->klatt_g_release_frames = KLATT_G_RELEASE_FRAMES;
+        else if (r->klatt_g_release_frames)
+            --r->klatt_g_release_frames;
+        r->klatt_g_fade_active = 0u;
+        return;
+    }
+    if (r->klatt_previous_f0 <= 0) {
+        r->klatt_g_fade_active = r->klatt_g_release_frames ? 1u : 0u;
+        r->klatt_g_fade_position = 0u;
+        r->klatt_g_release_frames = 0u;
+    }
+    r->klatt_previous_f0 = f0;
+}
+
+static void apply_neutral_g_onset_fade(NokiaRuntime *r, int16_t *output,
+                                       uint32_t count) {
+    uint32_t i;
+    if (!r->klatt_g_fade_active) return;
+    for (i = 0; i < count && r->klatt_g_fade_active; ++i) {
+        uint32_t position = r->klatt_g_fade_position;
+        uint32_t numerator;
+        if (position <= KLATT_G_FADE_CENTER) {
+            numerator = 1000u - 250u * position /
+                                  KLATT_G_FADE_CENTER;
+        } else {
+            numerator = 750u + 250u *
+                (position - KLATT_G_FADE_CENTER) /
+                (KLATT_G_FADE_SAMPLES - 1u - KLATT_G_FADE_CENTER);
+        }
+        output[i] = (int16_t)((int32_t)output[i] * (int32_t)numerator /
+                              1000);
+        ++r->klatt_g_fade_position;
+        if (r->klatt_g_fade_position >= KLATT_G_FADE_SAMPLES)
+            r->klatt_g_fade_active = 0u;
+    }
+}
+
 static int rt_klatt(void *ctx, uint32_t regs[17]) {
     NokiaRuntime *r = (NokiaRuntime *)ctx;
     uint8_t parameters[122], state[564];
@@ -719,10 +732,12 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
             f0 = (int16_t)scaled; memcpy(parameters + 0x18, &f0, 2);
         }
     }
+    track_neutral_g_release(r, parameters);
     if (!nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
                                   r->rom, ROM_BASE, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
+    apply_neutral_g_onset_fade(r, output, (uint32_t)count);
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -1290,8 +1305,10 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_trimmed_samples=0;r->seam_quiet_count=0;
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
-    r->pcm_neutral_checked=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
+    r->klatt_previous_f0=0;r->klatt_g_release_frames=0;
+    r->klatt_g_fade_position=0;
+    r->klatt_g_fade_active=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
     r->seam_enabled = incremental ? 1u : 0u;
