@@ -74,9 +74,7 @@ int main(void) {
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
     int16_t abrupt[128];
-    int16_t release_samples[4] = {10000, -10000, 10000, -10000};
-    int16_t unchanged[4];
-    int16_t quiet = 0;
+    int16_t g_attack[KLATT_G_ATTACK_SAMPLES];
     uint8_t klatt_parameters[122];
     int16_t value;
     uint8_t *object;
@@ -109,7 +107,7 @@ int main(void) {
         assert(delta < 10000);
     }
 
-    /* Only the short unvoiced German G release is smoothed. */
+    /* The voiced attack after a neutral German G is faded in once. */
     reset_runtime(&runtime, &callbacks, 0);
     runtime.language_id = 3u;
     memset(klatt_parameters, 0, sizeof(klatt_parameters));
@@ -118,19 +116,21 @@ int main(void) {
     value = 60;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     assert(is_neutral_g_release(&runtime, klatt_parameters));
-    apply_neutral_g_release_smoothing(&runtime, &quiet, 1u, 0);
-    apply_neutral_g_release_smoothing(&runtime, release_samples, 4u, 1);
-    assert(release_samples[0] == 5000);
-    assert(release_samples[1] == 0);
-    assert(release_samples[2] == 0);
-    assert(release_samples[3] == 0);
-
-    /* The following voiced vowel is not part of the release. */
+    track_neutral_g_transition(&runtime, klatt_parameters);
+    assert(runtime.klatt_g_release_pending);
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     value = 0;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     assert(!is_neutral_g_release(&runtime, klatt_parameters));
+    track_neutral_g_transition(&runtime, klatt_parameters);
+    assert(runtime.klatt_g_attack_active);
+    assert(!runtime.klatt_g_release_pending);
+    for (i = 0; i < KLATT_G_ATTACK_SAMPLES; ++i) g_attack[i] = 10000;
+    apply_neutral_g_attack(&runtime, g_attack, KLATT_G_ATTACK_SAMPLES);
+    assert(g_attack[0] == 2500);
+    assert(g_attack[KLATT_G_ATTACK_SAMPLES - 1u] == 10000);
+    assert(!runtime.klatt_g_attack_active);
 
     /* The high-rate path is untouched. */
     reset_runtime(&runtime, &callbacks, 0);
@@ -142,17 +142,26 @@ int main(void) {
     value = 60;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     assert(!is_neutral_g_release(&runtime, klatt_parameters));
-    memcpy(unchanged, release_samples, sizeof(unchanged));
-    apply_neutral_g_release_smoothing(&runtime, unchanged, 4u, 0);
-    assert(memcmp(unchanged, release_samples, sizeof(unchanged)) == 0);
+    track_neutral_g_transition(&runtime, klatt_parameters);
+    assert(!runtime.klatt_g_release_pending);
+    value = 1050;
+    memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
+    track_neutral_g_transition(&runtime, klatt_parameters);
+    assert(!runtime.klatt_g_attack_active);
 
-    /* A strong non-G release (for example /sp/) must not trigger smoothing. */
+    /* A strong non-G release (for example /sp/) must not trigger a blend. */
     reset_runtime(&runtime, &callbacks, 0);
     runtime.language_id = 3u;
     memset(klatt_parameters, 0, sizeof(klatt_parameters));
     value = 60;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     assert(!is_neutral_g_release(&runtime, klatt_parameters));
+    track_neutral_g_transition(&runtime, klatt_parameters);
+    assert(!runtime.klatt_g_release_pending);
+    value = 1050;
+    memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
+    track_neutral_g_transition(&runtime, klatt_parameters);
+    assert(!runtime.klatt_g_attack_active);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);

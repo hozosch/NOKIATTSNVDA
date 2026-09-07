@@ -201,6 +201,8 @@ typedef struct {
 #define KLATT_F0_OFFSET 0x18u
 #define KLATT_TL_OFFSET 0x20u
 #define KLATT_AF_OFFSET 0x28u
+#define KLATT_G_ATTACK_SAMPLES 400u
+#define KLATT_G_ATTACK_START 250u
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -239,8 +241,8 @@ struct NokiaRuntime {
     size_t pcm_pending_count, pcm_pending_capacity;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
-    int16_t klatt_previous_output_sample;
-    uint8_t klatt_previous_output_valid;
+    uint16_t klatt_g_attack_position;
+    uint8_t klatt_g_release_pending, klatt_g_attack_active;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
@@ -632,10 +634,8 @@ static uint32_t rt_process(void *ctx, uint32_t descriptor) {
 }
 
 /* The emulated reference confirms that the neutral-rate click is already in
-   the original 5320 German /g/ release.  That unvoiced release has a stable
-   Klatt signature (F0=0, TL=5, AF>=60) and lasts about 10 ms.  Average only
-   adjacent release samples to tame its high-frequency edge.  The following
-   voiced onset is not touched, nor are other languages or rates. */
+   the original 5320 German signal.  The /g/ release has a stable signature
+   (F0=0, TL=5, AF>=60). */
 static int is_neutral_g_release(const NokiaRuntime *r,
                                 const uint8_t parameters[122]) {
     int16_t f0, tl, af;
@@ -646,17 +646,48 @@ static int is_neutral_g_release(const NokiaRuntime *r,
         r->rate_factor <= 1.001 && f0 <= 0 && tl == 5 && af >= 60;
 }
 
-static void apply_neutral_g_release_smoothing(NokiaRuntime *r,
-                                              int16_t *output,
-                                              uint32_t count, int active) {
+static void track_neutral_g_transition(NokiaRuntime *r,
+                                       const uint8_t parameters[122]) {
+    int16_t f0;
+    memcpy(&f0, parameters + KLATT_F0_OFFSET, sizeof(f0));
+    if (r->language_id != 3u || r->rate_factor < 0.999 ||
+        r->rate_factor > 1.001) {
+        r->klatt_g_release_pending = 0u;
+        r->klatt_g_attack_active = 0u;
+        return;
+    }
+    if (f0 <= 0) {
+        if (is_neutral_g_release(r, parameters)) {
+            r->klatt_g_release_pending = 1u;
+        } else {
+            r->klatt_g_release_pending = 0u;
+        }
+        r->klatt_g_attack_active = 0u;
+        return;
+    }
+    if (r->klatt_g_release_pending) {
+        r->klatt_g_release_pending = 0u;
+        r->klatt_g_attack_position = 0u;
+        r->klatt_g_attack_active = 1u;
+    }
+}
+
+/* The hard pulses recur after a PCM filter ends, which only moves the click.
+   Instead, let their unmodified waveform rise monotonically from -12 dB to
+   full level over 40 ms.  This changes no spectrum or Klatt state, and the
+   final faded sample is already at unity so there is no new exit edge. */
+static void apply_neutral_g_attack(NokiaRuntime *r, int16_t *output,
+                                   uint32_t count) {
     uint32_t i;
-    for (i = 0; i < count; ++i) {
-        int16_t raw = output[i];
-        if (active && r->klatt_previous_output_valid)
-            output[i] = (int16_t)(
-                ((int32_t)r->klatt_previous_output_sample + raw) / 2);
-        r->klatt_previous_output_sample = raw;
-        r->klatt_previous_output_valid = 1u;
+    for (i = 0; i < count && r->klatt_g_attack_active; ++i) {
+        uint32_t position = r->klatt_g_attack_position;
+        uint32_t gain = KLATT_G_ATTACK_START +
+            (1000u - KLATT_G_ATTACK_START) * position /
+            (KLATT_G_ATTACK_SAMPLES - 1u);
+        output[i] = (int16_t)((int32_t)output[i] * (int32_t)gain / 1000);
+        ++r->klatt_g_attack_position;
+        if (r->klatt_g_attack_position >= KLATT_G_ATTACK_SAMPLES)
+            r->klatt_g_attack_active = 0u;
     }
 }
 
@@ -665,7 +696,6 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
     uint8_t parameters[122], state[564];
     int16_t output[8192], count, f0;
     int32_t peak, scaled;
-    int g_release;
     uint32_t gain, after[5];
     uint8_t *p0, *p1, *p2, *p3, *ps;
     uint32_t missing;
@@ -702,13 +732,12 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
             f0 = (int16_t)scaled; memcpy(parameters + 0x18, &f0, 2);
         }
     }
-    g_release = is_neutral_g_release(r, parameters);
+    track_neutral_g_transition(r, parameters);
     if (!nokia_klatt_generate_aot(output, &peak, parameters, state, gain,
                                   r->rom, ROM_BASE, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
-    apply_neutral_g_release_smoothing(
-        r, output, (uint32_t)count, g_release);
+    apply_neutral_g_attack(r, output, (uint32_t)count);
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -1277,8 +1306,8 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
-    r->klatt_previous_output_sample=0;
-    r->klatt_previous_output_valid=0;
+    r->klatt_g_release_pending=0;r->klatt_g_attack_position=0;
+    r->klatt_g_attack_active=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
     r->seam_enabled = incremental ? 1u : 0u;
