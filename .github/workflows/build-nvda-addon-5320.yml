@@ -153,6 +153,44 @@ jobs:
           $peOffset = [BitConverter]::ToInt32($dllBytes, 0x3c)
           $machine = [BitConverter]::ToUInt16($dllBytes, $peOffset + 4)
           if ($machine -ne 0xAA64) { throw "runtime machine is 0x$($machine.ToString('X4')), not ARM64" }
+      - name: Prepare portable x64 Python for ARM64EC verification
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://www.python.org/ftp/python/3.13.7/python-3.13.7-embed-amd64.zip \
+            --output build/python-x64.zip
+          echo "f6cca216a359be84797cabb54149ce5e062afb16cc7567eb7fc51cacb2d86b65  build/python-x64.zip" | sha256sum --check
+          mkdir -p build/python-x64
+          unzip -q build/python-x64.zip -d build/python-x64
+          build/python-x64/python.exe --version
+      - name: Smoke-test ARM64EC synthesis
+        shell: bash
+        run: |
+          snapshot=$(find build/multilingual-input -name '5320-3-male.snapshot' -print -quit)
+          build/python-x64/python.exe tools/smoke_native_5320_runtime.py \
+            build/native-arm64ec/nokia_runtime_5320_arm64ec.dll \
+            build/test18-addon/data/SYM.ROM \
+            "$snapshot" \
+            build/test18-addon/data/config \
+            --rom-trace build/native-arm64ec/rom-pages.json
+      - name: Build compact 5320 TTS page container
+        shell: bash
+        run: |
+          python tools/build_rom_pack.py \
+            build/test18-addon/data/SYM.ROM \
+            native/rom-pages-5320-known-good.json \
+            build/native-arm64ec/rom-pages.json \
+            build/runtime-data/5320-core.nrp \
+            --padding-pages 2
+      - name: Smoke-test ARM64EC compact container
+        shell: bash
+        run: |
+          snapshot=$(find build/multilingual-input -name '5320-3-male.snapshot' -print -quit)
+          build/python-x64/python.exe tools/smoke_native_5320_runtime.py \
+            build/native-arm64ec/nokia_runtime_5320_arm64ec.dll \
+            build/runtime-data/5320-core.nrp \
+            "$snapshot" \
+            build/test18-addon/data/config
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -167,15 +205,6 @@ jobs:
             "$snapshot" \
             build/test18-addon/data/config \
             --rom-trace build/native-arm64/rom-pages.json
-      - name: Build compact 5320 TTS page container
-        shell: bash
-        run: |
-          python tools/build_rom_pack.py \
-            build/test18-addon/data/SYM.ROM \
-            native/rom-pages-5320-known-good.json \
-            build/native-arm64/rom-pages.json \
-            build/runtime-data/5320-core.nrp \
-            --padding-pages 2
       - name: Smoke-test ARM64 compact container
         shell: bash
         run: |
@@ -252,16 +281,6 @@ jobs:
         run: |
           python tools/build_config_pack.py \
             build/test18-addon/data/config \
-            build/runtime-data/5320-config.ncf
-
-      - name: Smoke-test ARM64EC compact container on x64 Windows
-        shell: bash
-        run: |
-          snapshot=$(find build/multilingual-input -name '5320-3-male.snapshot' -print -quit)
-          python tools/smoke_native_5320_runtime.py \
-            build/runtime-arm64ec/nokia_runtime_5320_arm64ec.dll \
-            build/runtime-data/5320-core.nrp \
-            "$snapshot" \
             build/runtime-data/5320-config.ncf
 
       - name: Build native x86 runtime for 32-bit NVDA
