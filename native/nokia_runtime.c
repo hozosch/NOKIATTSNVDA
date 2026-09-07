@@ -236,6 +236,7 @@ struct NokiaRuntime {
     size_t pcm_pending_count, pcm_pending_capacity;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
+    uint8_t shorten_initial_g_release;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
@@ -1025,6 +1026,59 @@ static int scale_phone_durations(NokiaRuntime *r, uint32_t phone_address,
     return 1;
 }
 
+/* The Test52 listening result rules out a longer initial German /g/ release.
+   Test the opposite direction at Nokia's neutral duration: shorten only the
+   high-front release target from its nominal 10 time units to 5, then move
+   the following prosody points left by the same amount. The following vowel,
+   Klatt amplitudes, other rates and non-initial G phones remain untouched.
+   This text/shape match is intentionally narrow for the diagnostic build. */
+static int shorten_initial_g_release_timing(
+    NokiaRuntime *r, uint32_t duration_address, uint32_t duration_count,
+    uint32_t pitch_time_address, uint32_t pitch_time_count,
+    uint32_t amplitude_time_address, uint32_t amplitude_time_count
+) {
+    int16_t *durations, *times;
+    uint32_t i;
+    int32_t old_release_end;
+    const int16_t reduction = 5;
+    if (!r->shorten_initial_g_release) return 1;
+    if (duration_count < 4u ||
+        !prosody_array(r, duration_address, duration_count, &durations))
+        return 1;
+    if (durations[0] < 55 || durations[0] > 75 ||
+        durations[1] < 16 || durations[1] > 28 ||
+        durations[2] < 8 || durations[2] > 12)
+        return 1;
+    if (durations[2] <= reduction) return 1;
+    old_release_end = (int32_t)durations[0] + durations[1] + durations[2];
+    durations[2] = (int16_t)(durations[2] - reduction);
+    if (pitch_time_count &&
+        !prosody_array(r, pitch_time_address, pitch_time_count, &times))
+        return 0;
+    for (i = 0; i < pitch_time_count; ++i)
+        if (times[i] >= old_release_end)
+            times[i] = (int16_t)(times[i] - reduction);
+    if (amplitude_time_count &&
+        !prosody_array(r, amplitude_time_address,
+                       amplitude_time_count, &times))
+        return 0;
+    for (i = 0; i < amplitude_time_count; ++i)
+        if (times[i] >= old_release_end)
+            times[i] = (int16_t)(times[i] - reduction);
+    return 1;
+}
+
+static int chunk_starts_with_ascii_g(const uint16_t *text, uint32_t len) {
+    uint32_t i;
+    for (i = 0; i < len; ++i) {
+        uint16_t c = text[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+            return c == 'G' || c == 'g';
+        if (c >= 0x80u) return 0;
+    }
+    return 0;
+}
+
 #if NOKIA_CONTINUE_PROSODY
 /* PrimeSynthesisL gives every independently analysed chunk a low utterance-
    final F0 tail.  For a non-final chunk, retain Nokia's contour but guide
@@ -1088,7 +1142,8 @@ static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     if (factor > 4.0) factor = 4.0;
 #ifndef NOKIA_DEBUG_PROSODY
     if (factor > 0.999 && factor < 1.001 &&
-        !(NOKIA_CONTINUE_PROSODY && continuation)) return 1;
+        !(NOKIA_CONTINUE_PROSODY && continuation) &&
+        !r->shorten_initial_g_release) return 1;
 #endif
     /* Prime allocates this object at the beginning of a live pool block.  By
        following allocator metadata first, the finder no longer depends on
@@ -1128,6 +1183,9 @@ static int apply_prosody_rate(NokiaRuntime *r, int continuation) {
     pitch = rd32(object + 0x10u);
     time1 = rd32(object + 0x14u);
     time2 = rd32(object + 0x20u);
+    if (!shorten_initial_g_release_timing(
+            r, durations, n0, time1, n1, time2, n2))
+        return 0;
 #ifdef NOKIA_DEBUG_PROSODY
     {
         int16_t *phone_values, *duration_values;
@@ -1198,6 +1256,9 @@ static int synthesize_text_chunk(NokiaRuntime *r, const uint16_t *text,
     uint32_t txt=0,e8=0,e16=0,pt=0,seg=0,res=0,a[3],loops=0;
     clock_t start = clock();
     r->done=0;r->pending_count=0;
+    r->shorten_initial_g_release =
+        r->language_id == 3u && r->rate_factor > 0.999 &&
+        r->rate_factor < 1.001 && chunk_starts_with_ascii_g(text, len);
     txt=ptrc16(r,text,len);e8=ptrc8(r);e16=ptrc16(r,(const uint16_t*)L"",0);
     if(!txt||!e8||!e16){r->last_error=-3001;goto failed;}
     a[0]=txt;a[1]=e8;a[2]=e16;if(!native_call_l(r,r->pt_new,a,3,&pt)||!pt)goto failed;
