@@ -74,7 +74,8 @@ int main(void) {
     int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t corrected[6];
     int16_t abrupt[128];
-    int16_t g_attack[KLATT_G_ATTACK_SAMPLES];
+    int16_t g_transition[7] = {0, 5000, 10000, 10000,
+                               -10000, -5000, 0};
     uint8_t klatt_parameters[122];
     int16_t value;
     uint8_t *object;
@@ -107,7 +108,7 @@ int main(void) {
         assert(delta < 10000);
     }
 
-    /* The voiced attack after a neutral German G is faded in once. */
+    /* Only steep samples in a neutral German G transition are limited. */
     reset_runtime(&runtime, &callbacks, 0);
     runtime.language_id = 3u;
     memset(klatt_parameters, 0, sizeof(klatt_parameters));
@@ -118,19 +119,23 @@ int main(void) {
     assert(is_neutral_g_release(&runtime, klatt_parameters));
     track_neutral_g_transition(&runtime, klatt_parameters);
     assert(runtime.klatt_g_release_pending);
+    assert(runtime.klatt_g_transition_active);
+    apply_neutral_g_slew_limit(&runtime, g_transition, 7u);
+    assert(g_transition[0] == 0);
+    assert(g_transition[1] == KLATT_G_SLEW_LIMIT);
+    assert(g_transition[2] == 2 * KLATT_G_SLEW_LIMIT);
+    assert(g_transition[3] == 3 * KLATT_G_SLEW_LIMIT);
+    assert(g_transition[4] == 2 * KLATT_G_SLEW_LIMIT);
+    assert(g_transition[5] == KLATT_G_SLEW_LIMIT);
+    assert(g_transition[6] == 0);
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     value = 0;
     memcpy(klatt_parameters + KLATT_AF_OFFSET, &value, sizeof(value));
     assert(!is_neutral_g_release(&runtime, klatt_parameters));
     track_neutral_g_transition(&runtime, klatt_parameters);
-    assert(runtime.klatt_g_attack_active);
+    assert(runtime.klatt_g_transition_active);
     assert(!runtime.klatt_g_release_pending);
-    for (i = 0; i < KLATT_G_ATTACK_SAMPLES; ++i) g_attack[i] = 10000;
-    apply_neutral_g_attack(&runtime, g_attack, KLATT_G_ATTACK_SAMPLES);
-    assert(g_attack[0] == 2500);
-    assert(g_attack[KLATT_G_ATTACK_SAMPLES - 1u] == 10000);
-    assert(!runtime.klatt_g_attack_active);
 
     /* The high-rate path is untouched. */
     reset_runtime(&runtime, &callbacks, 0);
@@ -147,7 +152,7 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_transition(&runtime, klatt_parameters);
-    assert(!runtime.klatt_g_attack_active);
+    assert(!runtime.klatt_g_transition_active);
 
     /* A strong non-G release (for example /sp/) must not trigger a blend. */
     reset_runtime(&runtime, &callbacks, 0);
@@ -161,7 +166,7 @@ int main(void) {
     value = 1050;
     memcpy(klatt_parameters + KLATT_F0_OFFSET, &value, sizeof(value));
     track_neutral_g_transition(&runtime, klatt_parameters);
-    assert(!runtime.klatt_g_attack_active);
+    assert(!runtime.klatt_g_transition_active);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);

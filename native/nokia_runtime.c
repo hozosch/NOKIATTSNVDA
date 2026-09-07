@@ -201,8 +201,9 @@ typedef struct {
 #define KLATT_F0_OFFSET 0x18u
 #define KLATT_TL_OFFSET 0x20u
 #define KLATT_AF_OFFSET 0x28u
-#define KLATT_G_ATTACK_SAMPLES 400u
-#define KLATT_G_ATTACK_START 250u
+#ifndef KLATT_G_SLEW_LIMIT
+#define KLATT_G_SLEW_LIMIT 3000
+#endif
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -241,8 +242,9 @@ struct NokiaRuntime {
     size_t pcm_pending_count, pcm_pending_capacity;
     uint32_t pcm_wrap_repairs;
     int32_t pcm_unwrapped_previous, pcm_wrap_offset;
-    uint16_t klatt_g_attack_position;
-    uint8_t klatt_g_release_pending, klatt_g_attack_active;
+    int16_t klatt_g_previous_output;
+    uint8_t klatt_g_release_pending, klatt_g_transition_active;
+    uint8_t klatt_g_previous_output_valid;
     uint8_t done, first_pcm_seen, seam_enabled, seam_skip_leading;
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
@@ -653,41 +655,50 @@ static void track_neutral_g_transition(NokiaRuntime *r,
     if (r->language_id != 3u || r->rate_factor < 0.999 ||
         r->rate_factor > 1.001) {
         r->klatt_g_release_pending = 0u;
-        r->klatt_g_attack_active = 0u;
+        r->klatt_g_transition_active = 0u;
         return;
     }
     if (f0 <= 0) {
         if (is_neutral_g_release(r, parameters)) {
             r->klatt_g_release_pending = 1u;
+            r->klatt_g_transition_active = 1u;
         } else {
             r->klatt_g_release_pending = 0u;
+            r->klatt_g_transition_active = 0u;
         }
-        r->klatt_g_attack_active = 0u;
         return;
     }
     if (r->klatt_g_release_pending) {
         r->klatt_g_release_pending = 0u;
-        r->klatt_g_attack_position = 0u;
-        r->klatt_g_attack_active = 1u;
+        r->klatt_g_transition_active = 1u;
     }
 }
 
-/* The hard pulses recur after a PCM filter ends, which only moves the click.
-   Instead, let their unmodified waveform rise monotonically from -12 dB to
-   full level over 40 ms.  This changes no spectrum or Klatt state, and the
-   final faded sample is already at unity so there is no new exit edge. */
-static void apply_neutral_g_attack(NokiaRuntime *r, int16_t *output,
-                                   uint32_t count) {
+/* The recording of Test 48 shows why a fixed attack window only moves the
+   click: the following vowel contains recurring hard closure pulses, so the
+   first unmodified pulse becomes the new edge.  Limit only those individual
+   sample-to-sample transients throughout the voiced G transition.  Ordinary
+   samples pass through byte-for-byte, there is no timed exit edge, and the
+   Klatt state remains untouched.  The same limiter also covers the short G
+   release immediately before voicing. */
+static void apply_neutral_g_slew_limit(NokiaRuntime *r, int16_t *output,
+                                       uint32_t count) {
     uint32_t i;
-    for (i = 0; i < count && r->klatt_g_attack_active; ++i) {
-        uint32_t position = r->klatt_g_attack_position;
-        uint32_t gain = KLATT_G_ATTACK_START +
-            (1000u - KLATT_G_ATTACK_START) * position /
-            (KLATT_G_ATTACK_SAMPLES - 1u);
-        output[i] = (int16_t)((int32_t)output[i] * (int32_t)gain / 1000);
-        ++r->klatt_g_attack_position;
-        if (r->klatt_g_attack_position >= KLATT_G_ATTACK_SAMPLES)
-            r->klatt_g_attack_active = 0u;
+    for (i = 0; i < count; ++i) {
+        int32_t sample = output[i];
+        if (r->klatt_g_transition_active &&
+            r->klatt_g_previous_output_valid) {
+            int32_t delta = sample - r->klatt_g_previous_output;
+            if (delta > KLATT_G_SLEW_LIMIT)
+                sample = (int32_t)r->klatt_g_previous_output +
+                         KLATT_G_SLEW_LIMIT;
+            else if (delta < -KLATT_G_SLEW_LIMIT)
+                sample = (int32_t)r->klatt_g_previous_output -
+                         KLATT_G_SLEW_LIMIT;
+            output[i] = (int16_t)sample;
+        }
+        r->klatt_g_previous_output = (int16_t)sample;
+        r->klatt_g_previous_output_valid = 1u;
     }
 }
 
@@ -737,7 +748,7 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
                                   r->rom, ROM_BASE, r->rom_size, after)) {
         r->klatt_failure=0x300u;r->last_error=-2103;return 0;
     }
-    apply_neutral_g_attack(r, output, (uint32_t)count);
+    apply_neutral_g_slew_limit(r, output, (uint32_t)count);
     if (count) memcpy(p0, output, (size_t)count * 2u);
     memcpy(p1, &peak, 4); memcpy(p2, parameters, sizeof(parameters));
     memcpy(p3, state, sizeof(state));
@@ -1306,8 +1317,8 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->seam_leading_seen=0;r->seam_leading_count=0;r->seam_skip_leading=0;
     r->pcm_pending_count=0;r->pcm_wrap_repairs=0;r->pcm_wrap_offset=0;
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
-    r->klatt_g_release_pending=0;r->klatt_g_attack_position=0;
-    r->klatt_g_attack_active=0;
+    r->klatt_g_previous_output=0;r->klatt_g_release_pending=0;
+    r->klatt_g_transition_active=0;r->klatt_g_previous_output_valid=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
     r->seam_enabled = incremental ? 1u : 0u;
