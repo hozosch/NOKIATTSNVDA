@@ -153,10 +153,10 @@ ordinary add-on builds compile them directly rather than recapturing the
 expensive AOT corpora.
 
 Test 63 adds the bounded Nokia 5500 frontend paths required for isolated-letter
-synthesis and uncommon lookup/initialization outcomes, including the reported
-yield at `0xF8451E9A`. It also restores a two-instruction Klatt fallthrough used
-by accented Spanish words. The established 5320 and high-rate PCM paths remain
-unchanged.
+synthesis, including distinct uppercase and lowercase routes, and uncommon
+lookup/initialization outcomes such as the reported yield at `0xF8451E9A`. It
+also restores a two-instruction Klatt fallthrough used by accented Spanish
+words. The established 5320 and high-rate PCM paths remain unchanged.
 
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for both the 5320 and 5500 and adds only the
