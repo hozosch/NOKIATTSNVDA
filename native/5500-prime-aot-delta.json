@@ -1,7 +1,7 @@
 {
   "profile": "5500",
   "kind": "prime-control-flow-closure",
-  "instruction_count": 233,
+  "instruction_count": 255,
   "instructions": [
     {
       "address": 4165264000,
@@ -11,6 +11,36 @@
     },
     {
       "address": 4165277388,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165277710,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165277712,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165277714,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165277716,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165277718,
       "size": 2,
       "thumb": true,
       "source": "control-flow-closure"
@@ -1399,6 +1429,108 @@
       "address": 4165343516,
       "size": 2,
       "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505348,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505350,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505352,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505354,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505356,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505358,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505360,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505364,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505366,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505368,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505370,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505374,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505376,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505378,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505380,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197505382,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4197507664,
+      "size": 4,
+      "thumb": false,
       "source": "control-flow-closure"
     }
   ]
