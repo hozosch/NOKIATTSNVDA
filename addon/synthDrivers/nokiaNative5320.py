@@ -91,12 +91,6 @@ class _Callbacks(ctypes.Structure):
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
 	description = "Nokia 5320 Native (experimental)"
-	# The Nokia engine leaves useful silence around short utterances.  Keeping
-	# those utterances in one WavePlayer feed avoids opening or refilling the
-	# output stream in the middle of a word-initial plosive.
-	UTTERANCE_OVERHEAD = 0.35
-	CHARS_PER_SECOND = 20.0
-	WHOLE_BUFFER_MAX_NORMAL_SECONDS = 0.85
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -159,7 +153,12 @@ class SynthDriver(BaseSynthDriver):
 		# Preserve Test43's first-utterance behaviour: prepare the default voice
 		# during driver startup, while later voice changes remain lazy.
 		self._loadSnapshot(self._voice)
-		self._player = self._makePlayer()
+		self._player = nvwave.WavePlayer(
+			channels=1,
+			samplesPerSec=16000,
+			bitsPerSample=16,
+			outputDevice=config.conf["audio"]["outputDevice"],
+		)
 		self._requests: queue.Queue = queue.Queue()
 		self._stopEvent = threading.Event()
 		self._lock = threading.Lock()
@@ -171,33 +170,6 @@ class SynthDriver(BaseSynthDriver):
 			daemon=True,
 		)
 		self._thread.start()
-
-	def _makePlayer(self):
-		player = nvwave.WavePlayer(
-			channels=1,
-			samplesPerSec=16000,
-			bitsPerSample=16,
-			outputDevice=config.conf["audio"]["outputDevice"],
-		)
-		# Nokia already supplies roughly 80 ms of leading silence.  NVDA's
-		# default trimming can otherwise wake the device on the first consonant,
-		# which is heard intermittently as a click even though the PCM is clean.
-		try:
-			player.enableTrimmingLeadingSilence(False)
-		except Exception:
-			log.error(
-				"Could not preserve Nokia leading silence",
-				exc_info=True,
-			)
-		return player
-
-	@classmethod
-	def _wholeBufferUtterance(cls, runs):
-		normalSeconds = sum(
-			cls.UTTERANCE_OVERHEAD + len(text) / cls.CHARS_PER_SECOND
-			for text, _pitchFactor in runs
-		)
-		return normalSeconds <= cls.WHOLE_BUFFER_MAX_NORMAL_SECONDS
 
 	def _findVoiceSnapshots(self):
 		data = self._root / "data"
@@ -543,19 +515,10 @@ class SynthDriver(BaseSynthDriver):
 				return
 			self._activeRuntime = runtime
 
-		# Short words are produced quickly and fit comfortably in memory.  Feed
-		# each of them as one continuous block, matching the proven Unicorn
-		# driver's playback path without touching Nokia's waveform.
-		bufferedPcm = bytearray() if self._wholeBufferUtterance(runs) else None
-
 		def onPcm(_user, samples, sampleCount, sampleRate):
 			if sampleRate != 16000 or generation != self._generation:
 				return
-			pcm = ctypes.string_at(samples, sampleCount * 2)
-			if bufferedPcm is not None:
-				bufferedPcm.extend(pcm)
-			else:
-				self._player.feed(pcm)
+			self._player.feed(ctypes.string_at(samples, sampleCount * 2))
 
 		def onIndex(_user, index):
 			if generation == self._generation:
@@ -606,8 +569,6 @@ class SynthDriver(BaseSynthDriver):
 						+ (f"; {diagnostics}" if diagnostics else "")
 					)
 			if generation == self._generation:
-				if bufferedPcm:
-					self._player.feed(bytes(bufferedPcm))
 				for index in indexes:
 					synthIndexReached.notify(synth=self, index=index)
 				self._player.idle()

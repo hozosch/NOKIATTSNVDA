@@ -198,6 +198,7 @@ typedef struct {
 #define SEAM_QUIET_LEVEL 16
 #define SEAM_PREROLL     16u
 #define PCM_TAIL_SAMPLES 64u
+#define PCM_DECLICK_MIN_RATE_FACTOR 1.45
 #define PROSODY_MIN_DURATION 8
 #define PROSODY_CONTINUATION_TAIL 1600u
 #define PROSODY_TIME_BACKSTEP_MAX 32
@@ -439,6 +440,12 @@ static int deliver_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
     return 1;
 }
 
+/* The NVDA driver maps integer rate 63 to 1.433955x and rate 64 to
+   1.474269x.  Keep the original, byte-for-byte PCM path below rate 64. */
+static int high_rate_pcm_fix_enabled(const NokiaRuntime *r) {
+    return r->rate_factor >= PCM_DECLICK_MIN_RATE_FACTOR;
+}
+
 /* The Klatt output is a 16-bit signal, but at short high-rate frames an
    internal peak can occasionally wrap from one signed extreme to the other.
    Follow the continuous 16-bit phase and saturate only samples that actually
@@ -469,6 +476,8 @@ static int16_t declick_pcm_sample(NokiaRuntime *r, int16_t sample) {
 static int emit_pcm(NokiaRuntime *r, const int16_t *samples, size_t count) {
     size_t total, release, i;
     if (!count) return 1;
+    if (!high_rate_pcm_fix_enabled(r))
+        return deliver_pcm(r, samples, count);
     total = r->pcm_pending_count + count;
     if (!reserve_i16(&r->pcm_pending, &r->pcm_pending_capacity, total))
         return 0;
@@ -489,7 +498,8 @@ static int finish_pcm_output(NokiaRuntime *r) {
     size_t i, count;
     if (!r->pcm_pending_count) return 1;
     count = r->pcm_pending_count;
-    if (!quiet_sample(r->pcm_pending[count - 1u])) {
+    if (high_rate_pcm_fix_enabled(r) &&
+        !quiet_sample(r->pcm_pending[count - 1u])) {
         uint32_t denominator = count > 1u ? (uint32_t)count - 1u : 1u;
         for (i = 0; i < count; ++i)
             r->pcm_pending[i] = (int16_t)(

@@ -71,8 +71,7 @@ int main(void) {
     int16_t pitch_time[3] = {0, 101, 93};
     int16_t amplitude[2] = {100, 120};
     int16_t amplitude_time[2] = {0, 151};
-    int16_t wrapped[6] = {-26985, 32730, 32343, 32732, 32485, -29144};
-    int16_t corrected[6];
+    int16_t wrapped[70] = {-26985, 32730, 32343, 32732, 32485, -29144};
     int16_t abrupt[128];
     uint8_t *object;
     size_t i;
@@ -94,18 +93,32 @@ int main(void) {
     free(runtime.seam_quiet);
     free(runtime.pcm_pending);
 
+    for (i = 6u; i < 70u; ++i) wrapped[i] = 0;
+
     reset_runtime(&runtime, &callbacks, 0);
-    for (i = 0; i < 6u; ++i)
-        corrected[i] = declick_pcm_sample(&runtime, wrapped[i]);
+    runtime.rate_factor = 1.4339552480158273; /* NVDA rate 63 */
+    assert(!high_rate_pcm_fix_enabled(&runtime));
+    assert(seam_feed(&runtime, wrapped, 70u));
+    assert(output_samples == 70u);
+    assert(output_max_delta > 60000);
+    assert(runtime.pcm_wrap_repairs == 0u);
+    assert(finish_pcm_output(&runtime));
+
+    reset_runtime(&runtime, &callbacks, 0);
+    runtime.rate_factor = 1.4742692172911012; /* NVDA rate 64 */
+    assert(high_rate_pcm_fix_enabled(&runtime));
+    assert(seam_feed(&runtime, wrapped, 70u));
+    assert(output_samples == 6u);
     assert(runtime.pcm_wrap_repairs == 2u);
-    for (i = 1; i < 6u; ++i) {
-        int32_t delta = (int32_t)corrected[i] - corrected[i - 1u];
-        if (delta < 0) delta = -delta;
-        assert(delta < 10000);
-    }
+    assert(output_max_delta < 10000);
+    assert(finish_pcm_output(&runtime));
+    assert(output_samples == 70u);
+    assert(output_final == 0);
+    free(runtime.pcm_pending);
 
     for (i = 0; i < 128u; ++i) abrupt[i] = 10000;
     reset_runtime(&runtime, &callbacks, 0);
+    runtime.rate_factor = 1.4742692172911012; /* NVDA rate 64 */
     assert(seam_feed(&runtime, abrupt, 128u));
     assert(output_samples == 64u);
     assert(finish_pcm_output(&runtime));
