@@ -1,7 +1,7 @@
 {
   "profile": "5500",
   "kind": "prime-control-flow-closure",
-  "instruction_count": 2048,
+  "instruction_count": 2083,
   "instructions": [
     {
       "address": 4165263024,
@@ -287,6 +287,216 @@
     },
     {
       "address": 4165264000,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266682,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266684,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266686,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266688,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266690,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266692,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266694,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266696,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266698,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266700,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266702,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266704,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266706,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266708,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266710,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266712,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266714,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266716,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266718,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266720,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266724,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266726,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266728,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266730,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266732,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266734,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266738,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266740,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266742,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266744,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266748,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266750,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266752,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266756,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4165266758,
       "size": 2,
       "thumb": true,
       "source": "control-flow-closure"
