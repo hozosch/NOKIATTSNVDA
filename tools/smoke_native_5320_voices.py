@@ -57,6 +57,8 @@ REGRESSION_SAMPLES = {
     (8, "male"): ("abcdefghijklmnopqrstuvwxyz æøå 0123456789",),
     (8, "female"): ("abcdefghijklmnopqrstuvwxyz æøå 0123456789",),
     (18, "female"): ("Pa's wijze lynx bezag vroom het fikse aquaduct.",),
+    (54, "male"): ("εισαγωγικά", "εισαγωγικά λέξη"),
+    (54, "female"): ("εισαγωγικά", "εισαγωγικά λέξη"),
 }
 REGRESSION_SHA256 = {
     (3, "male", 1): (
@@ -82,6 +84,18 @@ REGRESSION_SHA256 = {
     ),
     (18, "female", 1): (
         "9c50f6748fc60ad113a3abaa332d008bc7777398fb76c2efaecf395f13417f41"
+    ),
+    (54, "male", 1): (
+        "8db00776c0cb8d7b761141001f6c276f8ea63af02f095f798b385a3477de5109"
+    ),
+    (54, "male", 2): (
+        "847be3072aebe159377b74a8dc21ca9a2541b13a738a411a33318a699dcb212c"
+    ),
+    (54, "female", 1): (
+        "3fb59cb0047f55b15ce5f6856160b8b47507634e076b9ad7e1c26ab68fe68131"
+    ),
+    (54, "female", 2): (
+        "5f3af17114da8ef96a6b81bac248623324fce6782126cdd217eb371c87718281"
     ),
 }
 GERMAN_MALE_SHA256 = (

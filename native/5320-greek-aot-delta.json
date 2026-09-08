@@ -1,0 +1,391 @@
+{
+  "profile": "5320",
+  "kind": "greek-gamma-aot-delta",
+  "instruction_count": 64,
+  "instructions": [
+    {
+      "address": 2198861220,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861222,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861224,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861226,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861228,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861230,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861232,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861234,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861236,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861238,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861240,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861242,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861244,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861246,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861248,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861250,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861252,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861254,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861256,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861258,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861260,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861262,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861264,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861266,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861268,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861270,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861272,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861274,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861276,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861278,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861280,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861282,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861284,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861286,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861288,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861290,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861292,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861294,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861296,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861298,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861300,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861302,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861304,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861306,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861308,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861310,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861312,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861314,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861316,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861318,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861320,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861322,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861324,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861326,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861328,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861330,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861332,
+      "size": 4,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861336,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861338,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861340,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861342,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861344,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861346,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    },
+    {
+      "address": 2198861348,
+      "size": 2,
+      "thumb": true,
+      "phase": "speak"
+    }
+  ]
+}

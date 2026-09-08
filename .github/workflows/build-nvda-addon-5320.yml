@@ -33,6 +33,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Download frozen Test 18 firmware
+        uses: actions/download-artifact@v7
+        with:
+          name: nokiaNative5320-0.1.0-test18
+          path: build/test18-package
+          repository: hozosch/NOKIATTSNVDA
+          run-id: 33459286021
+          github-token: ${{ github.token }}
+
+      - name: Extract frozen 5320 ROM
+        shell: bash
+        run: |
+          addon=$(find build/test18-package -name '*.nvda-addon' -print -quit)
+          test -n "$addon"
+          unzip -q "$addon" data/SYM.ROM -d build/test18-addon
+
       - name: Reuse verified Test58 multilingual AOT and snapshots
         uses: actions/download-artifact@v7
         with:
@@ -49,6 +65,20 @@ jobs:
           test -n "$source"
           echo "a70e985fc0fe4e66cd4fa76aa0ad25aadae7c8207282b07634e9c87abd8867df  build/multilingual-input/snapshots/5320-3-male.snapshot" | sha256sum --check
           test "$(find build/multilingual-input/snapshots -name '*.snapshot' | wc -l)" -eq 66
+
+      - name: Add Greek gamma DSP path to reused AOT
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pypcode
+          source=$(find build/multilingual-input -name 'nokia_frontend_5320_full.c' -print -quit)
+          test -n "$source"
+          python tools/extend_split_frontend_aot.py \
+            --source "$source" \
+            --trace native/5320-greek-aot-delta.json \
+            --rom build/test18-addon/data/SYM.ROM \
+            --output "$source" \
+            --include-dsp
+          grep -q '^L_830ff5a4:$' "$source"
 
       - name: Upload multilingual AOT and snapshots
         uses: actions/upload-artifact@v6
@@ -312,7 +342,7 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: nokia-rom-pages-5320-x64-test59
+          name: nokia-rom-pages-5320-x64-test60
           path: build/native-x64/rom-pages.json
           if-no-files-found: error
 
@@ -322,7 +352,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test59' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test60' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -333,8 +363,8 @@ jobs:
           Copy-Item $snapshots.FullName "$stage/data/"
           Copy-Item build/runtime-data/5320-core.nrp "$stage/data/5320-core.nrp"
           Copy-Item build/runtime-data/5320-config.ncf "$stage/data/5320-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test59.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test59.zip build/nokiaNative5320-0.1.0-test59.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test60.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test60.zip build/nokiaNative5320-0.1.0-test60.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -360,11 +390,11 @@ jobs:
           }
           Get-Item build/addon/data/5320-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/5320-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test59.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test60.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test59
-          path: build/nokiaNative5320-0.1.0-test59.nvda-addon
+          name: nokiaNative5320-0.1.0-test60
+          path: build/nokiaNative5320-0.1.0-test60.nvda-addon
           if-no-files-found: error
