@@ -77,6 +77,8 @@ def bind(dll):
         ctypes.POINTER(Callbacks),
     ]
     dll.nokia_runtime_speak_utf16.restype = ctypes.c_int
+    dll.nokia_runtime_set_rate.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    dll.nokia_runtime_set_rate.restype = ctypes.c_int
     dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_last_error.restype = ctypes.c_int
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
@@ -85,13 +87,16 @@ def bind(dll):
     dll.nokia_runtime_rom_trace_page_used.restype = ctypes.c_int
 
 
-def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str):
+def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str, rate=1.0):
     snapshot_data, snapshot = byte_array(snapshot_path)
     runtime = dll.nokia_runtime_create_5500_snapshot(
         rom, rom_size, snapshot, len(snapshot_data)
     )
     if not runtime:
         raise RuntimeError("snapshot restore failed")
+    if not dll.nokia_runtime_set_rate(runtime, rate):
+        dll.nokia_runtime_destroy(runtime)
+        raise RuntimeError(f"setting rate {rate} failed")
     pcm = []
 
     @PCM
@@ -175,6 +180,7 @@ def main() -> None:
     failures = []
     validated_voices = 0
     extended_passed = 0
+    high_rate_passed = 0
     for language_id, sample in SAMPLES.items():
         snapshot = args.snapshot_dir / f"5500-{language_id}.snapshot"
         if not snapshot.is_file():
@@ -203,12 +209,24 @@ def main() -> None:
                 failures.append(f"{language_id} {value!r}: silent output")
                 continue
             extended_passed += 1
+        try:
+            fast = synthesize(
+                dll, rom, len(rom_data), snapshot, sample, rate=4.0
+            )
+        except Exception as error:
+            failures.append(f"{language_id} high-rate {sample!r}: {error}")
+        else:
+            if not fast or not any(fast):
+                failures.append(f"{language_id} high-rate {sample!r}: silent output")
+            else:
+                high_rate_passed += 1
 
     if args.rom_trace:
         write_rom_trace(dll, rom_data, args.rom_trace)
         print("wrote ROM trace:", args.rom_trace)
     print(f"validated voices: {validated_voices}/{len(SAMPLES)}; failures: {len(failures)}")
     print(f"extended utterances passed: {extended_passed}/{len(SAMPLES) * 27}")
+    print(f"high-rate utterances passed: {high_rate_passed}/{len(SAMPLES)}")
     if failures:
         raise SystemExit("\n".join(failures))
 
