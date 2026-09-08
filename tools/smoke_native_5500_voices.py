@@ -41,6 +41,22 @@ PCM = ctypes.CFUNCTYPE(
     ctypes.c_uint32, ctypes.c_uint32,
 )
 INDEX = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint32)
+DIAGNOSTICS = (
+    ("failedLastPc", "nokia_runtime_failed_last_pc_value"),
+    ("failedPc", "nokia_runtime_failed_pc_value"),
+    ("failedLr", "nokia_runtime_failed_lr_value"),
+    ("failedSp", "nokia_runtime_failed_sp_value"),
+    ("failedFlags", "nokia_runtime_failed_cpsr_value"),
+    ("failedBadAddress", "nokia_runtime_failed_bad_address_value"),
+    ("failedYieldPc", "nokia_runtime_failed_yield_pc_value"),
+    ("failedYieldReason", "nokia_runtime_failed_yield_reason_value"),
+    ("failedEntry", "nokia_runtime_last_entry_value"),
+    ("failedStage", "nokia_runtime_last_stage_value"),
+    ("finalLastPc", "nokia_frontend_last_pc_value"),
+    ("finalBadAddress", "nokia_frontend_bad_address_value"),
+    ("finalYieldPc", "nokia_frontend_yield_pc_value"),
+    ("finalYieldReason", "nokia_frontend_yield_reason_value"),
+)
 
 
 class Callbacks(ctypes.Structure):
@@ -81,6 +97,11 @@ def bind(dll):
     dll.nokia_runtime_set_rate.restype = ctypes.c_int
     dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_last_error.restype = ctypes.c_int
+    for _label, export in DIAGNOSTICS:
+        function = getattr(dll, export, None)
+        if function:
+            function.argtypes = []
+            function.restype = ctypes.c_uint32
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_rom_trace_page_size.restype = ctypes.c_uint32
     dll.nokia_runtime_rom_trace_page_used.argtypes = [ctypes.c_uint32]
@@ -119,8 +140,14 @@ def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str, rate=1.0):
         error = dll.nokia_runtime_last_error(runtime)
         audio = b"".join(pcm)
         if not ok or not audio or not any(audio):
+            diagnostics = ", ".join(
+                f"{label}=0x{function():08x}"
+                for label, export in DIAGNOSTICS
+                if (function := getattr(dll, export, None))
+            )
             raise RuntimeError(
                 f"synthesis result={ok}, error={error}, pcm_bytes={len(audio)}"
+                + (f", {diagnostics}" if diagnostics else "")
             )
         return audio
     finally:
