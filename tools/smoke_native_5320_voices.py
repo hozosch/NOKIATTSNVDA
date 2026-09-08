@@ -48,16 +48,31 @@ SAMPLES = {
 }
 GENDERS = ("male", "female")
 REGRESSION_SAMPLES = {
+    (3, "male"): ("Gegen", "Google"),
     (3, "female"): (
         "Zwölf Boxkämpfer jagen Viktor quer über den großen Sylter Deich.",
     ),
+    (5, "male"): ("Braille",),
+    (5, "female"): ("Braille",),
     (8, "male"): ("abcdefghijklmnopqrstuvwxyz æøå 0123456789",),
     (8, "female"): ("abcdefghijklmnopqrstuvwxyz æøå 0123456789",),
     (18, "female"): ("Pa's wijze lynx bezag vroom het fikse aquaduct.",),
 }
 REGRESSION_SHA256 = {
+    (3, "male", 1): (
+        "92cecc0850a31f57ca1a52f714545cea0bfdd44808657b20bba58bc8f8b0c0b4"
+    ),
+    (3, "male", 2): (
+        "8254bc71b3ae1dffa540882fbbf221413ebc1e1b4718154bf0f9ef1bfe74351c"
+    ),
     (3, "female", 1): (
         "4904603323b210266e78e9758747d8fd527d133c5341569b587f744536ac61e6"
+    ),
+    (5, "male", 1): (
+        "89851f72aaff955d334cdb16120dbb75966ab365e6a6ea45f024deee37db855e"
+    ),
+    (5, "female", 1): (
+        "a3bc2b5e308979409eab011c16cba7f4a0c05eb980d99eb88f30c8f7e187fbf2"
     ),
     (8, "male", 1): (
         "c25b1b0f7ab2e7c1e95e582df5900b7c6c1ac921661d483ea64fbffb4028f233"

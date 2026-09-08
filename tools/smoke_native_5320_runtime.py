@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import re
 import struct
@@ -164,11 +165,13 @@ def main() -> None:
     pcm_max_transition = [0, 0, 0]
     pcm_recent = []
     pcm_jump_windows = []
+    pcm_hash = [hashlib.sha256()]
     last_metrics = {}
     @PCM
     def on_pcm(_user, _samples, count, rate):
         if rate != 16000:
             raise RuntimeError(f'unexpected sample rate {rate}')
+        pcm_hash[0].update(ctypes.string_at(_samples, count * 2))
         if measure_pcm[0]:
             for i in range(count):
                 current = int(_samples[i])
@@ -208,7 +211,8 @@ def main() -> None:
     callbacks = Callbacks(on_pcm, on_index, None)
 
     def speak_case(label: str, value: str, runtime=None,
-                   rate: float = 1.0, measure: bool = False) -> int:
+                   rate: float = 1.0, measure: bool = False,
+                   expected_sha256: str | None = None) -> int:
         owned_runtime = runtime is None
         if owned_runtime:
             runtime = create_runtime()
@@ -226,6 +230,7 @@ def main() -> None:
         pcm_max_transition[:] = [0, 0, 0]
         pcm_recent.clear()
         pcm_jump_windows.clear()
+        pcm_hash[0] = hashlib.sha256()
         try:
             if not dll.nokia_runtime_set_rate(runtime, rate):
                 raise SystemExit(
@@ -258,6 +263,12 @@ def main() -> None:
                     f'error={error}, samples={produced}'
                     + (f', {details}' if details else '')
                 )
+            digest = pcm_hash[0].hexdigest()
+            if expected_sha256 is not None and digest != expected_sha256:
+                raise SystemExit(
+                    f'native PCM changed for {label!r}: '
+                    f'expected {expected_sha256}, got {digest}'
+                )
             if measure:
                 if pcm_jump_windows:
                     print(f'  wrap windows: {pcm_jump_windows}')
@@ -282,6 +293,20 @@ def main() -> None:
     for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ':
         speak_case(f'isolated letter {letter}', letter)
     speak_case('known crash word', 'Einstellungen')
+    speak_case(
+        'neutral German G in Gegen',
+        'Gegen',
+        expected_sha256=(
+            '92cecc0850a31f57ca1a52f714545cea0bfdd44808657b20bba58bc8f8b0c0b4'
+        ),
+    )
+    speak_case(
+        'neutral German G in Google',
+        'Google',
+        expected_sha256=(
+            '8254bc71b3ae1dffa540882fbbf221413ebc1e1b4718154bf0f9ef1bfe74351c'
+        ),
+    )
     neutral_rate = speak_case('native rate reference', 'Hallo')
     fast_rate = speak_case('native rate at 2x', 'Hallo', rate=2.0)
     slow_rate = speak_case('native rate at 0.5x', 'Hallo', rate=0.5)
