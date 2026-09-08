@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit checks for the native NVDA driver's packaged voice discovery."""
+"""Unit checks for the native NVDA driver's multi-model voice discovery."""
 from __future__ import annotations
 
 import importlib.util
@@ -121,6 +121,33 @@ class VoiceDiscoveryTest(unittest.TestCase):
             self.assertIn("5320:1-female", driver._voices)
             self.assertIn("5320:402-male", driver._voices)
             self.assertEqual("de_DE", driver._get_language())
+
+    def test_5500_voices_are_grouped_after_same_language_5320_voices(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            for language_id, _name, _locale in DRIVER._LANGUAGES:
+                for gender in DRIVER._GENDERS:
+                    (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._5500_LANGUAGE_IDS:
+                (data / f"5500-{language_id}.snapshot").write_bytes(b"x")
+            driver = self.make_driver(root)
+            self.assertEqual(71, len(driver._voices))
+            voices = list(driver._voices)
+            for language_id in sorted(DRIVER._5500_LANGUAGE_IDS):
+                self.assertEqual(
+                    [
+                        f"5320:{language_id}-male",
+                        f"5320:{language_id}-female",
+                        f"5500:{language_id}",
+                    ],
+                    [voice for voice in voices if voice.split(":", 1)[1].split("-", 1)[0] == str(language_id)],
+                )
+            self.assertEqual(
+                "German male (Nokia 5500)",
+                driver._voices["5500:3"].name,
+            )
 
     def test_test43_german_snapshot_name_remains_compatible(self):
         with tempfile.TemporaryDirectory() as temporary:

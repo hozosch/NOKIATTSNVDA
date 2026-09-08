@@ -142,17 +142,19 @@ Greek, Hebrew, Latvian, Lithuanian, Serbian, Catalan, Basque and Galician in
 addition to the previously bundled 5320 languages. All 33 have been verified
 with complete synthesis, non-zero PCM and both distinct Nokia voice variants.
 
-The native-only Test 56 build now exposes that complete set directly through
-NVDA: 33 languages with `DefaultMale` and `DefaultFemale`, while keeping the
-German male output byte-identical to Test 43. Voice snapshots are loaded on
-demand and only the active one remains in memory. Although all 66 snapshots
-occupy about 143 MB unpacked, their compressed contribution to the add-on is
-only about 0.15 MB. The multilingual runtime build is manual-only and extends
-the frozen Test 43 AOT with a reviewed 114-instruction delta instead of
-recapturing the expensive AOT corpus on ordinary pushes.
+The native-only Test 61 build exposes that complete set directly through NVDA:
+33 Nokia 5320 languages with `DefaultMale` and `DefaultFemale`, plus the Nokia
+5500's single standard voice in British English, French, German, Spanish and
+Arabic. NVDA groups voices by language and then by model, so the Nokia 5500
+variant follows the two Nokia 5320 variants for shared languages. Voice
+snapshots are loaded on demand and only the active one remains in memory.
+The verified frontend AOT, Klatt AOT and snapshots for both models are frozen;
+ordinary add-on builds compile them directly rather than recapturing the
+expensive AOT corpora.
 
-No complete RM-409 ROM is added. The expanded build reuses the existing
-compact address-preserving 5320 code pack and adds only regional speech data.
+No complete firmware ROM is added. The expanded build uses compact,
+address-preserving code packs for both the 5320 and 5500 and adds only the
+required speech data.
 DJ Graco's repository also contains working Nokia E65 and Nokia N95 8GB
 profiles with 30 languages each. Those use distinct Nokia engine builds and
 therefore require separate compact-pack and native-port validation rather than

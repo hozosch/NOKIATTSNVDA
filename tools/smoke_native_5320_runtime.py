@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-time smoke test for the standalone 5320 DLL.
+"""Build-time smoke test for a standalone Nokia native DLL.
 
 Python is only the test harness here. The DLL itself must not import Python or
 Unicorn and must synthesize PCM from its native snapshot/AOT path.
@@ -56,6 +56,7 @@ def main() -> None:
     ap.add_argument('rom', type=Path)
     ap.add_argument('snapshot', type=Path)
     ap.add_argument('data_dir', type=Path)
+    ap.add_argument('--profile', choices=('5320', '5500'), default='5320')
     ap.add_argument('--rom-trace', type=Path)
     args = ap.parse_args()
 
@@ -63,10 +64,13 @@ def main() -> None:
     dll.nokia_register_config_blob.argtypes = [ctypes.c_uint32, ctypes.c_uint32,
                                                 ctypes.c_void_p, ctypes.c_uint32]
     dll.nokia_register_config_blob.restype = ctypes.c_int
-    dll.nokia_runtime_create_5320_snapshot.argtypes = [
+    create_runtime_api = getattr(
+        dll, f'nokia_runtime_create_{args.profile}_snapshot'
+    )
+    create_runtime_api.argtypes = [
         ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
-    dll.nokia_runtime_create_5320_snapshot.restype = ctypes.c_void_p
+    create_runtime_api.restype = ctypes.c_void_p
     dll.nokia_runtime_speak_utf16.argtypes = [ctypes.c_void_p,
         ctypes.POINTER(ctypes.c_uint16), ctypes.c_uint32,
         ctypes.POINTER(Callbacks)]
@@ -113,6 +117,22 @@ def main() -> None:
         fn = optional_u32(dll, export)
         if fn:
             klatt_debug_values.append((label, fn))
+    failure_debug_values = [
+        (label, fn)
+        for label, name in (
+            ('failedLastPc', 'nokia_runtime_failed_last_pc_value'),
+            ('failedPc', 'nokia_runtime_failed_pc_value'),
+            ('failedLr', 'nokia_runtime_failed_lr_value'),
+            ('failedSp', 'nokia_runtime_failed_sp_value'),
+            ('failedFlags', 'nokia_runtime_failed_cpsr_value'),
+            ('failedBadAddress', 'nokia_runtime_failed_bad_address_value'),
+            ('failedYieldPc', 'nokia_runtime_failed_yield_pc_value'),
+            ('failedYieldReason', 'nokia_runtime_failed_yield_reason_value'),
+            ('failedEntry', 'nokia_runtime_last_entry_value'),
+            ('failedStage', 'nokia_runtime_last_stage_value'),
+        )
+        if (fn := optional_u32(dll, name)) is not None
+    ]
 
     held = []
     if args.data_dir.is_file():
@@ -144,7 +164,7 @@ def main() -> None:
     dll.nokia_runtime_rom_trace_reset()
 
     def create_runtime():
-        runtime = dll.nokia_runtime_create_5320_snapshot(
+        runtime = create_runtime_api(
             rom_ptr, len(rom_data), snap_ptr, len(snapshot_data))
         if not runtime:
             raise SystemExit('native snapshot constructor failed')
@@ -256,7 +276,8 @@ def main() -> None:
             )
             if not ok or produced <= 0:
                 details = ', '.join(
-                    f'{name}={fn():#x}' for name, fn in klatt_debug_values
+                    f'{name}={fn():#x}'
+                    for name, fn in klatt_debug_values + failure_debug_values
                 )
                 raise SystemExit(
                     f'native synthesis failed for {label!r}: '
@@ -298,14 +319,14 @@ def main() -> None:
         'Gegen',
         expected_sha256=(
             '92cecc0850a31f57ca1a52f714545cea0bfdd44808657b20bba58bc8f8b0c0b4'
-        ),
+        ) if args.profile == '5320' else None,
     )
     speak_case(
         'neutral German G in Google',
         'Google',
         expected_sha256=(
             '8254bc71b3ae1dffa540882fbbf221413ebc1e1b4718154bf0f9ef1bfe74351c'
-        ),
+        ) if args.profile == '5320' else None,
     )
     neutral_rate = speak_case('native rate reference', 'Hallo')
     fast_rate = speak_case('native rate at 2x', 'Hallo', rate=2.0)
@@ -383,10 +404,15 @@ def main() -> None:
         'https://github.com/rafatosta/zapzap, 1 week ago, 3 replies, 4 boosts, '
         '1 favorite'
     )
-    speak_case(
-        'NVDA rate 80 Mastodon prosody overlap', mastodon_text,
-        rate=nvda_rate_80,
-    )
+    # This exact English social-media corpus guards a 5320-specific prosody
+    # overlap regression.  It is not a useful completeness requirement for the
+    # older German 5500 frontend; that profile is covered by its multilingual
+    # samples and the long German block below.
+    if args.profile == '5320':
+        speak_case(
+            'NVDA rate 80 Mastodon prosody overlap', mastodon_text,
+            rate=nvda_rate_80,
+        )
     text = (
         'Dies ist der erste Satz und er prueft die schnelle Analyse. '
         'Der zweite Satz muss eine eigene, saubere Intonationskurve erhalten. '

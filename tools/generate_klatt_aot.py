@@ -146,10 +146,10 @@ NOKIA_EXPORT int nokia_klatt_generate_aot(int16_t*output,int32_t*peak,uint8_t pa
 '''
 
 
-def generate(rom_path, trace_path, output_path):
+def generate(rom_path, trace_path, output_path, flat_base=0x80000000):
     trace = json.load(open(trace_path, encoding='utf-8'))
     blob = load_rom(rom_path)
-    base = blob.packed_base
+    base = getattr(blob, 'packed_base', flat_base)
     seen = {item['address'] for item in trace['instructions']}
     # Unicorn starts its code hook eight bytes into Symbian's signed-division
     # helper after an interworking veneer. Recognise the helper by its stable
@@ -223,7 +223,8 @@ def generate(rom_path, trace_path, output_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--rom', required=True); parser.add_argument('--trace', required=True); parser.add_argument('--output', required=True)
-    args = parser.parse_args(); generate(args.rom, args.trace, args.output)
+    parser.add_argument('--rom-base', type=lambda value: int(value, 0), default=0x80000000)
+    args = parser.parse_args(); generate(args.rom, args.trace, args.output, args.rom_base)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract only previously untranslated instructions from 5320 traces."""
+"""Extract only previously untranslated instructions from Nokia traces."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ def main() -> None:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("traces", nargs="+", type=Path)
+    parser.add_argument("--profile", default="5320")
     args = parser.parse_args()
 
     source = args.source.read_text(encoding="utf-8")
@@ -24,8 +25,8 @@ def main() -> None:
     missing: dict[int, dict] = {}
     for path in args.traces:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("profile") != "5320":
-            raise ValueError(f"{path} is not a 5320 trace")
+        if payload.get("profile") != args.profile:
+            raise ValueError(f"{path} is not a {args.profile} trace")
         for item in payload.get("instructions", []):
             address = int(item["address"]) & ~1
             if address in existing:
@@ -46,7 +47,7 @@ def main() -> None:
 
     instructions = [missing[address] for address in sorted(missing)]
     payload = {
-        "profile": "5320",
+        "profile": args.profile,
         "kind": "regression-aot-delta",
         "instruction_count": len(instructions),
         "instructions": instructions,

@@ -63,6 +63,9 @@ static void put_i16(uint8_t *base, size_t offset, const int16_t *values,
 int main(void) {
     NokiaRuntime runtime;
     NokiaRuntimeCallbacks callbacks = {pcm, NULL, NULL};
+    NokiaRuntime *snapshot_runtime;
+    uint8_t minimal_snapshot[8u + SNAP_WORDS * 4u] = {0};
+    const uint8_t minimal_rom[1] = {0};
     int16_t first[1100], second[1300];
     int16_t phones[3] = {2, 19, 0};
     int16_t durations[3] = {100, 201, 66};
@@ -75,6 +78,18 @@ int main(void) {
     int16_t abrupt[128];
     uint8_t *object;
     size_t i;
+
+    memcpy(minimal_snapshot, "NK5500S1", 8u);
+    wr32(minimal_snapshot + 8u, 1u);
+    snapshot_runtime = nokia_runtime_create_5500_snapshot(
+        minimal_rom, sizeof(minimal_rom),
+        minimal_snapshot, sizeof(minimal_snapshot));
+    assert(snapshot_runtime);
+    assert(snapshot_runtime->rom_base == ROM_BASE_5500);
+    assert(!nokia_runtime_create_5320_snapshot(
+        minimal_rom, sizeof(minimal_rom),
+        minimal_snapshot, sizeof(minimal_snapshot)));
+    nokia_runtime_destroy(snapshot_runtime);
 
     for (i = 0; i < 100; ++i) first[i] = 1000;
     memset(first + 100, 0, 1000 * sizeof(*first));

@@ -1,4 +1,4 @@
-"""Experimental in-process NVDA driver for the native-only Nokia 5320 runtime."""
+"""Experimental in-process NVDA driver for native Nokia TTS runtimes."""
 
 from __future__ import annotations
 
@@ -73,11 +73,23 @@ _LANGUAGES = (
 	(402, "Galician", "gl_ES"),
 )
 _GENDERS = ("male", "female")
+_MODEL_ORDER = ("5320", "5500")
+_MODEL_VARIANTS = {
+	"5320": _GENDERS,
+	# The 5500 firmware exposes one unnamed standard voice.  Keep the legacy
+	# suffix-free ID while describing the voice as male in NVDA's UI.
+	"5500": (None,),
+}
+_5500_LANGUAGE_IDS = frozenset((1, 2, 3, 4, 37))
 _DEFAULT_VOICE = "5320:3-male"
 
 
-def _voiceId(languageId, gender):
-	return f"5320:{languageId}-{gender}"
+def _voiceId(model, languageId, variant):
+	return f"{model}:{languageId}" + (f"-{variant}" if variant else "")
+
+
+def _voiceModel(voiceId):
+	return voiceId.partition(":")[0]
 
 
 class _Callbacks(ctypes.Structure):
@@ -90,7 +102,7 @@ class _Callbacks(ctypes.Structure):
 
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
-	description = "Nokia 5320 Native (experimental)"
+	description = "Nokia 5320/5500 Native (experimental)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -110,7 +122,9 @@ class SynthDriver(BaseSynthDriver):
 			) and (
 				(root / "data" / "5320-core.nrp").is_file()
 				or (root / "data" / "SYM.ROM").is_file()
-			)
+			) and (data / "5500-3.snapshot").is_file() and (
+				data / "5500-core.nrp"
+			).is_file()
 		except Exception:
 			return False
 
@@ -120,31 +134,23 @@ class SynthDriver(BaseSynthDriver):
 		self._root = Path(__file__).resolve().parent.parent
 		self._voiceSnapshots = self._findVoiceSnapshots()
 		if not self._voiceSnapshots:
-			raise RuntimeError("No Nokia 5320 native voice snapshots were packaged")
+			raise RuntimeError("No native Nokia voice snapshots were packaged")
 		self._voices = self._buildVoiceList()
 		self._voice = (
 			_DEFAULT_VOICE
 			if _DEFAULT_VOICE in self._voices
 			else next(iter(self._voices))
 		)
-		arch = self._getProcessArchitecture()
-		dllPath = self._root / "bin" / arch / f"nokia_runtime_5320_{arch}.dll"
-		self._arch = arch
-		self._dllPath = dllPath
-		try:
-			self._dll = ctypes.CDLL(str(dllPath))
-		except OSError as error:
-			raise OSError(
-				f"Could not load the {arch} Nokia runtime for this NVDA process: {dllPath}; "
-				f"original loader error: {error!r}; winerror={getattr(error, 'winerror', None)}"
-			) from error
-		self._bindApi()
-		self._registerConfigBlobs()
-		romPath = self._root / "data" / "5320-core.nrp"
-		if not romPath.is_file():
-			romPath = self._root / "data" / "SYM.ROM"
-		self._romBytes = romPath.read_bytes()
-		self._rom = (ctypes.c_uint8 * len(self._romBytes)).from_buffer_copy(self._romBytes)
+		self._arch = self._getProcessArchitecture()
+		self._dlls = {}
+		self._dllPaths = {}
+		self._constructors = {}
+		self._diagnosticFunctions = {}
+		self._romBytes = {}
+		self._roms = {}
+		for model in _MODEL_ORDER:
+			if any(_voiceModel(voiceId) == model for voiceId in self._voiceSnapshots):
+				self._loadModel(model)
 		# Voice snapshots are about 2 MiB each. Cache only the selected one;
 		# loading all 66 would need roughly 140 MiB for almost no latency gain.
 		self._snapshotVoice = None
@@ -163,6 +169,7 @@ class SynthDriver(BaseSynthDriver):
 		self._stopEvent = threading.Event()
 		self._lock = threading.Lock()
 		self._activeRuntime = None
+		self._activeDll = None
 		self._generation = 0
 		self._thread = threading.Thread(
 			target=self._worker,
@@ -175,36 +182,44 @@ class SynthDriver(BaseSynthDriver):
 		data = self._root / "data"
 		paths = {}
 		for languageId, _name, _locale in _LANGUAGES:
-			for gender in _GENDERS:
-				voiceId = _voiceId(languageId, gender)
-				path = data / f"5320-{languageId}-{gender}.snapshot"
-				# Accept Test43's original filename as a compatibility fallback.
-				if languageId == 3 and gender == "male" and not path.is_file():
-					path = data / "5320-de-male.snapshot"
-				if path.is_file():
-					paths[voiceId] = path
+			for model in _MODEL_ORDER:
+				if model == "5500" and languageId not in _5500_LANGUAGE_IDS:
+					continue
+				for variant in _MODEL_VARIANTS[model]:
+					voiceId = _voiceId(model, languageId, variant)
+					path = data / (
+						f"{model}-{languageId}-{variant}.snapshot"
+						if variant else f"{model}-{languageId}.snapshot"
+					)
+					# Accept Test43's original filename as a compatibility fallback.
+					if model == "5320" and languageId == 3 and variant == "male" and not path.is_file():
+						path = data / "5320-de-male.snapshot"
+					if path.is_file():
+						paths[voiceId] = path
 		return paths
 
 	def _buildVoiceList(self):
 		voices = OrderedDict()
 		self._voiceLocales = {}
 		for languageId, name, locale in sorted(_LANGUAGES, key=lambda row: row[1]):
-			for gender in _GENDERS:
-				voiceId = _voiceId(languageId, gender)
-				if voiceId in self._voiceSnapshots:
-					self._voiceLocales[voiceId] = locale
-					voices[voiceId] = VoiceInfo(
-						voiceId,
-						f"{name} {gender} (Nokia 5320)",
-						locale,
-					)
+			for model in _MODEL_ORDER:
+				for variant in _MODEL_VARIANTS[model]:
+					voiceId = _voiceId(model, languageId, variant)
+					if voiceId in self._voiceSnapshots:
+						self._voiceLocales[voiceId] = locale
+						variantName = variant or "male"
+						voices[voiceId] = VoiceInfo(
+							voiceId,
+							f"{name} {variantName} (Nokia {model})",
+							locale,
+						)
 		return voices
 
 	def _loadSnapshot(self, voiceId):
 		if voiceId != self._snapshotVoice:
 			path = self._voiceSnapshots.get(voiceId)
 			if path is None:
-				raise RuntimeError(f"Nokia 5320 voice snapshot is unavailable: {voiceId}")
+				raise RuntimeError(f"Native Nokia voice snapshot is unavailable: {voiceId}")
 			self._snapshotBytes = path.read_bytes()
 			self._snapshot = (
 				ctypes.c_uint8 * len(self._snapshotBytes)
@@ -261,51 +276,76 @@ class SynthDriver(BaseSynthDriver):
 			return "arm64"
 		raise RuntimeError(f"Unsupported NVDA process architecture: 0x{machine:04x}")
 
-	def _bindApi(self):
-		self._dll.nokia_register_config_blob.argtypes = [
+	def _loadModel(self, model):
+		dllPath = self._root / "bin" / self._arch / f"nokia_runtime_{model}_{self._arch}.dll"
+		try:
+			dll = ctypes.CDLL(str(dllPath))
+		except OSError as error:
+			raise OSError(
+				f"Could not load the {self._arch} Nokia {model} runtime for this NVDA process: "
+				f"{dllPath}; original loader error: {error!r}; "
+				f"winerror={getattr(error, 'winerror', None)}"
+			) from error
+		self._dlls[model] = dll
+		self._dllPaths[model] = dllPath
+		self._bindApi(model, dll)
+		self._registerConfigBlobs(model, dll)
+		romPath = self._root / "data" / f"{model}-core.nrp"
+		if model == "5320" and not romPath.is_file():
+			romPath = self._root / "data" / "SYM.ROM"
+		romBytes = romPath.read_bytes()
+		self._romBytes[model] = romBytes
+		self._roms[model] = (
+			ctypes.c_uint8 * len(romBytes)
+		).from_buffer_copy(romBytes)
+
+	def _bindApi(self, model, dll):
+		dll.nokia_register_config_blob.argtypes = [
 			ctypes.c_uint32,
 			ctypes.c_uint32,
 			ctypes.c_void_p,
 			ctypes.c_uint32,
 		]
-		self._dll.nokia_register_config_blob.restype = ctypes.c_int
-		self._dll.nokia_clear_config_blobs.argtypes = []
-		self._dll.nokia_runtime_create_5320_snapshot.argtypes = [
+		dll.nokia_register_config_blob.restype = ctypes.c_int
+		dll.nokia_clear_config_blobs.argtypes = []
+		constructor = getattr(dll, f"nokia_runtime_create_{model}_snapshot")
+		constructor.argtypes = [
 			ctypes.POINTER(ctypes.c_uint8),
 			ctypes.c_size_t,
 			ctypes.POINTER(ctypes.c_uint8),
 			ctypes.c_size_t,
 		]
-		self._dll.nokia_runtime_create_5320_snapshot.restype = ctypes.c_void_p
-		self._dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
-		self._dll.nokia_runtime_set_rate.argtypes = [ctypes.c_void_p, ctypes.c_double]
-		self._dll.nokia_runtime_set_rate.restype = ctypes.c_int
-		self._dll.nokia_runtime_set_pitch.argtypes = [ctypes.c_void_p, ctypes.c_double]
-		self._dll.nokia_runtime_set_pitch.restype = ctypes.c_int
-		self._dll.nokia_runtime_speak_utf16.argtypes = [
+		constructor.restype = ctypes.c_void_p
+		self._constructors[model] = constructor
+		dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
+		dll.nokia_runtime_set_rate.argtypes = [ctypes.c_void_p, ctypes.c_double]
+		dll.nokia_runtime_set_rate.restype = ctypes.c_int
+		dll.nokia_runtime_set_pitch.argtypes = [ctypes.c_void_p, ctypes.c_double]
+		dll.nokia_runtime_set_pitch.restype = ctypes.c_int
+		dll.nokia_runtime_speak_utf16.argtypes = [
 			ctypes.c_void_p,
 			ctypes.POINTER(ctypes.c_uint16),
 			ctypes.c_uint32,
 			ctypes.POINTER(_Callbacks),
 		]
-		self._dll.nokia_runtime_speak_utf16.restype = ctypes.c_int
-		self._dll.nokia_runtime_cancel.argtypes = [ctypes.c_void_p]
-		self._dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
-		self._dll.nokia_runtime_last_error.restype = ctypes.c_int
+		dll.nokia_runtime_speak_utf16.restype = ctypes.c_int
+		dll.nokia_runtime_cancel.argtypes = [ctypes.c_void_p]
+		dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
+		dll.nokia_runtime_last_error.restype = ctypes.c_int
 		for export in (
 			"nokia_runtime_klatt_failure",
 			"nokia_runtime_klatt_count",
 			"nokia_runtime_klatt_gain",
 		):
-			function = getattr(self._dll, export)
+			function = getattr(dll, export)
 			function.argtypes = [ctypes.c_void_p]
 			function.restype = ctypes.c_uint32
-		self._dll.nokia_runtime_klatt_reg.argtypes = [
+		dll.nokia_runtime_klatt_reg.argtypes = [
 			ctypes.c_void_p,
 			ctypes.c_uint32,
 		]
-		self._dll.nokia_runtime_klatt_reg.restype = ctypes.c_uint32
-		self._diagnosticFunctions = {}
+		dll.nokia_runtime_klatt_reg.restype = ctypes.c_uint32
+		diagnostics = {}
 		for label, export in (
 			("klattLastPc", "nokia_klatt_last_pc"),
 			("klattLastR0", "nokia_klatt_last_r0"),
@@ -326,17 +366,18 @@ class SynthDriver(BaseSynthDriver):
 			("finalYieldPc", "nokia_frontend_yield_pc_value"),
 			("finalYieldReason", "nokia_frontend_yield_reason_value"),
 		):
-			function = getattr(self._dll, export, None)
+			function = getattr(dll, export, None)
 			if function:
 				function.argtypes = []
 				function.restype = ctypes.c_uint32
-				self._diagnosticFunctions[label] = function
+				diagnostics[label] = function
+		self._diagnosticFunctions[model] = diagnostics
 
-	def _registerConfigBlobs(self):
+	def _registerConfigBlobs(self, model, dll):
 		count = 0
-		for typeId, dataId, data, name in self._iterConfigBlobs():
+		for typeId, dataId, data, name in self._iterConfigBlobs(model):
 			buffer = ctypes.create_string_buffer(data)
-			if not self._dll.nokia_register_config_blob(
+			if not dll.nokia_register_config_blob(
 				typeId,
 				dataId,
 				buffer,
@@ -345,11 +386,13 @@ class SynthDriver(BaseSynthDriver):
 				raise RuntimeError(f"Could not register Nokia configuration {name}")
 			count += 1
 		if not count:
-			raise RuntimeError("No Nokia srsf configuration blobs were packaged")
+			raise RuntimeError(f"No Nokia {model} srsf configuration blobs were packaged")
 
-	def _iterConfigBlobs(self):
-		packPath = self._root / "data" / "5320-config.ncf"
+	def _iterConfigBlobs(self, model):
+		packPath = self._root / "data" / f"{model}-config.ncf"
 		if not packPath.is_file():
+			if model != "5320":
+				return
 			for path in sorted((self._root / "data" / "config").glob("srsf_*_*.bin")):
 				match = re.fullmatch(r"srsf_(\d+)_(\d+)\.bin", path.name, re.IGNORECASE)
 				if match:
@@ -459,8 +502,9 @@ class SynthDriver(BaseSynthDriver):
 		with self._lock:
 			self._generation += 1
 			runtime = self._activeRuntime
-		if runtime:
-			self._dll.nokia_runtime_cancel(runtime)
+			dll = self._activeDll
+		if runtime and dll:
+			dll.nokia_runtime_cancel(runtime)
 		self._player.stop()
 		while True:
 			try:
@@ -477,7 +521,8 @@ class SynthDriver(BaseSynthDriver):
 		self._requests.put(None)
 		self._thread.join(timeout=3)
 		self._player.close()
-		self._dll.nokia_clear_config_blobs()
+		for dll in self._dlls.values():
+			dll.nokia_clear_config_blobs()
 
 	def _worker(self):
 		while not self._stopEvent.is_set():
@@ -497,23 +542,26 @@ class SynthDriver(BaseSynthDriver):
 					rateFactor,
 				)
 			except Exception:
-				log.error("Native Nokia 5320 synthesis failed", exc_info=True)
+				log.error("Native Nokia synthesis failed", exc_info=True)
 
 	def _runUtterance(self, generation, voiceId, runs, indexes, rateFactor):
+		model = _voiceModel(voiceId)
+		dll = self._dlls[model]
 		snapshot, snapshotSize = self._loadSnapshot(voiceId)
-		runtime = self._dll.nokia_runtime_create_5320_snapshot(
-			self._rom,
-			len(self._romBytes),
+		runtime = self._constructors[model](
+			self._roms[model],
+			len(self._romBytes[model]),
 			snapshot,
 			snapshotSize,
 		)
 		if not runtime:
-			raise RuntimeError("Could not restore the Nokia 5320 native snapshot")
+			raise RuntimeError(f"Could not restore the Nokia {model} native snapshot")
 		with self._lock:
 			if generation != self._generation:
-				self._dll.nokia_runtime_destroy(runtime)
+				dll.nokia_runtime_destroy(runtime)
 				return
 			self._activeRuntime = runtime
+			self._activeDll = dll
 
 		def onPcm(_user, samples, sampleCount, sampleRate):
 			if sampleRate != 16000 or generation != self._generation:
@@ -528,7 +576,7 @@ class SynthDriver(BaseSynthDriver):
 		indexCallback = _IndexCallback(onIndex)
 		callbacks = _Callbacks(pcmCallback, indexCallback, None)
 		try:
-			if not self._dll.nokia_runtime_set_rate(runtime, rateFactor):
+			if not dll.nokia_runtime_set_rate(runtime, rateFactor):
 				raise RuntimeError("Native runtime rejected rate change")
 			for text, pitchFactor in runs:
 				if generation != self._generation:
@@ -536,32 +584,33 @@ class SynthDriver(BaseSynthDriver):
 				encoded = text.encode("utf-16-le")
 				units = len(encoded) // 2
 				textBuffer = (ctypes.c_uint16 * units).from_buffer_copy(encoded)
-				if not self._dll.nokia_runtime_set_pitch(runtime, pitchFactor):
+				if not dll.nokia_runtime_set_pitch(runtime, pitchFactor):
 					raise RuntimeError("Native runtime rejected pitch change")
-				ok = self._dll.nokia_runtime_speak_utf16(
+				ok = dll.nokia_runtime_speak_utf16(
 					runtime,
 					textBuffer,
 					units,
 					ctypes.byref(callbacks),
 				)
 				if not ok and generation == self._generation:
-					error = self._dll.nokia_runtime_last_error(runtime)
+					error = dll.nokia_runtime_last_error(runtime)
 					klattDiagnostics = [
-						f"klattFailure=0x{self._dll.nokia_runtime_klatt_failure(runtime):08x}",
+						f"klattFailure=0x{dll.nokia_runtime_klatt_failure(runtime):08x}",
 						*(
-							f"klattR{label}=0x{self._dll.nokia_runtime_klatt_reg(runtime, index):08x}"
+							f"klattR{label}=0x{dll.nokia_runtime_klatt_reg(runtime, index):08x}"
 							for index, label in enumerate(("0", "1", "2", "3", "Sp"))
 						),
-						f"klattCount=0x{self._dll.nokia_runtime_klatt_count(runtime):08x}",
-						f"klattGain=0x{self._dll.nokia_runtime_klatt_gain(runtime):08x}",
+						f"klattCount=0x{dll.nokia_runtime_klatt_count(runtime):08x}",
+						f"klattGain=0x{dll.nokia_runtime_klatt_gain(runtime):08x}",
 					]
 					diagnostics = ", ".join([
+						f"model={model}",
 						f"runtimeArch={self._arch}",
-						f"runtimeDll={self._dllPath.name}",
+						f"runtimeDll={self._dllPaths[model].name}",
 						*klattDiagnostics,
 						*(
 							f"{label}=0x{function():08x}"
-							for label, function in self._diagnosticFunctions.items()
+							for label, function in self._diagnosticFunctions[model].items()
 						),
 					])
 					raise RuntimeError(
@@ -577,4 +626,5 @@ class SynthDriver(BaseSynthDriver):
 			with self._lock:
 				if self._activeRuntime == runtime:
 					self._activeRuntime = None
-			self._dll.nokia_runtime_destroy(runtime)
+					self._activeDll = None
+			dll.nokia_runtime_destroy(runtime)

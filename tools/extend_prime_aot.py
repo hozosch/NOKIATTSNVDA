@@ -86,6 +86,8 @@ def emit(op, known: set[int], address: int, size: int, thumb: bool) -> list[str]
         return [assign(output, f"{value(inputs[0])} != {value(inputs[1])}")]
     if name == "INT_SLESS":
         return [assign(output, f"{signed(inputs[0])} < {signed(inputs[1])}")]
+    if name == "INT_LESS":
+        return [assign(output, f"{value(inputs[0])} < {value(inputs[1])}")]
     if name == "INT_LESSEQUAL":
         return [assign(output, f"{value(inputs[0])} <= {value(inputs[1])}")]
     if name == "BOOL_NEGATE":
@@ -98,6 +100,21 @@ def emit(op, known: set[int], address: int, size: int, thumb: bool) -> list[str]
         return [assign(output, f"nokia_sext({value(inputs[0])}, {inputs[0].size})")]
     if name == "SUBPIECE":
         return [assign(output, f"{value(inputs[0])} >> (8 * {value(inputs[1])})")]
+    if name == "LZCOUNT":
+        return [assign(output, f"nokia_lzcount({value(inputs[0])}, {inputs[0].size})")]
+    float_binary = {
+        "FLOAT_ADD": "nokia_float_add",
+        "FLOAT_SUB": "nokia_float_sub",
+        "FLOAT_MULT": "nokia_float_mult",
+        "FLOAT_DIV": "nokia_float_div",
+    }
+    if name in float_binary:
+        return [assign(
+            output,
+            f"{float_binary[name]}({value(inputs[0])}, {value(inputs[1])}, {inputs[0].size})",
+        )]
+    if name == "FLOAT_NEG":
+        return [assign(output, f"nokia_float_neg({value(inputs[0])}, {inputs[0].size})")]
     if name == "INT_CARRY":
         return [assign(output, f"nokia_carry({value(inputs[0])}, {value(inputs[1])}, {inputs[0].size})")]
     if name == "INT_SCARRY":
@@ -136,10 +153,10 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def read_rom(path: Path) -> tuple[bytes, int]:
+def read_rom(path: Path, flat_base: int = 0x80000000) -> tuple[bytes, int]:
     raw = path.read_bytes()
     if not raw.startswith(b"NKTTSROM1"):
-        return raw, 0x80000000
+        return raw, flat_base
     magic, base, logical_size, count = struct.unpack_from("<9s3xIII", raw)
     if magic != b"NKTTSROM1":
         raise ValueError("invalid compact Nokia ROM")
@@ -194,10 +211,11 @@ def collect_function(rom: bytes, rom_base: int, entry: int,
 
 def extend(source_path: Path, trace_path: Path, rom_path: Path,
            output_path: Path, repair_fallthroughs: bool = False,
-           include_dsp: bool = False) -> None:
+           include_dsp: bool = False, rom_base: int = 0x80000000,
+           default_entry: int = 0x827FAAB6) -> None:
     source = read_text(source_path)
     trace = json.loads(trace_path.read_text(encoding="utf-8"))
-    rom, rom_base = read_rom(rom_path)
+    rom, rom_base = read_rom(rom_path, rom_base)
     # This EUser type helper is normally hidden behind a Unicorn-side system
     # hook, so the instruction tracer does not see it.  Prime calls it before
     # its main frontend work; statically following its 25-instruction body is
@@ -206,6 +224,8 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
     for entry, thumb in ((0x8019FFD0, False), (0x8019F3E8, False),
                          (0x801A0CD4, False), (0x827FB6CC, False),
                          (0x827FB6AC, False), (0x8019E544, False)):
+        if not (rom_base <= entry < rom_base + len(rom)):
+            continue
         for address in collect_function(rom, rom_base, entry, thumb):
             static_modes[address] = thumb
     static_helpers = set(static_modes)
@@ -268,7 +288,7 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
     # outer native boundary and permits direct test calls.
     source = re.sub(
         r"    if\(!reg_pc\)reg_pc=UINT64_C\(\d+\);",
-        "    if(!reg_pc)reg_pc=UINT64_C(2189404854);",  # 0x827faab6
+        f"    if(!reg_pc)reg_pc=UINT64_C({default_entry});",
         source, count=1,
     )
     dispatch_marker = ("    default: goto yielded;"
@@ -384,6 +404,10 @@ def main() -> None:
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--rom", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--rom-base", type=lambda value: int(value, 0),
+                        default=0x80000000)
+    parser.add_argument("--default-entry", type=lambda value: int(value, 0),
+                        default=0x827FAAB6)
     parser.add_argument("--repair-fallthroughs", action="store_true")
     parser.add_argument(
         "--include-dsp",
@@ -395,7 +419,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     extend(args.source, args.trace, args.rom, args.output,
-           args.repair_fallthroughs, args.include_dsp)
+           args.repair_fallthroughs, args.include_dsp,
+           args.rom_base, args.default_entry)
 
 
 if __name__ == "__main__":

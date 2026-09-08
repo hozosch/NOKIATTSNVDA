@@ -1,0 +1,89 @@
+name: Prepare native Nokia 5500 frontend inputs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check profile-aware capture tools
+        shell: bash
+        run: |
+          python -m py_compile \
+            tools/build_5320_native_snapshot.py \
+            tools/collect_5320_full_lifecycle_trace.py \
+            tools/merge_5320_lifecycle_traces.py
+
+      - name: Download preserved Nokia 5500 reference engine
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://guilevi.me/nokiaKlatt-0.5.0.nvda-addon \
+            --output build/nokiaKlatt-0.5.0.nvda-addon
+          echo "e38f9ff9643e00cd99f78b9265f60b1b8fbdf08483b25f91da10f6a3a509d3a2  build/nokiaKlatt-0.5.0.nvda-addon" | sha256sum --check
+          mkdir -p build/upstream/addon
+          unzip -q build/nokiaKlatt-0.5.0.nvda-addon -d build/upstream/addon
+
+      - name: Capture all five Nokia 5500 language lifecycles
+        shell: bash
+        run: |
+          mkdir -p build/5500-input/traces
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/5500-input/traces/5500-1.json \
+            --profile 5500 --language 1 --voice "" \
+            --text "Hello world 123"
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/5500-input/traces/5500-2.json \
+            --profile 5500 --language 2 --voice "" \
+            --text "Bonjour le monde 123"
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/5500-input/traces/5500-3.json \
+            --profile 5500 --language 3 --voice "" \
+            --text "Hallo Welt 123"
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/5500-input/traces/5500-4.json \
+            --profile 5500 --language 4 --voice "" \
+            --text "Hola mundo 123"
+          python tools/collect_5320_full_lifecycle_trace.py \
+            build/upstream build/5500-input/traces/5500-37.json \
+            --profile 5500 --language 37 --voice "" \
+            --text "مرحبا بالعالم 123"
+          python tools/merge_5320_lifecycle_traces.py \
+            build/5500-input/5500-lifecycle-trace.json \
+            build/5500-input/traces/*.json \
+            --profile 5500
+
+      - name: Generate all five Nokia 5500 voice snapshots
+        shell: bash
+        run: |
+          mkdir -p build/5500-input/snapshots
+          for language in 1 2 3 4 37; do
+            python tools/build_5320_native_snapshot.py \
+              build/upstream \
+              "build/5500-input/snapshots/5500-${language}.snapshot" \
+              --profile 5500 --language "$language" --voice ""
+          done
+          python - <<'PY'
+          from pathlib import Path
+          snapshots = sorted(Path("build/5500-input/snapshots").glob("*.snapshot"))
+          if len(snapshots) != 5:
+              raise SystemExit(f"expected 5 snapshots, found {len(snapshots)}")
+          for snapshot in snapshots:
+              if snapshot.read_bytes()[:8] != b"NK5500S1":
+                  raise SystemExit(f"invalid 5500 snapshot magic: {snapshot}")
+          print("verified 5 Nokia 5500 snapshots")
+          PY
+
+      - name: Upload Nokia 5500 frontend inputs
+        uses: actions/upload-artifact@v6
+        with:
+          name: nokia-5500-native-input
+          path: build/5500-input
+          if-no-files-found: error
+          compression-level: 9

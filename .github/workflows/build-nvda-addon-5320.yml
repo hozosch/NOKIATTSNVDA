@@ -1,4 +1,4 @@
-name: Build multilingual native Nokia 5320 NVDA add-on
+name: Build multilingual native Nokia 5320 and 5500 NVDA add-on
 
 on:
   workflow_dispatch:
@@ -22,11 +22,21 @@ jobs:
           python -m py_compile \
             addon/synthDrivers/nokiaNative5320.py \
             tools/build_config_pack.py \
+            tools/collect_frontend_closure.py \
+            tools/collect_native_klatt_trace.py \
             tools/extract_5320_aot_delta.py \
+            tools/extend_aot_in_batches.py \
+            tools/extend_prime_aot.py \
             tools/extend_split_frontend_aot.py \
+            tools/filter_native_lifecycle_trace.py \
+            tools/filter_trace_to_source_labels.py \
+            tools/generate_frontend_aot_from_trace.py \
+            tools/generate_klatt_aot.py \
+            tools/make_frontend_aot_seed.py \
             tools/patch_5320_executive_calls.py \
             tools/smoke_native_5320_runtime.py \
-            tools/smoke_native_5320_voices.py
+            tools/smoke_native_5320_voices.py \
+            tools/smoke_native_5500_voices.py
 
   prepare-multilingual:
     runs-on: ubuntu-latest
@@ -226,8 +236,97 @@ jobs:
           path: build/runtime-data/5320-core.nrp
           if-no-files-found: error
 
+  arm-5500:
+    needs: [source-tests]
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Expand frozen Nokia 5500 inputs
+        shell: bash
+        run: |
+          mkdir -p build/5500 build/native-5500-arm64 build/native-5500-arm64ec
+          gzip -dc native/generated/nokia_frontend_5500_full.c.gz > build/5500/nokia_frontend_5500_full.c
+          gzip -dc native/generated/nokia_klatt_5500.c.gz > build/5500/nokia_klatt_5500.c
+          gzip -dc native/generated/5500-core.nrp.gz > build/5500/5500-core.nrp
+          gzip -dc native/generated/5500-config.ncf.gz > build/5500/5500-config.ncf
+          mkdir -p build/5500/snapshots
+          for snapshot in native/generated/5500-snapshots/*.snapshot.gz; do
+            name=$(basename "$snapshot" .gz)
+            gzip -dc "$snapshot" > "build/5500/snapshots/$name"
+          done
+          test "$(find build/5500/snapshots -name '5500-*.snapshot' | wc -l)" -eq 5
+          python tools/instrument_rom_pages.py \
+            build/5500/nokia_frontend_5500_full.c \
+            build/5500/nokia_klatt_5500.c
+          python .github/scripts/instrument_runtime_lifecycle.py native/nokia_runtime.c
+
+      - name: Build ARM64 and ARM64EC Nokia 5500 runtimes
+        shell: pwsh
+        run: |
+          & .github/scripts/enter-msvc.ps1 -Arch arm64
+          $sources = @(
+            'native/nokia_runtime.c',
+            'native/nokia_config_blobs.c',
+            'build/5500/nokia_klatt_5500.c',
+            'build/5500/nokia_frontend_5500_full.c'
+          )
+          cl /nologo /arm64EC /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /DNOKIA_CONTINUE_PROSODY=1 /LD $sources /link /MACHINE:ARM64EC /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-5500-arm64ec/nokia_runtime_5500_arm64ec.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'native Nokia 5500 ARM64EC runtime link failed' }
+          $dllBytes = [IO.File]::ReadAllBytes('build/native-5500-arm64ec/nokia_runtime_5500_arm64ec.dll')
+          $peOffset = [BitConverter]::ToInt32($dllBytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($dllBytes, $peOffset + 4)
+          if ($machine -notin @(0x8664, 0xA641, 0xA64E)) { throw "Nokia 5500 runtime machine is 0x$($machine.ToString('X4')), not ARM64EC-compatible" }
+          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /DNOKIA_CONTINUE_PROSODY=1 /LD $sources /link /MACHINE:ARM64 /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-5500-arm64/nokia_runtime_5500_arm64.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'native Nokia 5500 ARM64 runtime link failed' }
+          $dllBytes = [IO.File]::ReadAllBytes('build/native-5500-arm64/nokia_runtime_5500_arm64.dll')
+          $peOffset = [BitConverter]::ToInt32($dllBytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($dllBytes, $peOffset + 4)
+          if ($machine -ne 0xAA64) { throw "Nokia 5500 runtime machine is 0x$($machine.ToString('X4')), not ARM64" }
+
+      - name: Prepare portable x64 Python for ARM64EC verification
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://www.python.org/ftp/python/3.13.7/python-3.13.7-embed-amd64.zip \
+            --output build/python-x64.zip
+          echo "f6cca216a359be84797cabb54149ce5e062afb16cc7567eb7fc51cacb2d86b65  build/python-x64.zip" | sha256sum --check
+          mkdir -p build/python-x64
+          unzip -q build/python-x64.zip -d build/python-x64
+          echo "../../tools" >> build/python-x64/python313._pth
+
+      - name: Smoke-test ARM64EC Nokia 5500 voices
+        shell: bash
+        run: |
+          build/python-x64/python.exe tools/smoke_native_5500_voices.py \
+            build/native-5500-arm64ec/nokia_runtime_5500_arm64ec.dll \
+            build/5500/5500-core.nrp \
+            build/5500/snapshots \
+            build/5500/5500-config.ncf
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          architecture: arm64
+      - name: Smoke-test ARM64 Nokia 5500 voices
+        shell: bash
+        run: |
+          python tools/smoke_native_5500_voices.py \
+            build/native-5500-arm64/nokia_runtime_5500_arm64.dll \
+            build/5500/5500-core.nrp \
+            build/5500/snapshots \
+            build/5500/5500-config.ncf
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nokia-runtime-5500-arm-current
+          path: |
+            build/native-5500-arm64/nokia_runtime_5500_arm64.dll
+            build/native-5500-arm64ec/nokia_runtime_5500_arm64ec.dll
+          if-no-files-found: error
+
   package:
-    needs: [arm, prepare-multilingual, source-tests]
+    needs: [arm, arm-5500, prepare-multilingual, source-tests]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -266,6 +365,12 @@ jobs:
           name: nokia-runtime-5320-arm64-current
           path: build/runtime-arm64
 
+      - name: Download current Nokia 5500 ARM runtimes
+        uses: actions/download-artifact@v7
+        with:
+          name: nokia-runtime-5500-arm-current
+          path: build/runtime-5500-arm
+
       - name: Download compact 5320 TTS page container
         uses: actions/download-artifact@v7
         with:
@@ -278,6 +383,20 @@ jobs:
           python tools/build_config_pack.py \
             build/test18-addon/data/config \
             build/runtime-data/5320-config.ncf
+
+      - name: Expand frozen Nokia 5500 inputs
+        shell: bash
+        run: |
+          mkdir -p build/5500/snapshots build/runtime-data
+          gzip -dc native/generated/nokia_frontend_5500_full.c.gz > build/5500/nokia_frontend_5500_full.c
+          gzip -dc native/generated/nokia_klatt_5500.c.gz > build/5500/nokia_klatt_5500.c
+          gzip -dc native/generated/5500-core.nrp.gz > build/runtime-data/5500-core.nrp
+          gzip -dc native/generated/5500-config.ncf.gz > build/runtime-data/5500-config.ncf
+          for snapshot in native/generated/5500-snapshots/*.snapshot.gz; do
+            name=$(basename "$snapshot" .gz)
+            gzip -dc "$snapshot" > "build/5500/snapshots/$name"
+          done
+          test "$(find build/5500/snapshots -name '5500-*.snapshot' | wc -l)" -eq 5
 
       - name: Build native x86 runtime for 32-bit NVDA
         shell: pwsh
@@ -304,6 +423,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'native x86 runtime link failed' }
           $headers = dumpbin /headers build/native-x86/nokia_runtime_5320_x86.dll
           if (($headers -join "`n") -notmatch '14C machine \(x86\)') { throw 'runtime is not x86' }
+          python tools/instrument_rom_pages.py build/5500/nokia_frontend_5500_full.c build/5500/nokia_klatt_5500.c
+          if ($LASTEXITCODE -ne 0) { throw 'Nokia 5500 ROM-read instrumentation failed' }
+          $sources5500 = @('native/nokia_runtime.c','native/nokia_config_blobs.c','build/5500/nokia_klatt_5500.c','build/5500/nokia_frontend_5500_full.c')
+          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /DNOKIA_CONTINUE_PROSODY=1 /LD $sources5500 /link /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-x86/nokia_runtime_5500_x86.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'native x86 Nokia 5500 runtime link failed' }
+          $headers = dumpbin /headers build/native-x86/nokia_runtime_5500_x86.dll
+          if (($headers -join "`n") -notmatch '14C machine \(x86\)') { throw 'Nokia 5500 runtime is not x86' }
 
       - name: Build current native x64 runtime
         shell: pwsh
@@ -316,6 +442,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'native x64 runtime link failed' }
           $headers = dumpbin /headers build/native-x64/nokia_runtime_5320_x64.dll
           if (($headers -join "`n") -notmatch '8664 machine \(x64\)') { throw 'runtime is not x64' }
+          $sources5500 = @('native/nokia_runtime.c','native/nokia_config_blobs.c','build/5500/nokia_klatt_5500.c','build/5500/nokia_frontend_5500_full.c')
+          cl /nologo /O2 /Ob3 /Oi /Ot /Gy /Gw /GL /DNOKIA_CONTINUE_PROSODY=1 /LD $sources5500 /link /MACHINE:X64 /LTCG /OPT:REF /OPT:ICF "/OUT:build/native-x64/nokia_runtime_5500_x64.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'native x64 Nokia 5500 runtime link failed' }
+          $headers = dumpbin /headers build/native-x64/nokia_runtime_5500_x64.dll
+          if (($headers -join "`n") -notmatch '8664 machine \(x64\)') { throw 'Nokia 5500 runtime is not x64' }
 
       - name: Smoke-test x64 synthesis
         shell: bash
@@ -340,9 +471,24 @@ jobs:
             "$snapshots" \
             build/runtime-data/5320-config.ncf
 
+      - name: Smoke-test all five Nokia 5500 voices on x64
+        shell: bash
+        run: |
+          python tools/smoke_native_5320_runtime.py \
+            build/native-x64/nokia_runtime_5500_x64.dll \
+            build/runtime-data/5500-core.nrp \
+            build/5500/snapshots/5500-3.snapshot \
+            build/runtime-data/5500-config.ncf \
+            --profile 5500
+          python tools/smoke_native_5500_voices.py \
+            build/native-x64/nokia_runtime_5500_x64.dll \
+            build/runtime-data/5500-core.nrp \
+            build/5500/snapshots \
+            build/runtime-data/5500-config.ncf
+
       - uses: actions/upload-artifact@v6
         with:
-          name: nokia-rom-pages-5320-x64-test60
+          name: nokia-rom-pages-5320-x64-test61
           path: build/native-x64/rom-pages.json
           if-no-files-found: error
 
@@ -352,19 +498,31 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test60' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test61' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
           Copy-Item build/runtime-arm64/nokia_runtime_5320_arm64.dll "$stage/bin/arm64/"
           Copy-Item build/runtime-arm64ec/nokia_runtime_5320_arm64ec.dll "$stage/bin/arm64ec/"
+          Copy-Item build/native-x86/nokia_runtime_5500_x86.dll "$stage/bin/x86/"
+          Copy-Item build/native-x64/nokia_runtime_5500_x64.dll "$stage/bin/x64/"
+          $runtime5500Arm64 = Get-ChildItem -Recurse build/runtime-5500-arm -Filter 'nokia_runtime_5500_arm64.dll' | Select-Object -First 1
+          $runtime5500Arm64ec = Get-ChildItem -Recurse build/runtime-5500-arm -Filter 'nokia_runtime_5500_arm64ec.dll' | Select-Object -First 1
+          if (!$runtime5500Arm64 -or !$runtime5500Arm64ec) { throw 'Downloaded Nokia 5500 ARM runtimes are incomplete' }
+          Copy-Item $runtime5500Arm64.FullName "$stage/bin/arm64/"
+          Copy-Item $runtime5500Arm64ec.FullName "$stage/bin/arm64ec/"
           $snapshots = Get-ChildItem -Recurse build/multilingual-input -Filter '5320-*-*.snapshot'
           if ($snapshots.Count -ne 66) { throw "Expected 66 voice snapshots, found $($snapshots.Count)" }
           Copy-Item $snapshots.FullName "$stage/data/"
+          $snapshots5500 = Get-ChildItem build/5500/snapshots -Filter '5500-*.snapshot'
+          if ($snapshots5500.Count -ne 5) { throw "Expected 5 Nokia 5500 snapshots, found $($snapshots5500.Count)" }
+          Copy-Item $snapshots5500.FullName "$stage/data/"
           Copy-Item build/runtime-data/5320-core.nrp "$stage/data/5320-core.nrp"
           Copy-Item build/runtime-data/5320-config.ncf "$stage/data/5320-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test60.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test60.zip build/nokiaNative5320-0.1.0-test60.nvda-addon
+          Copy-Item build/runtime-data/5500-core.nrp "$stage/data/5500-core.nrp"
+          Copy-Item build/runtime-data/5500-config.ncf "$stage/data/5500-config.ncf"
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test61.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test61.zip build/nokiaNative5320-0.1.0-test61.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -376,11 +534,20 @@ jobs:
             'build/addon/bin/x64/nokia_runtime_5320_x64.dll',
             'build/addon/bin/arm64/nokia_runtime_5320_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_5320_arm64ec.dll',
+            'build/addon/bin/x86/nokia_runtime_5500_x86.dll',
+            'build/addon/bin/x64/nokia_runtime_5500_x64.dll',
+            'build/addon/bin/arm64/nokia_runtime_5500_arm64.dll',
+            'build/addon/bin/arm64ec/nokia_runtime_5500_arm64ec.dll',
             'build/addon/data/5320-1-male.snapshot',
             'build/addon/data/5320-3-male.snapshot',
             'build/addon/data/5320-402-female.snapshot',
             'build/addon/data/5320-core.nrp',
-            'build/addon/data/5320-config.ncf'
+            'build/addon/data/5320-config.ncf',
+            'build/addon/data/5500-1.snapshot',
+            'build/addon/data/5500-3.snapshot',
+            'build/addon/data/5500-37.snapshot',
+            'build/addon/data/5500-core.nrp',
+            'build/addon/data/5500-config.ncf'
           )
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "Missing package file: $path" }
@@ -388,13 +555,18 @@ jobs:
           if ((Get-ChildItem build/addon/data -Filter '5320-*-*.snapshot').Count -ne 66) {
             throw 'Packaged voice snapshot count is not 66'
           }
+          if ((Get-ChildItem build/addon/data -Filter '5500-*.snapshot').Count -ne 5) {
+            throw 'Packaged Nokia 5500 snapshot count is not 5'
+          }
           Get-Item build/addon/data/5320-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/5320-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test60.nvda-addon | Format-List Name,Length
+          Get-Item build/addon/data/5500-config.ncf | Format-List Name,Length
+          Get-Item build/addon/data/5500-core.nrp | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test61.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test60
-          path: build/nokiaNative5320-0.1.0-test60.nvda-addon
+          name: nokiaNative5320-0.1.0-test61
+          path: build/nokiaNative5320-0.1.0-test61.nvda-addon
           if-no-files-found: error

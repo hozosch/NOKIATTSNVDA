@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -35,7 +36,36 @@ def route(line: str, local: set[int]) -> str:
                 .replace("goto unsupported;", "return NOKIA_FRONTEND_UNSUPPORTED;"))
 
 
-def split_source(source: str) -> str:
+def _executive_case(call: dict) -> str:
+    address = int(call["svc_address"])
+    number = int(call["number"])
+    fast = bool(call["fast"])
+    returns_to_lr = bool(call.get("returns_to_lr", False))
+    following = address + (2 if call.get("thumb", False) else 4)
+    resume = "reg_lr" if returns_to_lr else f"UINT64_C({following})"
+    if fast and number in (1, 5, 8):
+        offset = {1: 0, 5: 4, 8: 8}[number]
+        action = (
+            "reg_r0=nokia_mem_load(&machine,"
+            f"0x{0x53000010 + offset:08x}u,4);"
+        )
+    elif fast and number in (6, 9):
+        offset = {6: 4, 9: 8}[number]
+        cell = 0x53000010 + offset
+        action = (
+            f"{{uint32_t previous=(uint32_t)nokia_mem_load(&machine,0x{cell:08x}u,4);"
+            f"if(!nokia_mem_store(&machine,0x{cell:08x}u,(uint32_t)reg_r0,4))goto unsupported;"
+            "reg_r0=previous;}"
+        )
+    else:
+        action = "reg_r0=0;"
+    return (
+        f"    case 0x{address:08x}u: {action}"
+        f"reg_pc={resume};goto dispatch;"
+    )
+
+
+def split_source(source: str, executive_calls: list[dict] | None = None) -> str:
     signature = "NOKIA_EXPORT int nokia_frontend_aot("
     function_at = source.index(signature)
     prefix = source[:function_at]
@@ -93,7 +123,11 @@ def split_source(source: str) -> str:
         "    goto L_801a0690;",
     ])
 
-    addresses = sorted(set(blocks) - EXECUTIVE)
+    executive_calls = executive_calls or []
+    executive_addresses = EXECUTIVE | {
+        int(call["svc_address"]) for call in executive_calls
+    }
+    addresses = sorted(set(blocks) - executive_addresses)
     resume_addresses = sorted({int(value) & ~1 for value in
                                re.findall(r"reg_lr=UINT64_C\((\d+)\)", label_text)})
     chunks = [addresses[index:index + CHUNK_SIZE]
@@ -191,7 +225,9 @@ static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
                 "    case 0x8019db50u: reg_r0=nokia_mem_load(&machine,0x53000010u,4);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db88u: reg_r0=nokia_mem_load(&machine,0x53000018u,4);reg_pc=reg_lr;goto dispatch;",
                 "    case 0x8019db70u: reg_r0=nokia_mem_load(&machine,0x53000014u,4);reg_pc=reg_lr;goto dispatch;",
-                "    }",
+                ])
+    out.extend(_executive_case(call) for call in executive_calls)
+    out.extend(["    }",
                 "    { uint32_t pc=(uint32_t)reg_pc&~1u; size_t lo=0,hi=sizeof(nokia_frontend_chunk_limits)/sizeof(nokia_frontend_chunk_limits[0]);",
                 "      while(lo<hi){size_t mid=lo+(hi-lo)/2;if(pc<=nokia_frontend_chunk_limits[mid])hi=mid;else lo=mid+1;}",
                 "      if(lo>=sizeof(nokia_frontend_chunks)/sizeof(nokia_frontend_chunks[0]))goto yielded;",
@@ -210,9 +246,16 @@ static uint32_t nokia_frontend_config_blob(NokiaFrontendMachine*m,
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
+    parser.add_argument("--executive-trace", type=Path)
     args = parser.parse_args()
     source = args.source.read_text(encoding="utf-8")
-    args.source.write_text(split_source(source), encoding="utf-8", newline="\n")
+    calls = []
+    if args.executive_trace:
+        payload = json.loads(args.executive_trace.read_text(encoding="utf-8"))
+        calls = payload.get("executive_calls", [])
+    args.source.write_text(
+        split_source(source, calls), encoding="utf-8", newline="\n"
+    )
 
 
 if __name__ == "__main__":

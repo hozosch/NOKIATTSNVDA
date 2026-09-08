@@ -26,10 +26,11 @@ DSP_END = 0x83102E00
 
 
 def extend(source_path: Path, trace_path: Path, rom_path: Path,
-           output_path: Path, include_dsp: bool = False) -> None:
+           output_path: Path, include_dsp: bool = False,
+           rom_base: int = 0x80000000) -> None:
     source = source_path.read_text(encoding="utf-8")
     trace = json.loads(trace_path.read_text(encoding="utf-8"))
-    rom, rom_base = read_rom(rom_path)
+    rom, rom_base = read_rom(rom_path, rom_base)
 
     existing = {
         int(value, 16)
@@ -222,6 +223,8 @@ def main() -> None:
     parser.add_argument("--rom", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--include-dsp", action="store_true")
+    parser.add_argument("--rom-base", type=lambda value: int(value, 0),
+                        default=0x80000000)
     args = parser.parse_args()
     extend(
         args.source,
@@ -229,6 +232,7 @@ def main() -> None:
         args.rom,
         args.output,
         args.include_dsp,
+        args.rom_base,
     )
 
 

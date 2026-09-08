@@ -22,13 +22,16 @@ def read_source(path: Path) -> str:
 
 def run_lifter(lifter: Path, source: Path, trace: Path, rom: Path,
                output: Path, repair: bool = False,
-               include_dsp: bool = False) -> None:
+               include_dsp: bool = False, rom_base: int = 0x80000000,
+               default_entry: int = 0x827FAAB6) -> None:
     cmd = [
         sys.executable, str(lifter),
         "--source", str(source),
         "--trace", str(trace),
         "--rom", str(rom),
         "--output", str(output),
+        "--rom-base", hex(rom_base),
+        "--default-entry", hex(default_entry),
     ]
     if repair:
         cmd.append("--repair-fallthroughs")
@@ -44,6 +47,10 @@ def main() -> None:
     ap.add_argument("--trace", type=Path, required=True)
     ap.add_argument("--rom", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--rom-base", type=lambda value: int(value, 0),
+                    default=0x80000000)
+    ap.add_argument("--default-entry", type=lambda value: int(value, 0),
+                    default=0x827FAAB6)
     ap.add_argument("--batch-size", type=int, default=700)
     ap.add_argument("--repair-fallthroughs", action="store_true")
     ap.add_argument("--include-dsp", action="store_true")
@@ -92,6 +99,8 @@ def main() -> None:
                     args.rom,
                     out_path,
                     include_dsp=args.include_dsp,
+                    rom_base=args.rom_base,
+                    default_entry=args.default_entry,
                 )
                 current = out_path
 
@@ -108,6 +117,8 @@ def main() -> None:
                 repaired,
                 repair=True,
                 include_dsp=args.include_dsp,
+                rom_base=args.rom_base,
+                default_entry=args.default_entry,
             )
             current = repaired
 

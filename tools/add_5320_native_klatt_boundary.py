@@ -5,25 +5,37 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-ENTRY = 0x830F9DB0
+ENTRIES = {
+    "5320": 0x830F9DB0,
+    "5500": 0xF845AA0C,
+}
 # Small ARM literal veneers that may be called independently of the specialised
 # Klatt entry. They only load a ROM function pointer and dispatch to it. Keeping
 # them here avoids turning them back into AOT yields when their labels overlap
 # code that is deliberately removed from the lifecycle trace.
 VENEERS = {
-    0x8310182C: 0x83101830,
-    0x83101854: 0x83101858,
-    0x8310188C: 0x83101890,
-    0x83105F48: 0x83105F4C,
-    0x83105F50: 0x83105F54,
-    0x83105F58: 0x83105F5C,
+    "5320": {
+        0x8310182C: 0x83101830,
+        0x83101854: 0x83101858,
+        0x8310188C: 0x83101890,
+        0x83105F48: 0x83105F4C,
+        0x83105F50: 0x83105F54,
+        0x83105F58: 0x83105F5C,
+    },
+    "5500": {
+        0xF8462488: 0xF846248C,
+        0xF84624A8: 0xF84624AC,
+        0xF84624E0: 0xF84624E4,
+    },
 }
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument('source', type=Path)
+    ap.add_argument('--profile', choices=sorted(ENTRIES), default='5320')
     args = ap.parse_args()
+    entry = ENTRIES[args.profile]
     text = args.source.read_text(encoding='utf-8')
 
     needle = '    uint32_t (*process)(void *, uint32_t);\n} NokiaFrontendHost;'
@@ -37,14 +49,25 @@ def main() -> None:
     anchor = ('    case 0x5200022cu: if(!host||!host->process)goto unsupported; '
               'reg_r0=host->process(host->context,(uint32_t)reg_r1);reg_pc=reg_lr;goto dispatch;')
     veneer_cases = ''
-    for pc, slot in VENEERS.items():
+    for pc, slot in VENEERS[args.profile].items():
         veneer_cases += f'''
     case 0x{pc:08x}u: {{
         uint32_t veneer=(uint32_t)nokia_mem_load(&machine,UINT64_C(0x{slot:08x}),4);
         reg_TB=(veneer&1u)!=0;reg_pc=veneer&~1u;goto dispatch;
     }}'''
-    block = anchor + veneer_cases + '''
-    case 0x830f9db0u: {
+    helper_cases = ''
+    if args.profile == '5500':
+        helper_cases = '''
+    case 0xf81b4bf8u: {
+        int32_t a=(int32_t)reg_r0,b=(int32_t)reg_r1;
+        if(!b)goto unsupported;reg_r0=(uint32_t)(a/b);reg_pc=reg_lr;goto dispatch;
+    }
+    case 0xf81b4d70u: {
+        uint32_t a=(uint32_t)reg_r0,b=(uint32_t)reg_r1;
+        if(!b)goto unsupported;reg_r0=a/b;reg_r1=a%b;reg_pc=reg_lr;goto dispatch;
+    }'''
+    block = anchor + veneer_cases + helper_cases + '''
+    case 0xKLATT_ENTRYu: {
         uint32_t kr[17]={(uint32_t)reg_r0,(uint32_t)reg_r1,(uint32_t)reg_r2,(uint32_t)reg_r3,
             (uint32_t)reg_r4,(uint32_t)reg_r5,(uint32_t)reg_r6,(uint32_t)reg_r7,
             (uint32_t)reg_r8,(uint32_t)reg_r9,(uint32_t)reg_r10,(uint32_t)reg_r11,
@@ -59,12 +82,14 @@ def main() -> None:
         reg_CY=(kr[16]>>29)&1u;reg_OV=(kr[16]>>28)&1u;
         reg_pc=reg_lr;goto dispatch;
     }'''
+    block = block.replace('KLATT_ENTRY', f'{entry:08x}')
     if anchor not in text:
         raise ValueError('observer process dispatcher case was not found')
     text = text.replace(anchor, block, 1)
     args.source.write_text(text, encoding='utf-8', newline='\n')
-    print(f'added native Klatt host boundary at {ENTRY:#x}')
-    print('added standalone ROM veneers:', ', '.join(f'{pc:#x}' for pc in VENEERS))
+    print(f'added native Klatt host boundary at {entry:#x}')
+    print('added standalone ROM veneers:',
+          ', '.join(f'{pc:#x}' for pc in VENEERS[args.profile]))
 
 
 if __name__ == '__main__':
