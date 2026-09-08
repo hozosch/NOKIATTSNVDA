@@ -33,68 +33,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Download frozen Test43 AOT source
+      - name: Reuse verified Test58 multilingual AOT and snapshots
         uses: actions/download-artifact@v7
         with:
-          name: nokia-5320-full-aot
-          path: build/full-aot
+          name: nokia-5320-multilingual-input
+          path: build/multilingual-input
           repository: hozosch/NOKIATTSNVDA
-          run-id: 33599463624
+          run-id: 34218642360
           github-token: ${{ github.token }}
 
-      - name: Download preserved Nokia 5320 engine data
+      - name: Verify reused multilingual input
         shell: bash
         run: |
-          curl --fail --location --retry 3 \
-            "https://www.dectalk.nu/Software%20and%20Manuals/Software/NVDA%20Add-ons/NVDA%202019.3%20and%20Beyond/nokiaKlatt-0.5.1.nvda-addon" \
-            --output build/nokiaKlatt-0.5.1.nvda-addon
-          echo "0082d3a3d2f11ce76c33e8a057ead29c90b80ce8c98f54b96b571d5d676764cd  build/nokiaKlatt-0.5.1.nvda-addon" | sha256sum --check
-          mkdir -p build/upstream/addon
-          unzip -q build/nokiaKlatt-0.5.1.nvda-addon -d build/upstream/addon
-
-      - name: Extend Test43 AOT with frozen multilingual paths
-        shell: bash
-        run: |
-          python -m pip install --disable-pip-version-check pypcode==4.0.0
-          source=$(find build/full-aot -name 'nokia_frontend_5320_full.c' -print -quit)
+          source=$(find build/multilingual-input -name 'nokia_frontend_5320_full.c' -print -quit)
           test -n "$source"
-          mkdir -p build/multilingual-input
-          python tools/extend_split_frontend_aot.py \
-            --source "$source" \
-            --trace native/5320-multilingual-aot-delta.json \
-            --rom build/upstream/addon/roms/5320/SYM.ROM \
-            --output build/multilingual-input/nokia_frontend_5320_full.c \
-            --include-dsp
-          python tools/extend_split_frontend_aot.py \
-            --source build/multilingual-input/nokia_frontend_5320_full.c \
-            --trace native/5320-regression-aot-delta.json \
-            --rom build/upstream/addon/roms/5320/SYM.ROM \
-            --output build/multilingual-input/nokia_frontend_5320_full_test59.c \
-            --include-dsp
-          mv build/multilingual-input/nokia_frontend_5320_full_test59.c \
-            build/multilingual-input/nokia_frontend_5320_full.c
-          python tools/patch_5320_executive_calls.py \
-            build/multilingual-input/nokia_frontend_5320_full.c
-
-      - name: Generate all 66 language and voice snapshots
-        shell: bash
-        run: |
-          python -m pip install --disable-pip-version-check \
-            --target build/reference-unicorn unicorn==2.1.4
-          export PYTHONPATH="$PWD/build/reference-unicorn${PYTHONPATH:+:$PYTHONPATH}"
-          export LIBUNICORN_PATH="$PWD/build/reference-unicorn/unicorn/lib"
-          mkdir -p build/multilingual-input/snapshots
-          languages=(1 2 3 4 5 6 7 8 9 13 14 15 16 17 18 25 26 27 28 37 42 44 45 49 54 57 67 68 78 79 93 401 402)
-          for language in "${languages[@]}"; do
-            python tools/build_5320_native_snapshot.py \
-              build/upstream \
-              "build/multilingual-input/snapshots/5320-${language}-male.snapshot" \
-              --language "$language" --voice DefaultMale
-            python tools/build_5320_native_snapshot.py \
-              build/upstream \
-              "build/multilingual-input/snapshots/5320-${language}-female.snapshot" \
-              --language "$language" --voice DefaultFemale
-          done
           echo "a70e985fc0fe4e66cd4fa76aa0ad25aadae7c8207282b07634e9c87abd8867df  build/multilingual-input/snapshots/5320-3-male.snapshot" | sha256sum --check
           test "$(find build/multilingual-input/snapshots -name '*.snapshot' | wc -l)" -eq 66
 
