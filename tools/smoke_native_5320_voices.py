@@ -47,6 +47,28 @@ SAMPLES = {
     402: "Ola mundo",
 }
 GENDERS = ("male", "female")
+REGRESSION_SAMPLES = {
+    (3, "female"): (
+        "Zwölf Boxkämpfer jagen Viktor quer über den großen Sylter Deich.",
+    ),
+    (8, "male"): ("abcdefghijklmnopqrstuvwxyz æøå 0123456789",),
+    (8, "female"): ("abcdefghijklmnopqrstuvwxyz æøå 0123456789",),
+    (18, "female"): ("Pa's wijze lynx bezag vroom het fikse aquaduct.",),
+}
+REGRESSION_SHA256 = {
+    (3, "female", 1): (
+        "4904603323b210266e78e9758747d8fd527d133c5341569b587f744536ac61e6"
+    ),
+    (8, "male", 1): (
+        "c25b1b0f7ab2e7c1e95e582df5900b7c6c1ac921661d483ea64fbffb4028f233"
+    ),
+    (8, "female", 1): (
+        "bf22320590d55b9718e7032cfbb3d3748048d4b12a1bc3448c397dd7907edb1f"
+    ),
+    (18, "female", 1): (
+        "9c50f6748fc60ad113a3abaa332d008bc7777398fb76c2efaecf395f13417f41"
+    ),
+}
 GERMAN_MALE_SHA256 = (
     "3f3e908c133f7eb26c6bb990886f3bde06a5d31e93a65dbed2bc091f6cd738ee"
 )
@@ -203,6 +225,34 @@ def main() -> None:
         female = hashes.get(f"{language_id}-female")
         if male is not None and male == female:
             failures.append(f"{language_id}: male and female PCM are identical")
+
+    for (language_id, gender), samples in REGRESSION_SAMPLES.items():
+        label = f"{language_id}-{gender}"
+        snapshot = args.snapshot_dir / f"5320-{label}.snapshot"
+        if not snapshot.is_file():
+            continue
+        for number, sample in enumerate(samples, 1):
+            regression_label = f"{label}-regression-{number}"
+            try:
+                audio = synthesize(
+                    dll, rom, len(rom_data), snapshot, sample
+                )
+            except Exception as error:
+                failures.append(f"{regression_label}: {error}")
+                continue
+            digest = hashlib.sha256(audio).hexdigest()
+            print(
+                f"{regression_label}: pcm_bytes={len(audio)} sha256={digest}"
+            )
+            expected = REGRESSION_SHA256.get(
+                (language_id, gender, number)
+            )
+            if expected is not None and digest != expected:
+                failures.append(
+                    f"{regression_label}: Unicorn reference changed: "
+                    f"expected {expected}, got {digest}"
+                )
+
     if not args.skip_reference_hash:
         actual = hashes.get("3-male")
         if actual is not None and actual != GERMAN_MALE_SHA256:

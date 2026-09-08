@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Restore missing taken edges in the traced 5320 Klatt routine.
+"""Restore missing edges in the traced 5320 Klatt routine.
 
 The build-time trace did not take two signed 16-bit saturation branches or
-one normalization-loop back edge.  The original Thumb code contains all
-three branches, so repair the generated C before compiling the native DLL.
+several voice-dependent fallthroughs.  The original Thumb code contains
+these paths, so repair the generated C before compiling the native DLL.
 """
 
 from pathlib import Path
@@ -38,6 +38,16 @@ MISSING_FALLTHROUGHS = (
         "reg_r5 = UINT64_C(1);",
         "reg_tmpNG = UINT64_C(0);",
         "reg_tmpZR = UINT64_C(0);",
+        "reg_ZR = reg_tmpZR;",
+        "reg_NG = reg_tmpNG;",
+    )),
+    # The original German-male trace only took the non-zero branch here.
+    # German and Dutch female voices can fall through to the Thumb
+    # ``movs r1, #0`` before rejoining the translated continuation.
+    (0x830FAB9E, 0x830FABA0, 0x830FABA2, (
+        "reg_r1 = UINT64_C(0);",
+        "reg_tmpNG = UINT64_C(0);",
+        "reg_tmpZR = UINT64_C(1);",
         "reg_ZR = reg_tmpZR;",
         "reg_NG = reg_tmpNG;",
     )),
@@ -138,7 +148,7 @@ def patch(path: Path) -> None:
     path.write_text(text, encoding="utf-8")
     print(
         "repaired Klatt signed-saturation, fixed-point division, comparison, "
-        "and normalization-loop edges"
+        "voice-dependent fallthrough, and normalization-loop edges"
     )
 
 
