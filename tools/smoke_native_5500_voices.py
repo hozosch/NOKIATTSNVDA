@@ -7,6 +7,7 @@ import ctypes
 import hashlib
 import json
 import re
+import string
 import struct
 from pathlib import Path
 
@@ -26,6 +27,13 @@ EXPECTED_SHA256 = {
     3: "3faa562fea3db0030bf4e9f44b59f87a2248c9a6905b3d84e2c7a4adc75dcef3",
     4: "61e871ce235714ae418c6b1d485ab9d40ae35ba24077d6d57985a94cc1ccf6ad",
     37: "3e8256f46110d5649352534a7b86e7cb2964a4af5cc5875bb0c42b329094d3db",
+}
+EXTENDED_SAMPLES = {
+    1: "Hello Google settings quotation marks.",
+    2: "À bientôt, élève, Noël, cœur.",
+    3: "Während später ÄÖÜ äöü ß.",
+    4: "Árbol, niño, corazón, pingüino.",
+    37: "1234567890",
 }
 
 PCM = ctypes.CFUNCTYPE(
@@ -165,6 +173,8 @@ def main() -> None:
 
     rom_data, rom = byte_array(args.rom)
     failures = []
+    validated_voices = 0
+    extended_passed = 0
     for language_id, sample in SAMPLES.items():
         snapshot = args.snapshot_dir / f"5500-{language_id}.snapshot"
         if not snapshot.is_file():
@@ -181,11 +191,24 @@ def main() -> None:
             failures.append(
                 f"{language_id}: expected {EXPECTED_SHA256[language_id]}, got {digest}"
             )
+        else:
+            validated_voices += 1
+        for value in (*string.ascii_uppercase, EXTENDED_SAMPLES[language_id]):
+            try:
+                extended = synthesize(dll, rom, len(rom_data), snapshot, value)
+            except Exception as error:
+                failures.append(f"{language_id} {value!r}: {error}")
+                continue
+            if not extended or not any(extended):
+                failures.append(f"{language_id} {value!r}: silent output")
+                continue
+            extended_passed += 1
 
     if args.rom_trace:
         write_rom_trace(dll, rom_data, args.rom_trace)
         print("wrote ROM trace:", args.rom_trace)
-    print(f"validated voices: {len(SAMPLES) - len(failures)}; failures: {len(failures)}")
+    print(f"validated voices: {validated_voices}/{len(SAMPLES)}; failures: {len(failures)}")
+    print(f"extended utterances passed: {extended_passed}/{len(SAMPLES) * 27}")
     if failures:
         raise SystemExit("\n".join(failures))
 

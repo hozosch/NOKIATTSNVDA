@@ -1,0 +1,9 @@
+{
+  "profile": "5500",
+  "kind": "klatt-control-flow-closure",
+  "instruction_count": 2,
+  "instructions": [
+    {"address": 4165314216, "size": 2, "thumb": true},
+    {"address": 4165314218, "size": 2, "thumb": true}
+  ]
+}
