@@ -142,7 +142,7 @@ Greek, Hebrew, Latvian, Lithuanian, Serbian, Catalan, Basque and Galician in
 addition to the previously bundled 5320 languages. All 33 have been verified
 with complete synthesis, non-zero PCM and both distinct Nokia voice variants.
 
-The native-only Test 61 build exposes that complete set directly through NVDA:
+The native-only Test 62 build exposes that complete set directly through NVDA:
 33 Nokia 5320 languages with `DefaultMale` and `DefaultFemale`, plus the Nokia
 5500's single standard voice in British English, French, German, Spanish and
 Arabic. NVDA groups voices by language and then by model, so the Nokia 5500
@@ -151,6 +151,10 @@ snapshots are loaded on demand and only the active one remains in memory.
 The verified frontend AOT, Klatt AOT and snapshots for both models are frozen;
 ordinary add-on builds compile them directly rather than recapturing the
 expensive AOT corpora.
+
+Test 62 also closes both previously untranslated outcomes of a Nokia 5500
+prime-stage list-matching routine. This keeps uncommon words and punctuation
+from yielding at `0xF8453C74` while leaving the generated PCM path unchanged.
 
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for both the 5320 and 5500 and adds only the
