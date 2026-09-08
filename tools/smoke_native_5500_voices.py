@@ -199,7 +199,7 @@ def main() -> None:
             )
         else:
             validated_voices += 1
-        for value in (*string.ascii_uppercase, EXTENDED_SAMPLES[language_id]):
+        for value in (*string.ascii_letters, EXTENDED_SAMPLES[language_id]):
             try:
                 extended = synthesize(dll, rom, len(rom_data), snapshot, value)
             except Exception as error:
@@ -225,7 +225,7 @@ def main() -> None:
         write_rom_trace(dll, rom_data, args.rom_trace)
         print("wrote ROM trace:", args.rom_trace)
     print(f"validated voices: {validated_voices}/{len(SAMPLES)}; failures: {len(failures)}")
-    print(f"extended utterances passed: {extended_passed}/{len(SAMPLES) * 27}")
+    print(f"extended utterances passed: {extended_passed}/{len(SAMPLES) * 53}")
     print(f"high-rate utterances passed: {high_rate_passed}/{len(SAMPLES)}")
     if failures:
         raise SystemExit("\n".join(failures))
