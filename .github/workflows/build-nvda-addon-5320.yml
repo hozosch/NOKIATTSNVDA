@@ -292,6 +292,8 @@ jobs:
           grep -q '^L_f844df4e:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844ed48:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844ed94:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f845347a:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f845353c:$' build/5500/nokia_frontend_5500_full.c
           python tools/instrument_rom_pages.py \
             build/5500/nokia_frontend_5500_full.c \
             build/5500/nokia_klatt_5500.c
@@ -466,6 +468,8 @@ jobs:
           grep -q '^L_f844df4e:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844ed48:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844ed94:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f845347a:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f845353c:$' build/5500/nokia_frontend_5500_full.c
 
       - name: Build native x86 runtime for 32-bit NVDA
         shell: pwsh
