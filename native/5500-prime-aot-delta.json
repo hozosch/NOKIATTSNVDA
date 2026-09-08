@@ -1,8 +1,26 @@
 {
   "profile": "5500",
   "kind": "prime-control-flow-closure",
-  "instruction_count": 3615,
+  "instruction_count": 3618,
   "instructions": [
+    {
+      "address": 4162708016,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4162708018,
+      "size": 4,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
+    {
+      "address": 4162708022,
+      "size": 2,
+      "thumb": true,
+      "source": "control-flow-closure"
+    },
     {
       "address": 4165263024,
       "size": 2,
