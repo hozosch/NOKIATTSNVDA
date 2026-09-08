@@ -307,6 +307,8 @@ jobs:
           grep -q '^L_f844fc3e:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84553de:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de230:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f81de66c:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f81de6d4:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de236:$' build/5500/nokia_frontend_5500_full.c
           python tools/instrument_rom_pages.py \
             build/5500/nokia_frontend_5500_full.c \
@@ -497,6 +499,8 @@ jobs:
           grep -q '^L_f844fc3e:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84553de:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de230:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f81de66c:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f81de6d4:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de236:$' build/5500/nokia_frontend_5500_full.c
 
       - name: Build native x86 runtime for 32-bit NVDA
