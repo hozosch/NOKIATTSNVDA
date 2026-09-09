@@ -46,6 +46,7 @@ jobs:
             tools/patch_5500_sysreset.py \
             tools/patch_e65_klatt_regressions.py \
             tools/patch_e65_frontend_regressions.py \
+            tools/package_voice_snapshots.py \
             tools/smoke_native_5320_runtime.py \
             tools/smoke_native_5320_voices.py \
             tools/smoke_native_5500_voices.py \
@@ -923,7 +924,7 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: nokia-rom-pages-5320-x64-test68
+          name: nokia-rom-pages-5320-x64-test69
           path: build/native-x64/rom-pages.json
           if-no-files-found: error
 
@@ -933,7 +934,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test68' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test69' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -955,21 +956,21 @@ jobs:
           Copy-Item $runtimeE65Arm64ec.FullName "$stage/bin/arm64ec/"
           $snapshots = Get-ChildItem -Recurse build/multilingual-input -Filter '5320-*-*.snapshot'
           if ($snapshots.Count -ne 66) { throw "Expected 66 voice snapshots, found $($snapshots.Count)" }
-          Copy-Item $snapshots.FullName "$stage/data/"
           $snapshots5500 = Get-ChildItem build/5500/snapshots -Filter '5500-*.snapshot'
           if ($snapshots5500.Count -ne 5) { throw "Expected 5 Nokia 5500 snapshots, found $($snapshots5500.Count)" }
-          Copy-Item $snapshots5500.FullName "$stage/data/"
           $snapshotsE65 = Get-ChildItem build/e65/snapshots -Filter 'e65-*.snapshot'
           if ($snapshotsE65.Count -ne 30) { throw "Expected 30 Nokia E65 snapshots, found $($snapshotsE65.Count)" }
-          Copy-Item $snapshotsE65.FullName "$stage/data/"
+          $snapshotPaths = @($snapshots.FullName) + @($snapshots5500.FullName) + @($snapshotsE65.FullName)
+          python tools/package_voice_snapshots.py --expected-count 101 "$stage/data" $snapshotPaths
+          if ($LASTEXITCODE -ne 0) { throw 'Voice snapshot compression failed' }
           Copy-Item build/runtime-data/5320-core.nrp "$stage/data/5320-core.nrp"
           Copy-Item build/runtime-data/5320-config.ncf "$stage/data/5320-config.ncf"
           Copy-Item build/runtime-data/5500-core.nrp "$stage/data/5500-core.nrp"
           Copy-Item build/runtime-data/5500-config.ncf "$stage/data/5500-config.ncf"
           Copy-Item build/runtime-data/e65-core.nrp "$stage/data/e65-core.nrp"
           Copy-Item build/runtime-data/e65-config.ncf "$stage/data/e65-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test68.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test68.zip build/nokiaNative5320-0.1.0-test68.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test69.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test69.zip build/nokiaNative5320-0.1.0-test69.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -989,45 +990,47 @@ jobs:
             'build/addon/bin/x64/nokia_runtime_e65_x64.dll',
             'build/addon/bin/arm64/nokia_runtime_e65_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_e65_arm64ec.dll',
-            'build/addon/data/5320-1-male.snapshot',
-            'build/addon/data/5320-3-male.snapshot',
-            'build/addon/data/5320-402-female.snapshot',
+            'build/addon/data/5320-1-male.snapshot.gz',
+            'build/addon/data/5320-3-male.snapshot.gz',
+            'build/addon/data/5320-402-female.snapshot.gz',
             'build/addon/data/5320-core.nrp',
             'build/addon/data/5320-config.ncf',
-            'build/addon/data/5500-1.snapshot',
-            'build/addon/data/5500-3.snapshot',
-            'build/addon/data/5500-37.snapshot',
+            'build/addon/data/5500-1.snapshot.gz',
+            'build/addon/data/5500-3.snapshot.gz',
+            'build/addon/data/5500-37.snapshot.gz',
             'build/addon/data/5500-core.nrp',
             'build/addon/data/5500-config.ncf',
-            'build/addon/data/e65-1.snapshot',
-            'build/addon/data/e65-3.snapshot',
-            'build/addon/data/e65-93.snapshot',
+            'build/addon/data/e65-1.snapshot.gz',
+            'build/addon/data/e65-3.snapshot.gz',
+            'build/addon/data/e65-93.snapshot.gz',
             'build/addon/data/e65-core.nrp',
             'build/addon/data/e65-config.ncf'
           )
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "Missing package file: $path" }
           }
-          if ((Get-ChildItem build/addon/data -Filter '5320-*-*.snapshot').Count -ne 66) {
+          if ((Get-ChildItem build/addon/data -Filter '5320-*-*.snapshot.gz').Count -ne 66) {
             throw 'Packaged voice snapshot count is not 66'
           }
-          if ((Get-ChildItem build/addon/data -Filter '5500-*.snapshot').Count -ne 5) {
+          if ((Get-ChildItem build/addon/data -Filter '5500-*.snapshot.gz').Count -ne 5) {
             throw 'Packaged Nokia 5500 snapshot count is not 5'
           }
-          if ((Get-ChildItem build/addon/data -Filter 'e65-*.snapshot').Count -ne 30) {
+          if ((Get-ChildItem build/addon/data -Filter 'e65-*.snapshot.gz').Count -ne 30) {
             throw 'Packaged Nokia E65 snapshot count is not 30'
           }
+          $snapshotBytes = (Get-ChildItem build/addon/data -Filter '*.snapshot.gz' | Measure-Object Length -Sum).Sum
+          if ($snapshotBytes -gt 1MB) { throw "Compressed snapshots are unexpectedly large: $snapshotBytes bytes" }
           Get-Item build/addon/data/5320-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/5320-core.nrp | Format-List Name,Length
           Get-Item build/addon/data/5500-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/5500-core.nrp | Format-List Name,Length
           Get-Item build/addon/data/e65-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/e65-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test68.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test69.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test68
-          path: build/nokiaNative5320-0.1.0-test68.nvda-addon
+          name: nokiaNative5320-0.1.0-test69
+          path: build/nokiaNative5320-0.1.0-test69.nvda-addon
           if-no-files-found: error

@@ -2,6 +2,7 @@
 """Unit checks for the native NVDA driver's multi-model voice discovery."""
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import queue
 import sys
@@ -189,6 +190,28 @@ class VoiceDiscoveryTest(unittest.TestCase):
                 driver._voiceSnapshots["5320:3-male"],
             )
             self.assertEqual(["5320:3-male"], list(driver._voices))
+
+    def test_compressed_snapshots_are_discovered_and_loaded_on_demand(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            snapshots = {
+                "5320:3-male": (data / "5320-3-male.snapshot.gz", b"5320-state"),
+                "5500:3": (data / "5500-3.snapshot.gz", b"5500-state"),
+                "e65:3": (data / "e65-3.snapshot.gz", b"e65-state"),
+            }
+            for path, state in snapshots.values():
+                path.write_bytes(gzip.compress(state, mtime=0))
+            driver = self.make_driver(root)
+            driver._snapshotVoice = None
+            driver._snapshotBytes = None
+            driver._snapshot = None
+            for voice_id, (path, state) in snapshots.items():
+                snapshot, size = driver._loadSnapshot(voice_id)
+                self.assertEqual(path, driver._voiceSnapshots[voice_id])
+                self.assertEqual(len(state), size)
+                self.assertEqual(state, bytes(snapshot))
 
     def test_queued_utterance_keeps_selected_voice(self):
         driver = DRIVER.SynthDriver.__new__(DRIVER.SynthDriver)

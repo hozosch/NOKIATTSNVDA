@@ -58,10 +58,11 @@ included host runtimes.
 ### First native performance milestone
 
 The complete shared Klatt waveform-generator frame routine has now been
-reconstructed as portable C and built as native Windows x64 and ARM64 code for
-the 5320, 5500, E65, 6650, 6220 and N85 families. End-to-end reference tests remain
-PCM-identical and report no ARM fallback. The full 5320 reference sentence is
-about 1.4 times faster locally.
+reconstructed as portable C for the 5320, 5500, E65, 6650, 6220 and N85
+families. Captured reference tests for those native cores remain PCM-identical
+and report no ARM fallback. The current end-to-end add-on integrates the first
+three families; the full 5320 reference sentence is about 1.4 times faster
+locally.
 
 Nokia text analysis, pronunciation and prosody preparation still execute as
 ARM32 code through Unicorn. Because most preparation for a short utterance
@@ -126,7 +127,7 @@ use the resulting native generator.
 
 ## Voices and languages
 
-The current compact build combines six working engine families:
+The source tree preserves native Klatt waveform cores for six engine families:
 
 - Nokia 5320
 - Nokia 5500
@@ -134,6 +135,11 @@ The current compact build combines six working engine families:
 - Nokia 6650
 - Nokia 6220
 - Nokia N85
+
+The current end-to-end add-on exposes the 5320, 5500 and E65. The 6650,
+6220 and N85 profile DLLs still use `native/nokia_frontend_stub.c`; their
+matching frontend firmware/data and initialized voice snapshots are not in
+this repository. A Klatt-only DLL is therefore not yet a usable NVDA voice.
 
 Test 29 expands the Nokia 5320 from 9 to 33 verified languages using the
 native RM-409 05.16 regional data preserved and documented by DJ Graco in
@@ -199,6 +205,12 @@ submitted to the Nokia 5500 or E65 voice. It includes the reported E65
 ARM64EC instruction at `0xF83FEC32`; no text substitution or language-specific
 runtime shortcut is used. Both Arabic voices are tested with Latin words and
 the complete reported runtime-error message.
+
+Test 69 stores all 101 packaged voice snapshots as deterministic gzip streams
+and decompresses only the selected voice into the existing runtime buffer.
+Uncompressed snapshot data fall from 219,727,056 to 398,770 installed bytes;
+the complete local add-on footprint falls from about 273 MB to about 54 MB.
+The driver still accepts unpacked snapshots for compatibility.
 
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for the 5320, 5500 and E65 and adds only the

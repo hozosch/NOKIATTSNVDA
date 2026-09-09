@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import gzip
 import os
 import queue
 import re
@@ -111,6 +112,13 @@ class _Callbacks(ctypes.Structure):
 	]
 
 
+def _findSnapshotPath(path):
+	if path.is_file():
+		return path
+	compressed = path.with_name(path.name + ".gz")
+	return compressed if compressed.is_file() else None
+
+
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
 	description = "Nokia 5320/5500/E65 Native (experimental)"
@@ -128,14 +136,14 @@ class SynthDriver(BaseSynthDriver):
 			root = Path(__file__).resolve().parent.parent
 			data = root / "data"
 			return (
-				(data / "5320-3-male.snapshot").is_file()
-				or (data / "5320-de-male.snapshot").is_file()
+				_findSnapshotPath(data / "5320-3-male.snapshot") is not None
+				or _findSnapshotPath(data / "5320-de-male.snapshot") is not None
 			) and (
 				(root / "data" / "5320-core.nrp").is_file()
 				or (root / "data" / "SYM.ROM").is_file()
-			) and (data / "5500-3.snapshot").is_file() and (
+			) and _findSnapshotPath(data / "5500-3.snapshot") is not None and (
 				data / "5500-core.nrp"
-			).is_file() and (data / "e65-3.snapshot").is_file() and (
+			).is_file() and _findSnapshotPath(data / "e65-3.snapshot") is not None and (
 				data / "e65-core.nrp"
 			).is_file()
 		except Exception:
@@ -165,7 +173,7 @@ class SynthDriver(BaseSynthDriver):
 			if any(_voiceModel(voiceId) == model for voiceId in self._voiceSnapshots):
 				self._loadModel(model)
 		# Voice snapshots are about 2 MiB each. Cache only the selected one;
-		# loading all 66 would need roughly 140 MiB for almost no latency gain.
+		# loading all 101 would need roughly 210 MiB for almost no latency gain.
 		self._snapshotVoice = None
 		self._snapshotBytes = None
 		self._snapshot = None
@@ -204,10 +212,11 @@ class SynthDriver(BaseSynthDriver):
 						f"{model}-{languageId}-{variant}.snapshot"
 						if variant else f"{model}-{languageId}.snapshot"
 					)
+					path = _findSnapshotPath(path)
 					# Accept Test43's original filename as a compatibility fallback.
-					if model == "5320" and languageId == 3 and variant == "male" and not path.is_file():
-						path = data / "5320-de-male.snapshot"
-					if path.is_file():
+					if model == "5320" and languageId == 3 and variant == "male" and path is None:
+						path = _findSnapshotPath(data / "5320-de-male.snapshot")
+					if path is not None:
 						paths[voiceId] = path
 		return paths
 
@@ -233,7 +242,8 @@ class SynthDriver(BaseSynthDriver):
 			path = self._voiceSnapshots.get(voiceId)
 			if path is None:
 				raise RuntimeError(f"Native Nokia voice snapshot is unavailable: {voiceId}")
-			self._snapshotBytes = path.read_bytes()
+			raw = path.read_bytes()
+			self._snapshotBytes = gzip.decompress(raw) if path.suffix == ".gz" else raw
 			self._snapshot = (
 				ctypes.c_uint8 * len(self._snapshotBytes)
 			).from_buffer_copy(self._snapshotBytes)
