@@ -249,6 +249,18 @@ L_f845b854:
     goto L_f845b856;
 """
 
+ARABIC_LATIN_DISPATCH_ANCHOR = (
+    "    case 0xf84516e2u: goto L_f84516e2;\n"
+)
+ARABIC_LATIN_DISPATCH_LINE = (
+    "    case 0xf84516e4u: goto L_f84516e4;\n"
+)
+ARABIC_LATIN_BODY_ANCHOR = "L_f84516ee:\n"
+ARABIC_LATIN_BODY = """L_f84516e4:
+    nokia_frontend_last_pc=0xf84516e4u;
+    goto L_f84516ee;
+"""
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -297,6 +309,14 @@ def main() -> None:
             LONG_ERROR_SECOND_DISPATCH_LINES,
             LONG_ERROR_SECOND_BODY_ANCHOR,
             LONG_ERROR_SECOND_BODY,
+        ),
+        (
+            "L_f84516e4:",
+            "5500 Arabic Latin-text branch",
+            ARABIC_LATIN_DISPATCH_ANCHOR,
+            ARABIC_LATIN_DISPATCH_LINE,
+            ARABIC_LATIN_BODY_ANCHOR,
+            ARABIC_LATIN_BODY,
         ),
     )
     for sentinel, name, dispatch_anchor, dispatch_lines, body_anchor, body in patches:

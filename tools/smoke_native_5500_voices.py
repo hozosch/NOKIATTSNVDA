@@ -56,6 +56,27 @@ LONG_RUNTIME_ERROR_REGRESSION = (
     "finalLastPc=0xf914e6f6, finalBadAddress=0x00000000, "
     "finalYieldPc=0xf840064c, finalYieldReason=0x00000003"
 )
+ARABIC_LATIN_RUNTIME_ERROR_REGRESSION = (
+    "RuntimeError: Native runtime error -2002; model=e65, "
+    "runtimeArch=arm64ec, runtimeDll=nokia_runtime_e65_arm64ec.dll, "
+    "klattFailure=0x00000000, klattR0=0x00000000, "
+    "klattR1=0x00000000, klattR2=0x00000000, klattR3=0x00000000, "
+    "klattRSp=0x00000000, klattCount=0x00000000, "
+    "klattGain=0x00000000, klattLastPc=0x00000000, "
+    "klattLastR0=0x00000000, klattLastR7=0x00000000, "
+    "klattBadAddress=0x00000000, failedLastPc=0xf83fec40, "
+    "failedPc=0xf83fec32, failedLr=0x00000004, failedSp=0x600fedb8, "
+    "failedFlags=0x60000000, failedBadAddress=0x00000000, "
+    "failedYieldPc=0xf83fec32, failedYieldReason=0x00000003, "
+    "failedEntry=0xf9225155, failedStage=0x00000005, "
+    "finalLastPc=0xf914e6f6, finalBadAddress=0x00000000, "
+    "finalYieldPc=0xf83fec32, finalYieldReason=0x00000003"
+)
+ARABIC_LATIN_RUNTIME_ERROR_FIRST_HALF_REGRESSION = (
+    ARABIC_LATIN_RUNTIME_ERROR_REGRESSION[
+        :len(ARABIC_LATIN_RUNTIME_ERROR_REGRESSION) // 2
+    ]
+)
 REGRESSION_SAMPLES = {
     1: ("a_b", " 1 ", "\t1\n"),
     2: ("a_b", "Ä", "Ö", "Ü", "Ä Ö Ü", "e x", " Ä ", " 1 ", "\t1\n"),
@@ -68,7 +89,14 @@ REGRESSION_SAMPLES = {
         LONG_RUNTIME_ERROR_REGRESSION,
     ),
     4: ("a_b", " 1 ", "\t1\n"),
-    37: ("a_b", "e x", " 1 ", "\t1\n"),
+    37: (
+        "a_b",
+        "e x",
+        " 1 ",
+        "\t1\n",
+        "Hello world",
+        ARABIC_LATIN_RUNTIME_ERROR_REGRESSION,
+    ),
 }
 
 PCM = ctypes.CFUNCTYPE(

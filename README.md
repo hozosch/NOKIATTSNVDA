@@ -194,6 +194,12 @@ spans are now removed before they reach its original frontend: surrounding
 supported text is still spoken, while an all-CJK utterance succeeds silently.
 This behavior is verified with every one of the 66 packaged 5320 snapshots.
 
+Test 68 adds the original Arabic frontend branches used when Latin text is
+submitted to the Nokia 5500 or E65 voice. It includes the reported E65
+ARM64EC instruction at `0xF83FEC32`; no text substitution or language-specific
+runtime shortcut is used. Both Arabic voices are tested with Latin words and
+the complete reported runtime-error message.
+
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for the 5320, 5500 and E65 and adds only the
 required speech data.

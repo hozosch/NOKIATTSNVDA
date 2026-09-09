@@ -9,6 +9,8 @@ import string
 from pathlib import Path
 
 from smoke_native_5500_voices import (
+    ARABIC_LATIN_RUNTIME_ERROR_FIRST_HALF_REGRESSION,
+    ARABIC_LATIN_RUNTIME_ERROR_REGRESSION,
     Callbacks,
     DIAGNOSTICS,
     GERMAN_SETTINGS_REGRESSION,
@@ -94,6 +96,14 @@ GERMAN_REGRESSIONS = (
     GERMAN_SETTINGS_REGRESSION,
     LONG_RUNTIME_ERROR_REGRESSION,
 )
+LANGUAGE_REGRESSIONS = {
+    3: GERMAN_REGRESSIONS,
+    37: (
+        "Hello world",
+        ARABIC_LATIN_RUNTIME_ERROR_FIRST_HALF_REGRESSION,
+        ARABIC_LATIN_RUNTIME_ERROR_REGRESSION,
+    ),
+}
 
 # These exact one-character utterances are rejected by the original E65
 # engine itself and therefore are not native-AOT coverage failures.
@@ -228,21 +238,20 @@ def main() -> None:
             validated += 1
         # Keep these before the quick-test exit: they guard the ARM64EC path
         # used by the NVDA driver, including its explicit pitch setup.
-        if language_id == 3:
-            for regression_text in GERMAN_REGRESSIONS:
-                try:
-                    regression_audio = synthesize(
-                        dll, rom, len(rom_data), snapshot, regression_text
-                    )
-                except Exception as error:
-                    failures.append(
-                        f"{language_id} {regression_text!r}: {error}"
-                    )
-                else:
-                    print(
-                        f"{language_id} {regression_text!r}: "
-                        f"pcm_bytes={len(regression_audio)}"
-                    )
+        for regression_text in LANGUAGE_REGRESSIONS.get(language_id, ()):
+            try:
+                regression_audio = synthesize(
+                    dll, rom, len(rom_data), snapshot, regression_text
+                )
+            except Exception as error:
+                failures.append(
+                    f"{language_id} {regression_text!r}: {error}"
+                )
+            else:
+                print(
+                    f"{language_id} {regression_text!r}: "
+                    f"pcm_bytes={len(regression_audio)}"
+                )
         if args.quick:
             continue
         for value in string.ascii_letters:

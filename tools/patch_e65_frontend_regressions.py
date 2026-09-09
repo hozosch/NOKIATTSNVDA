@@ -814,6 +814,39 @@ L_f8408654:
     goto L_f8408656;
 """
 
+ARABIC_LATIN_DISPATCH_ANCHOR = (
+    "    case 0xf83fe4d6u: goto L_f83fe4d6;\n"
+)
+ARABIC_LATIN_DISPATCH_LINE = (
+    "    case 0xf83fe4d8u: goto L_f83fe4d8;\n"
+)
+ARABIC_LATIN_BODY_ANCHOR = "L_f83fe4e2:\n"
+ARABIC_LATIN_BODY = """L_f83fe4d8:
+    nokia_frontend_last_pc=0xf83fe4d8u;
+    goto L_f83fe4e2;
+"""
+
+ARABIC_LATIN_ARM_DISPATCH_ANCHOR = (
+    "    case 0xf83fec30u: goto L_f83fec30;\n"
+)
+ARABIC_LATIN_ARM_DISPATCH_LINE = (
+    "    case 0xf83fec32u: goto L_f83fec32;\n"
+)
+ARABIC_LATIN_ARM_BODY_ANCHOR = "L_f83fec34:\n"
+ARABIC_LATIN_ARM_BODY = """L_f83fec32:
+    nokia_frontend_last_pc=0xf83fec32u;
+    reg_tmpCY = ((uint64_t)(nokia_carry((reg_r1 & UINT64_C(0xffffffff)), (UINT64_C(1) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_tmpOV = ((uint64_t)(nokia_scarry((reg_r1 & UINT64_C(0xffffffff)), (UINT64_C(1) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_r1 = ((uint64_t)((reg_r1 & UINT64_C(0xffffffff)) + (UINT64_C(1) & UINT64_C(0xffffffff)))) & UINT64_C(0xffffffff);
+    reg_tmpNG = ((uint64_t)(nokia_sext((reg_r1 & UINT64_C(0xffffffff)), 4) < nokia_sext((UINT64_C(0) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_tmpZR = ((uint64_t)((reg_r1 & UINT64_C(0xffffffff)) == (UINT64_C(0) & UINT64_C(0xffffffff)))) & UINT64_C(0xff);
+    reg_CY = ((uint64_t)((reg_tmpCY & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_ZR = ((uint64_t)((reg_tmpZR & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_NG = ((uint64_t)((reg_tmpNG & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_OV = ((uint64_t)((reg_tmpOV & UINT64_C(0xff)))) & UINT64_C(0xff);
+    goto L_f83fec34;
+"""
+
 
 def add_patch(
     text: str,
@@ -987,6 +1020,22 @@ def main() -> None:
             LONG_ERROR_SECOND_DISPATCH_LINES,
             LONG_ERROR_SECOND_BODY_ANCHOR,
             LONG_ERROR_SECOND_BODY,
+        ),
+        (
+            "E65 Arabic Latin-text branch",
+            "L_f83fe4d8:",
+            ARABIC_LATIN_DISPATCH_ANCHOR,
+            ARABIC_LATIN_DISPATCH_LINE,
+            ARABIC_LATIN_BODY_ANCHOR,
+            ARABIC_LATIN_BODY,
+        ),
+        (
+            "E65 Arabic Latin-text ARM branch",
+            "L_f83fec32:",
+            ARABIC_LATIN_ARM_DISPATCH_ANCHOR,
+            ARABIC_LATIN_ARM_DISPATCH_LINE,
+            ARABIC_LATIN_ARM_BODY_ANCHOR,
+            ARABIC_LATIN_ARM_BODY,
         ),
     )
     changed = False

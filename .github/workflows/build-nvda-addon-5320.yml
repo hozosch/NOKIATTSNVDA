@@ -338,6 +338,7 @@ jobs:
           grep -q '^L_f8453e50:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453f86:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453f0e:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f84516e4:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453f10:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845a3e2:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845a3f0:$' build/5500/nokia_frontend_5500_full.c
@@ -418,6 +419,8 @@ jobs:
           grep -q '^L_f8400438:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840043c:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840064c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fe4d8:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fec32:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f8400650:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f83fcaa6:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f8400d7a:$' build/e65/nokia_frontend_e65_full.c
@@ -683,6 +686,7 @@ jobs:
           grep -q '^L_f8453e50:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453f86:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453f0e:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f84516e4:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453f10:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845a3e2:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845a3f0:$' build/5500/nokia_frontend_5500_full.c
@@ -774,6 +778,8 @@ jobs:
           grep -q '^L_f8400438:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840043c:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840064c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fe4d8:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fec32:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f8400650:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f83fcaa6:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f8400d7a:$' build/e65/nokia_frontend_e65_full.c
@@ -917,7 +923,7 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: nokia-rom-pages-5320-x64-test67
+          name: nokia-rom-pages-5320-x64-test68
           path: build/native-x64/rom-pages.json
           if-no-files-found: error
 
@@ -927,7 +933,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test67' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test68' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -962,8 +968,8 @@ jobs:
           Copy-Item build/runtime-data/5500-config.ncf "$stage/data/5500-config.ncf"
           Copy-Item build/runtime-data/e65-core.nrp "$stage/data/e65-core.nrp"
           Copy-Item build/runtime-data/e65-config.ncf "$stage/data/e65-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test67.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test67.zip build/nokiaNative5320-0.1.0-test67.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test68.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test68.zip build/nokiaNative5320-0.1.0-test68.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -1017,11 +1023,11 @@ jobs:
           Get-Item build/addon/data/5500-core.nrp | Format-List Name,Length
           Get-Item build/addon/data/e65-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/e65-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test67.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test68.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test67
-          path: build/nokiaNative5320-0.1.0-test67.nvda-addon
+          name: nokiaNative5320-0.1.0-test68
+          path: build/nokiaNative5320-0.1.0-test68.nvda-addon
           if-no-files-found: error
