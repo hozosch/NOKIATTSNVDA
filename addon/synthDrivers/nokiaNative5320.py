@@ -48,6 +48,7 @@ _LANGUAGES = (
 	(7, "Danish", "da_DK"),
 	(8, "Norwegian", "nb_NO"),
 	(9, "Finnish", "fi_FI"),
+	(10, "English (US)", "en_US"),
 	(13, "Portuguese", "pt_PT"),
 	(14, "Turkish", "tr_TR"),
 	(15, "Icelandic", "is_IS"),
@@ -63,18 +64,21 @@ _LANGUAGES = (
 	(44, "Catalan", "ca_ES"),
 	(45, "Croatian", "hr_HR"),
 	(49, "Estonian", "et_EE"),
+	(51, "French (Canada)", "fr_CA"),
 	(54, "Greek", "el_GR"),
 	(57, "Hebrew", "he_IL"),
 	(67, "Latvian", "lv_LV"),
 	(68, "Lithuanian", "lt_LT"),
+	(76, "Portuguese (Brazil)", "pt_BR"),
 	(78, "Romanian", "ro_RO"),
 	(79, "Serbian", "sr_RS"),
+	(83, "Spanish (Latin America)", "es_419"),
 	(93, "Ukrainian", "uk_UA"),
 	(401, "Basque", "eu_ES"),
 	(402, "Galician", "gl_ES"),
 )
 _GENDERS = ("male", "female")
-_MODEL_ORDER = ("5320", "5500", "e65")
+_MODEL_ORDER = ("5320", "5500", "e65", "6650")
 _MODEL_VARIANTS = {
 	"5320": _GENDERS,
 	# The 5500 firmware exposes one unnamed standard voice.  Keep the legacy
@@ -82,17 +86,30 @@ _MODEL_VARIANTS = {
 	"5500": (None,),
 	# The E65 likewise exposes one unnamed standard voice per language.
 	"e65": (None,),
+	"6650": _GENDERS,
 }
+_5320_LANGUAGE_IDS = frozenset(
+	(1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 18, 25, 26, 27, 28,
+	 37, 42, 44, 45, 49, 54, 57, 67, 68, 78, 79, 93, 401, 402)
+)
 _5500_LANGUAGE_IDS = frozenset((1, 2, 3, 4, 37))
 _E65_LANGUAGE_IDS = frozenset(
 	(1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 18, 25, 26, 27, 28,
 	 37, 42, 45, 49, 54, 57, 67, 68, 78, 79, 93)
 )
+_6650_LANGUAGE_IDS = frozenset((10, 51, 76, 83))
 _MODEL_LANGUAGE_IDS = {
+	"5320": _5320_LANGUAGE_IDS,
 	"5500": _5500_LANGUAGE_IDS,
 	"e65": _E65_LANGUAGE_IDS,
+	"6650": _6650_LANGUAGE_IDS,
 }
-_MODEL_DISPLAY_NAMES = {"5320": "5320", "5500": "5500", "e65": "E65"}
+_MODEL_DISPLAY_NAMES = {
+	"5320": "5320",
+	"5500": "5500",
+	"e65": "E65",
+	"6650": "6650 Fold",
+}
 _DEFAULT_VOICE = "5320:3-male"
 
 
@@ -121,7 +138,7 @@ def _findSnapshotPath(path):
 
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
-	description = "Nokia 5320/5500/E65 Native (experimental)"
+	description = "Nokia 5320/5500/E65/6650 Native (experimental)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -145,6 +162,8 @@ class SynthDriver(BaseSynthDriver):
 				data / "5500-core.nrp"
 			).is_file() and _findSnapshotPath(data / "e65-3.snapshot") is not None and (
 				data / "e65-core.nrp"
+			).is_file() and _findSnapshotPath(data / "6650-10-male.snapshot") is not None and (
+				data / "6650-core.nrp"
 			).is_file()
 		except Exception:
 			return False
@@ -173,7 +192,7 @@ class SynthDriver(BaseSynthDriver):
 			if any(_voiceModel(voiceId) == model for voiceId in self._voiceSnapshots):
 				self._loadModel(model)
 		# Voice snapshots are about 2 MiB each. Cache only the selected one;
-		# loading all 101 would need roughly 210 MiB for almost no latency gain.
+		# loading all 109 would need roughly 227 MiB for almost no latency gain.
 		self._snapshotVoice = None
 		self._snapshotBytes = None
 		self._snapshot = None

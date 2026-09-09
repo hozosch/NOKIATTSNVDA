@@ -32,23 +32,32 @@ def main() -> None:
             r"(?m)^L_([0-9a-f]{8}):$", read_text(args.klatt_source)
         )
     }
+    outside_klatt = {
+        int(item["address"]) & ~1
+        for item in payload.get("outside_klatt_instructions", [])
+    }
     before = len(payload.get("instructions", []))
     kept = [
         item
         for item in payload.get("instructions", [])
-        if (int(item["address"]) & ~1) not in klatt
-        and (int(item["address"]) & ~1) != args.entry
+        if (int(item["address"]) & ~1) != args.entry
+        and (
+            (int(item["address"]) & ~1) not in klatt
+            or (int(item["address"]) & ~1) in outside_klatt
+        )
     ]
     payload["instructions"] = kept
     payload["instruction_count"] = len(kept)
     payload["native_klatt_entry"] = f"0x{args.entry:08x}"
     payload["klatt_labels_removed"] = before - len(kept)
+    payload["shared_klatt_labels_kept"] = len(klatt & outside_klatt)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )
     print("full lifecycle instructions:", before)
     print("native Klatt instructions removed:", before - len(kept))
+    print("shared Klatt labels kept:", len(klatt & outside_klatt))
     print("remaining frontend instructions:", len(kept))
 
 

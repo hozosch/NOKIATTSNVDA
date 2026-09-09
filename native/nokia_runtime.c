@@ -14,6 +14,7 @@
 #define STACK_BASE 0x60000000u
 #define ROM_BASE_5320 0x80000000u
 #define ROM_BASE_5500 0xF80F1000u
+#define ROM_BASE_6650 0x80000000u
 #define ROM_BASE_E65  0xF8000000u
 #define RET_MAGIC  0x7fff0000u
 #define HEAP_SIZE  0x100000u
@@ -207,10 +208,18 @@ typedef struct {
 
 static int quiet_sample(int16_t sample);
 
+typedef enum {
+    NOKIA_PROFILE_5320,
+    NOKIA_PROFILE_5500,
+    NOKIA_PROFILE_6650,
+    NOKIA_PROFILE_E65,
+} NokiaRuntimeProfile;
+
 struct NokiaRuntime {
     uint8_t *rom;
     size_t rom_size;
     uint32_t rom_base;
+    NokiaRuntimeProfile profile;
     uint8_t *heap, *vtable, *traps, *pool, *stack;
     RuntimeBlock *blocks;
     uint32_t block_count, block_capacity;
@@ -694,7 +703,8 @@ static int rt_klatt(void *ctx, uint32_t regs[17]) {
 }
 
 static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size,
-                                   uint32_t rom_base) {
+                                   uint32_t rom_base,
+                                   NokiaRuntimeProfile profile) {
     NokiaRuntime *r;
     if (!rom || !rom_size ||
         (!nokia_runtime_rom_is_flat(rom, rom_size) &&
@@ -702,6 +712,7 @@ static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size,
         return NULL;
     r = (NokiaRuntime *)calloc(1, sizeof(*r)); if (!r) return NULL;
     r->rom_base = rom_base;
+    r->profile = profile;
     r->rom = (uint8_t *)malloc(rom_size);
     r->heap = (uint8_t *)calloc(1, HEAP_SIZE);
     r->vtable = (uint8_t *)calloc(1, VT_SIZE);
@@ -722,7 +733,8 @@ static NokiaRuntime *alloc_runtime(const uint8_t *rom, size_t rom_size,
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320(
     const uint8_t *rom, size_t rom_size, const char *root,
     uint32_t language_id, uint32_t voice_id) {
-    NokiaRuntime *r = alloc_runtime(rom, rom_size, ROM_BASE_5320);
+    NokiaRuntime *r = alloc_runtime(
+        rom, rom_size, ROM_BASE_5320, NOKIA_PROFILE_5320);
     (void)root; (void)voice_id;
     if (r) { r->language_id = language_id; r->last_error = -1000; }
     return r;
@@ -731,7 +743,8 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320(
 static NokiaRuntime *create_snapshot(
     const uint8_t *rom, size_t rom_size,
     const uint8_t *s, size_t snapshot_size,
-    const uint8_t magic[8], uint32_t rom_base) {
+    const uint8_t magic[8], uint32_t rom_base,
+    NokiaRuntimeProfile profile) {
     NokiaRuntime *r;
     const uint8_t *p, *end;
     uint32_t w[SNAP_WORDS], i, regions, used, freec;
@@ -742,7 +755,7 @@ static NokiaRuntime *create_snapshot(
     regions = w[24]; used = w[25]; freec = w[26];
     if ((uint64_t)(p - s) + (uint64_t)regions * 12u +
         (uint64_t)(used + freec) * 8u > snapshot_size) return NULL;
-    r = alloc_runtime(rom, rom_size, rom_base); if (!r) return NULL;
+    r = alloc_runtime(rom, rom_size, rom_base, profile); if (!r) return NULL;
     r->language_id=w[1];r->voice_applied=w[2];r->dev=w[3];r->observer=w[4];r->style_id=w[5];
     r->scheduler_error=w[6];r->thread_data=w[7];r->scheduler=w[8];r->trap_handler=w[9];r->pool_next=w[10];
     r->dev_synthesize=w[11];r->dev_prime=w[12];r->dev_stop=w[13];r->dev_buffer_processed=w[14];
@@ -765,7 +778,8 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5320_snapshot(
     const uint8_t *s, size_t snapshot_size) {
     static const uint8_t magic[8] = {'N','K','5','3','2','0','S','1'};
     return create_snapshot(
-        rom, rom_size, s, snapshot_size, magic, ROM_BASE_5320);
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_5320,
+        NOKIA_PROFILE_5320);
 }
 
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
@@ -773,7 +787,17 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
     const uint8_t *s, size_t snapshot_size) {
     static const uint8_t magic[8] = {'N','K','5','5','0','0','S','1'};
     return create_snapshot(
-        rom, rom_size, s, snapshot_size, magic, ROM_BASE_5500);
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_5500,
+        NOKIA_PROFILE_5500);
+}
+
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_6650_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *s, size_t snapshot_size) {
+    static const uint8_t magic[8] = {'N','K','6','6','5','0','S','1'};
+    return create_snapshot(
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_6650,
+        NOKIA_PROFILE_6650);
 }
 
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(
@@ -781,7 +805,8 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(
     const uint8_t *s, size_t snapshot_size) {
     static const uint8_t magic[8] = {'N','K','E','6','5','S','0','1'};
     return create_snapshot(
-        rom, rom_size, s, snapshot_size, magic, ROM_BASE_E65);
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_E65,
+        NOKIA_PROFILE_E65);
 }
 
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *r) {
@@ -1293,7 +1318,7 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
        engine abort the complete utterance. Drop only those spans; supported
        surrounding text is still spoken, while all-CJK input succeeds without
        producing audio. */
-    if(r->rom_base==ROM_BASE_5320){
+    if(r->profile==NOKIA_PROFILE_5320){
         for(i=0;i<len;++i){
             uint32_t codepoint=text[i],units=1u;
             if(codepoint>=0xd800u&&codepoint<=0xdbffu&&i+1u<len&&
@@ -1321,7 +1346,7 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
        though the opposite-case spelling synthesizes normally.  Apply the
        case change only to whitespace-delimited one-character tokens, so
        ordinary words and their pronunciation remain untouched. */
-    if(r->rom_base==ROM_BASE_5500){
+    if(r->profile==NOKIA_PROFILE_5500){
         for(i=0;i<len;++i){
             uint16_t replacement=0;
             int isolated=(i==0u||text_space16(text[i-1u]))&&

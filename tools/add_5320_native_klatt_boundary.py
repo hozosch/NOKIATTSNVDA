@@ -8,6 +8,7 @@ from pathlib import Path
 ENTRIES = {
     "5320": 0x830F9DB0,
     "5500": 0xF845AA0C,
+    "6650": 0x82A62400,
     "e65": 0xF840780C,
 }
 # Small ARM literal veneers that may be called independently of the specialised
@@ -28,6 +29,7 @@ VENEERS = {
         0xF84624A8: 0xF84624AC,
         0xF84624E0: 0xF84624E4,
     },
+    "6650": {},
     "e65": {
         0xF840F288: 0xF840F28C,
         0xF840F2A8: 0xF840F2AC,

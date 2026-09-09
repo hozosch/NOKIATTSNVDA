@@ -1,0 +1,26 @@
+{
+  "profile": "6650",
+  "kind": "native-klatt-control-flow-delta",
+  "entry": 2191926272,
+  "reason": "The native pitch control can take the signed clamp branch at 0x82a62864 even though all neutral reference frames fall through it.",
+  "instructions": [
+    {
+      "address": 2191927420,
+      "size": 2,
+      "thumb": true,
+      "source": "pitch-clamp-alternative"
+    },
+    {
+      "address": 2191927422,
+      "size": 2,
+      "thumb": true,
+      "source": "pitch-clamp-alternative"
+    },
+    {
+      "address": 2191927424,
+      "size": 2,
+      "thumb": true,
+      "source": "pitch-clamp-alternative"
+    }
+  ]
+}

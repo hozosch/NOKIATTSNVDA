@@ -5,12 +5,20 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 import pypcode
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'synthDrivers'))
-from _nokia.harness.romrun import load_rom
+try:
+    from _nokia.harness.romrun import load_rom
+except ImportError:
+    # AOT generation itself only needs random access to the ROM bytes. Keep
+    # it usable in the native-only source tree, where the Unicorn reference
+    # package is intentionally absent.
+    def load_rom(path):
+        return Path(path).read_bytes()
 
 
 def cname(v):

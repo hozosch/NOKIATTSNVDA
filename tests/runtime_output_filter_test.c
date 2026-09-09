@@ -89,13 +89,24 @@ int main(void) {
         minimal_snapshot, sizeof(minimal_snapshot));
     assert(snapshot_runtime);
     assert(snapshot_runtime->rom_base == ROM_BASE_5500);
+    assert(snapshot_runtime->profile == NOKIA_PROFILE_5500);
     assert(!nokia_runtime_create_5320_snapshot(
         minimal_rom, sizeof(minimal_rom),
         minimal_snapshot, sizeof(minimal_snapshot)));
     nokia_runtime_destroy(snapshot_runtime);
 
+    memcpy(minimal_snapshot, "NK6650S1", 8u);
+    snapshot_runtime = nokia_runtime_create_6650_snapshot(
+        minimal_rom, sizeof(minimal_rom),
+        minimal_snapshot, sizeof(minimal_snapshot));
+    assert(snapshot_runtime);
+    assert(snapshot_runtime->rom_base == ROM_BASE_5320);
+    assert(snapshot_runtime->profile == NOKIA_PROFILE_6650);
+    nokia_runtime_destroy(snapshot_runtime);
+
     memset(&runtime, 0, sizeof(runtime));
     runtime.rom_base = ROM_BASE_5320;
+    runtime.profile = NOKIA_PROFILE_5320;
     runtime.dev = 1u;
     assert(nokia_runtime_speak_utf16(
         &runtime, cjk_only, 5u, &callbacks));

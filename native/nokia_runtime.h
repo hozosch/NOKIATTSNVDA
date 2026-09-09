@@ -45,6 +45,12 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
     const uint8_t *rom, size_t rom_size,
     const uint8_t *snapshot, size_t snapshot_size);
 
+/* The 6650 is a Symbian 9.3 FP2 profile with the same host-memory layout and
+   ROM base as the 5320, but a distinct frontend and Klatt engine build. */
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_6650_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *snapshot, size_t snapshot_size);
+
 /* The E65 snapshot contains its ROFS-resident speech device after build-time
    binding; the shipped native runtime therefore needs no E32 loader. */
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(

@@ -56,7 +56,13 @@ def main() -> None:
     ap.add_argument('rom', type=Path)
     ap.add_argument('snapshot', type=Path)
     ap.add_argument('data_dir', type=Path)
-    ap.add_argument('--profile', choices=('5320', '5500', 'e65'), default='5320')
+    ap.add_argument(
+        '--profile', choices=('5320', '5500', '6650', 'e65'), default='5320'
+    )
+    ap.add_argument(
+        '--quick-text', action='append',
+        help='synthesize only this text (repeatable) instead of the full suite',
+    )
     ap.add_argument('--rom-trace', type=Path)
     args = ap.parse_args()
 
@@ -230,6 +236,24 @@ def main() -> None:
         pass
     callbacks = Callbacks(on_pcm, on_index, None)
 
+    def current_debug_details() -> str:
+        detail_values = []
+        for name, function in (
+            ('firstUnsupported', first_unsupported),
+            ('lastPc', last_pc),
+            ('badAddress', bad_address),
+            ('yieldPc', yield_pc),
+            ('yieldReason', yield_reason),
+            ('yieldCount', yield_count),
+        ):
+            if function is not None:
+                detail_values.append(f'{name}={function():#x}')
+        detail_values.extend(
+            f'{name}={fn():#x}'
+            for name, fn in klatt_debug_values + failure_debug_values
+        )
+        return ', '.join(detail_values)
+
     def speak_case(label: str, value: str, runtime=None,
                    rate: float = 1.0, measure: bool = False,
                    expected_sha256: str | None = None) -> int:
@@ -260,9 +284,11 @@ def main() -> None:
                 runtime, words, len(words), ctypes.byref(callbacks))
             error = dll.nokia_runtime_last_error(runtime)
             produced = samples[0] - samples_before
+            digest = pcm_hash[0].hexdigest()
             print(
                 f'native case {label!r}: result={ok} error={error} '
-                f'pcm callbacks={calls[0] - calls_before} samples={produced}'
+                f'pcm callbacks={calls[0] - calls_before} samples={produced} '
+                f'sha256={digest}'
                 + (
                     f' maxDelta={pcm_max_delta[0]} '
                     f'maxAbs={pcm_max_absolute[0]} '
@@ -274,17 +300,15 @@ def main() -> None:
                     if measure else ''
                 )
             )
+            if error:
+                print(f'  diagnostics: {current_debug_details()}')
             if not ok or produced <= 0:
-                details = ', '.join(
-                    f'{name}={fn():#x}'
-                    for name, fn in klatt_debug_values + failure_debug_values
-                )
+                details = current_debug_details()
                 raise SystemExit(
                     f'native synthesis failed for {label!r}: '
                     f'error={error}, samples={produced}'
                     + (f', {details}' if details else '')
                 )
-            digest = pcm_hash[0].hexdigest()
             if expected_sha256 is not None and digest != expected_sha256:
                 raise SystemExit(
                     f'native PCM changed for {label!r}: '
@@ -307,6 +331,16 @@ def main() -> None:
             measure_pcm[0] = False
             if owned_runtime:
                 dll.nokia_runtime_destroy(runtime)
+
+    if args.quick_text:
+        runtime = create_runtime()
+        try:
+            for index, value in enumerate(args.quick_text, 1):
+                speak_case(f'quick text {index}', value, runtime=runtime)
+        finally:
+            dll.nokia_runtime_destroy(runtime)
+        print('native quick-text smoke passed')
+        return
 
     # Exercise the letter-name path one character at a time. Embedding the
     # alphabet in a sentence does not use the same Nokia frontend branch and

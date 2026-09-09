@@ -1,7 +1,9 @@
 # NOKIATTSNVDA
 
-NOKIATTSNVDA is an experimental NVDA synthesizer project based on Guillem
-Leon's **nokiaKlatt 0.5.0** add-on, originally announced as
+NOKIATTSNVDA is the current working name of an experimental, cross-interface
+Nokia TTS preservation and native-porting project. NVDA is the first supported
+interface; SAPI5 and Android integrations are planned on top of the same core.
+The project is based on Guillem Leon's **nokiaKlatt 0.5.0** add-on, originally announced as
 ["Nokia TTS on NVDA"](https://dragonscave.space/@guilevi/117146263625498595)
 and distributed from
 [guilevi.me](https://guilevi.me/nokiaKlatt-0.5.0.nvda-addon).
@@ -18,8 +20,8 @@ small, responsive NVDA synthesizer that:
 
 - preserves the characteristic Nokia pronunciation, prosody and formant voices;
 - executes the time-critical Klatt/DSP synthesis path as native Windows code;
-- supports both Intel/AMD x64 and Windows ARM64;
-- eventually needs no Symbian ROM, ARM32 emulation, Unicorn or embedded Python;
+- supports Windows x86, x64, ARM64 and ARM64EC;
+- needs no complete Symbian ROM, ARM32 emulator, Unicorn or embedded Python at runtime;
 - starts producing audio with screen-reader-friendly latency;
 - cancels reliably during rapid navigation;
 - loads languages and voices from separate, manifest-driven data packages;
@@ -31,100 +33,32 @@ synthesizer would be fast, but would not necessarily retain the Nokia sound.
 The emulated engine is therefore kept as a reference while the native
 implementation is developed and compared against its parameters and PCM.
 
-## Current status: accelerated hybrid build
+## Current status: native-only Test 71 candidate
 
-The current test series is an accelerated hybrid build. It is **not yet a
-fully native reimplementation of the Nokia speech engine**.
+Normal synthesis now runs entirely in compiled Windows DLLs. Unicorn remains a
+development-time reference for capturing and validating new phone profiles,
+but it is not shipped and is never used as a runtime fallback.
 
-| Component | Current implementation | Intended final implementation |
+| Component | Current implementation | Next target |
 |---|---|---|
-| NVDA driver and audio streaming | Native NVDA/Python host code | Native NVDA integration |
-| Complete phone ROMs | Removed | Not required |
-| TTS code and data | Compact address-preserving TTS packs | Data-only voice packages |
-| Text analysis and pronunciation | Nokia ARM32 code through Unicorn | Portable native frontend |
-| Prosody generation | Nokia ARM32 planning with native duration-field control | Portable native frontend |
-| Klatt waveform generation | Bit-exact native x64/ARM64 code for all six bundled families | Portable native core |
-| Resampling | Native x64/ARM64 | Portable native core |
-| Rate and pitch | Native Nokia duration fields and Klatt F0 parameters in the Test 30 candidate | Fully native controls |
-| Windows ARM host | Native ARM64 helper process | Native ARM64 library/process |
-| Intel/AMD host | In-process x64 Unicorn | Native x64 library/process |
+| Interfaces | NVDA synth driver | SAPI5 and Android on the shared core |
+| Complete phone ROMs | Removed | Remain unnecessary |
+| Runtime TTS code | Small address-preserving code-page packs | Eventually data-only voice packages |
+| Text analysis and pronunciation | Original Nokia logic lifted to portable C | Optimise verified hot loops, then progressively decode it |
+| Prosody and Klatt synthesis | Native duration/F0 control and bit-exact portable C | Preserve exact output across every added model |
+| Architectures | x86, x64, ARM64 and ARM64EC DLLs | Keep one feature set on every architecture |
+| Volume | Not yet exposed | Compare streaming PCM gain with any usable native control |
 
-Six full phone ROMs have already been replaced by small `TTS.PAK` files.
-These contain only the address-preserving code pages reached by TTS, together
-with the external speech-resource files that the engines actually open. This
-reduces the add-on from well over 100 MB to roughly 12–17 MB, depending on the
-included host runtimes.
+Rate is applied to Nokia's phoneme durations and prosody timelines before
+waveform generation; pitch scales the per-frame F0 parameter. Neither control
+post-processes completed audio. The reverse-engineering evidence is recorded
+in [`docs/NATIVE-PROSODY-CONTROLS.md`](docs/NATIVE-PROSODY-CONTROLS.md).
 
-### First native performance milestone
-
-The complete shared Klatt waveform-generator frame routine has now been
-reconstructed as portable C for the 5320, 5500, E65, 6650, 6220 and N85
-families. Captured reference tests for those native cores remain PCM-identical
-and report no ARM fallback. The current end-to-end add-on integrates the first
-three families; the full 5320 reference sentence is about 1.4 times faster
-locally.
-
-Nokia text analysis, pronunciation and prosody preparation still execute in
-an instruction-shaped portable-C frontend lifted from the original ARM32
-code. Because most preparation for a short utterance happens before its first
-synthesis frame, some first-audio latency remains. That frontend is the next
-major performance target.
-
-The Test 30 candidate moves rate control before waveform generation. After
-`PrimeSynthesisL`, the native bridge scales Nokia's phoneme-duration array and
-both matching prosody timelines; the scheduler consequently creates fewer or
-more Klatt frames. It does not time-stretch completed PCM. The native pitch
-control independently scales the per-frame F0 value (stored in tenths of a
-hertz), so it likewise does not resample completed audio. At the neutral
-settings, output remains byte-identical to the ARM reference on all five
-families. The reverse-engineering evidence and field layout are recorded in
-[`docs/NATIVE-PROSODY-CONTROLS.md`](docs/NATIVE-PROSODY-CONTROLS.md).
-
-The 5320 Prime bridge also keeps immutable guest regions after its first
-transfer and copies back only AOT segments that were actually written. On the
-local German reference sentence this moved the median first PCM callback from
-about 43.2 ms to 36.1 ms. Windows ARM64 still needs to be measured separately.
-
-Profiling the Nokia 5320 attributes roughly **85.5% of guest basic-block
-executions** for a sentence to one DSP image (UID `0x101f8ca5`). This module
-is the main target for native replacement.
-
-## DSP trace and frame-capture builds
-
-Version 0.10 adds an explicit profiler for locating the boundary that the
-native Klatt/DSP implementation must replace. It is completely disabled during
-ordinary speech and therefore adds no runtime hook overhead unless requested.
-
-Open NVDA's Python console with NVDA+Control+Z and run:
-
-```python
-from synthDrivers._nokia import bench
-bench.trace()
-```
-
-The trace records:
-
-- executed ARM basic blocks by ROM image;
-- likely DSP function calls and their ARM argument registers;
-- DSP activity observed before each PCM buffer reaches NVDA;
-- whether the existing native resampler accelerator is active.
-
-A much slower memory-write trace is available when needed:
-
-```python
-bench.trace(deep=True)
-```
-
-The summary is printed and written to NVDA's log. The complete structured
-report is saved as `nokiaTTS-dsp-trace.json` in NVDA's configuration
-directory. All profiling hooks are removed immediately after the test
-utterance.
-
-The trace is a diagnostic milestone, not a performance improvement by itself.
-Its purpose is to identify stable parameters and hot routines that can be
-reimplemented and tested as native x64/ARM64 code. Version 0.11 added the
-complete parameter/state/PCM frame capture; version 0.12 is the first build to
-use the resulting native generator.
+Test 70 reduced 5320 first-audio latency by replacing three fully verified
+Prime/iterator loops with direct C while retaining byte-identical PCM. Further
+long-text work will follow the same rule: optimise measured frontend hot loops,
+without lowering the existing very-long-text chunk threshold or introducing
+extra buffering.
 
 ## Voices and languages
 
@@ -137,12 +71,30 @@ The source tree preserves native Klatt waveform cores for six engine families:
 - Nokia 6220
 - Nokia N85
 
-The current end-to-end add-on exposes the 5320, 5500 and E65. The 6650,
-6220 and N85 profile DLLs still use `native/nokia_frontend_stub.c`; their
-matching frontend firmware/data and initialized voice snapshots are not in
-this repository. A Klatt-only DLL is therefore not yet a usable NVDA voice.
+The Test 71 candidate exposes the 5320, 5500, E65 and 6650 end to end. The
+6220 and N85 currently have Klatt cores only; their matching native frontends,
+compact runtime packs and complete snapshot verification are still pending.
 
-Test 29 expands the Nokia 5320 from 9 to 33 verified languages using the
+The expanded SAPI5 reference repository provides the following confirmed
+device inventory. The 5500 and 6220 come from the older NVDA collection and
+are listed separately because that SAPI5 package does not contain them.
+
+| Model | Languages | Voices | Native NVDA status |
+|---|---:|---:|---|
+| Nokia 5320 XpressMusic | 33 | 66 | complete |
+| Nokia 5500 | 5 | 5 | complete |
+| Nokia E65 | 30 | 30 | complete |
+| Nokia 6650 Fold | 4 | 8 | Test 71 candidate |
+| Nokia N85 | 2 | 4 | next; adds Tagalog and Vietnamese |
+| Nokia N95 8GB | 30 | 30 | planned; separate engine build |
+| Nokia 6220 Classic | 5 | 10 | Klatt core only; Swedish, Danish, Norwegian, Finnish and Icelandic |
+
+The 5320 and E65 language lists already match the SAPI5 inventory exactly.
+The packaged 5500 resources also confirm that its five-language set—British
+English, French, German, Spanish and Arabic—is complete; no hidden 5500
+language was omitted.
+
+Test 29 expanded the Nokia 5320 from 9 to 33 verified languages using the
 native RM-409 05.16 regional data preserved and documented by DJ Graco in
 [`djgraco/nokiaKlatt`](https://github.com/djgraco/nokiaKlatt). The set includes
 Dutch, Portuguese, Czech, Slovak, Polish, Slovenian, Croatian, Estonian,
@@ -150,7 +102,7 @@ Greek, Hebrew, Latvian, Lithuanian, Serbian, Catalan, Basque and Galician in
 addition to the previously bundled 5320 languages. All 33 have been verified
 with complete synthesis, non-zero PCM and both distinct Nokia voice variants.
 
-The native-only Test 66 build exposes that complete set directly through NVDA:
+The native-only Test 66 build exposed that complete set directly through NVDA:
 33 Nokia 5320 languages with `DefaultMale` and `DefaultFemale`, plus the Nokia
 5500's single standard voice in British English, French, German, Spanish and
 Arabic, and the E65's single standard voice in 30 languages. This gives 101
@@ -220,10 +172,19 @@ phrase falls from about 40.6 ms to 31.0 ms; a longer German settings sentence
 falls from 70.6 ms to 54.0 ms. The complete PCM output remains bit-identical,
 and all 66 multilingual 5320 voices plus their regression samples pass.
 
+Test 71 adds the Nokia 6650 Fold in US English, Canadian French, Brazilian
+Portuguese and Latin American Spanish, with distinct `DefaultMale` and
+`DefaultFemale` voices. All eight snapshots pass two consecutive calls on one
+runtime with PCM hashes identical to the reference. All eight also pass a third
+call on that same runtime after changing rate and pitch; this covers the Klatt
+pitch-clamp branch not reached by neutral reference frames. Its 47,448,064-byte
+ROM is represented by a 377,224-byte compact page pack. Together, the NVDA
+add-on now offers 109 voices across 37 languages.
+
 No complete firmware ROM is added. The expanded build uses compact,
-address-preserving code packs for the 5320, 5500 and E65 and adds only the
-required speech data.
-DJ Graco's repository also contains a working Nokia N95 8GB profile with 30
+address-preserving code packs for the 5320, 5500, E65 and 6650 and adds only
+the required speech data.
+The SAPI5 reference also contains a working Nokia N95 8GB profile with 30
 languages. It uses another distinct Nokia engine build and therefore still
 requires separate compact-pack and native-port validation rather than being
 silently substituted as 5320 or E65 data.
@@ -235,14 +196,18 @@ not be compatible.
 
 ## Native-port roadmap
 
-1. Keep native generator output bit-exact across all supported voices.
-2. Port the preparation path responsible for latency before the first frame.
-3. Decode or replace the remaining text, phoneme and prosody frontend, then
-   remove the now-reference-only PCM time scaler.
-4. Add compatible formats used by later families such as the C5 when matching
-   TTS data is available.
-5. Replace `TTS.PAK`, Unicorn and the embedded Python runtime with data-only
-   voice packages once the native implementation matches the reference.
+1. Finish and stabilize every preserved phone profile, next N85 and N95 8GB,
+   while retaining exact reference PCM; evaluate the older 6220 separately.
+2. Profile longer ordinary utterances and replace only verified hot frontend
+   loops. Do not use smaller text chunks as a latency shortcut.
+3. Add volume control after comparing streaming PCM gain against any usable
+   engine-native path. The SAPI5 investigation found that the public Symbian
+   `iVolume` style field rejects values other than 100, so incremental PCM gain
+   is currently the more promising design and need not buffer whole utterances.
+4. Separate the reusable synthesis core from the NVDA adapter, then add SAPI5
+   and Android interfaces.
+5. Progressively decode or replace the remaining instruction-shaped text,
+   phoneme and prosody frontend and move toward data-only voice packages.
 
 A release should only be described as fully native once the ARM32 guest path
 is no longer required for normal synthesis. The emulator must not remain a
@@ -266,11 +231,11 @@ speech data only.
 
 ## Repository scope
 
-At present this repository contains experimental build and porting work,
-including native Windows ARM/x64 dependencies and the transition add-on
-infrastructure. The native Klatt frame generator is now implemented; the next
-substantial performance milestone is the pre-frame text/prosody path, not
-another buffering or ROM-compression change.
+At present this repository contains the reusable native runtime, reference and
+regression tooling, Windows builds, compact model data and the first NVDA
+adapter. The repository will be renamed once a final interface-neutral project
+name is chosen; changing the GitHub name before that decision would only create
+avoidable churn. NVDA remains the first supported frontend after the rename.
 
 ## Attribution
 
@@ -280,7 +245,8 @@ another buffering or ROM-compression change.
   [`nokiaKlatt 0.5.1`](https://github.com/djgraco/nokiaKlatt). Many thanks for
   preserving, testing and documenting these difficult-to-find Nokia speech
   resources.
-- SAPI5 packaging used as the E65 reference profile:
+- SAPI5 packaging used for the expanded five-phone model/language inventory
+  and as the E65, 6650, N85 and N95 8GB reference source:
   [`joshknnd1982/nokiaklatt-sapi5`](https://github.com/joshknnd1982/nokiaklatt-sapi5)
 - Continued porting and packaging: the NOKIATTSNVDA project
 - CPU emulation used by transition builds:

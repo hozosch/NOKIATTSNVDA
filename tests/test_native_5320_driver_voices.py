@@ -114,7 +114,7 @@ class VoiceDiscoveryTest(unittest.TestCase):
             root = Path(temporary)
             data = root / "data"
             data.mkdir()
-            for language_id, _name, _locale in DRIVER._LANGUAGES:
+            for language_id in DRIVER._5320_LANGUAGE_IDS:
                 for gender in DRIVER._GENDERS:
                     (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
             driver = self.make_driver(root)
@@ -128,7 +128,7 @@ class VoiceDiscoveryTest(unittest.TestCase):
             root = Path(temporary)
             data = root / "data"
             data.mkdir()
-            for language_id, _name, _locale in DRIVER._LANGUAGES:
+            for language_id in DRIVER._5320_LANGUAGE_IDS:
                 for gender in DRIVER._GENDERS:
                     (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
             for language_id in DRIVER._5500_LANGUAGE_IDS:
@@ -155,7 +155,7 @@ class VoiceDiscoveryTest(unittest.TestCase):
             root = Path(temporary)
             data = root / "data"
             data.mkdir()
-            for language_id, _name, _locale in DRIVER._LANGUAGES:
+            for language_id in DRIVER._5320_LANGUAGE_IDS:
                 for gender in DRIVER._GENDERS:
                     (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
             for language_id in DRIVER._5500_LANGUAGE_IDS:
@@ -176,6 +176,32 @@ class VoiceDiscoveryTest(unittest.TestCase):
             self.assertNotIn("e65:44", driver._voices)
             self.assertNotIn("e65:401", driver._voices)
             self.assertNotIn("e65:402", driver._voices)
+
+    def test_all_6650_voices_add_four_american_languages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            for language_id in DRIVER._5320_LANGUAGE_IDS:
+                for gender in DRIVER._GENDERS:
+                    (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._5500_LANGUAGE_IDS:
+                (data / f"5500-{language_id}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._E65_LANGUAGE_IDS:
+                (data / f"e65-{language_id}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._6650_LANGUAGE_IDS:
+                for gender in DRIVER._GENDERS:
+                    (data / f"6650-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            driver = self.make_driver(root)
+            self.assertEqual(109, len(driver._voices))
+            self.assertEqual(
+                ["6650:10-male", "6650:10-female"],
+                [voice for voice in driver._voices if voice.startswith("6650:10-")],
+            )
+            self.assertEqual(
+                "French (Canada) female (Nokia 6650 Fold)",
+                driver._voices["6650:51-female"].name,
+            )
 
     def test_test43_german_snapshot_name_remains_compatible(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -200,6 +226,10 @@ class VoiceDiscoveryTest(unittest.TestCase):
                 "5320:3-male": (data / "5320-3-male.snapshot.gz", b"5320-state"),
                 "5500:3": (data / "5500-3.snapshot.gz", b"5500-state"),
                 "e65:3": (data / "e65-3.snapshot.gz", b"e65-state"),
+                "6650:10-female": (
+                    data / "6650-10-female.snapshot.gz",
+                    b"6650-state",
+                ),
             }
             for path, state in snapshots.values():
                 path.write_bytes(gzip.compress(state, mtime=0))

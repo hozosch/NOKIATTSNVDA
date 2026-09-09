@@ -12,6 +12,7 @@ ports such as the Nokia 5500.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -25,6 +26,10 @@ def main() -> None:
     parser.add_argument("--text", default="Hallo Welt 123")
     parser.add_argument("--text-file", type=Path,
                         help="read utterance text from UTF-8 file")
+    parser.add_argument(
+        "--repeat", type=int, default=1,
+        help="speak the text repeatedly on one engine to capture warm paths",
+    )
     parser.add_argument("--language", type=int, default=3)
     parser.add_argument("--voice", default="DefaultMale")
     parser.add_argument("--profile", default="5320",
@@ -36,7 +41,14 @@ def main() -> None:
     parser.add_argument("--block-trace", action="store_true",
                         help="decode executed basic blocks instead of hooking "
                              "every instruction")
+    parser.add_argument(
+        "--trace-pt-delete", action="store_true",
+        help="also construct and delete a parsed-text object so the trace "
+             "covers the native runtime's per-utterance cleanup",
+    )
     args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be at least one")
     if args.text_file is not None:
         args.text = args.text_file.read_text(encoding="utf-8")
 
@@ -57,6 +69,7 @@ def main() -> None:
 
     executed: dict[tuple[int, bool], int] = {}
     klatt_executed: dict[tuple[int, bool], int] = {}
+    outside_klatt_executed: dict[tuple[int, bool], int] = {}
     klatt_active = {"value": False, "return": 0}
     klatt_entry = (
         args.klatt_entry & ~1 if args.klatt_entry is not None else None
@@ -69,6 +82,7 @@ def main() -> None:
     original_init = epoc_module.Epoc.__init__
     executed_blocks: dict[tuple[int, int, bool], str] = {}
     klatt_blocks: set[tuple[int, int, bool]] = set()
+    outside_klatt_blocks: set[tuple[int, int, bool]] = set()
 
     def install_trace(self, *a, **kw):
         original_init(self, *a, **kw)
@@ -100,6 +114,8 @@ def main() -> None:
                     klatt_active["value"] = False
                 if klatt_active["value"]:
                     klatt_executed[key] = int(size)
+                else:
+                    outside_klatt_executed[key] = int(size)
             if address in addresses_seen:
                 return
             addresses_seen.add(address)
@@ -132,6 +148,8 @@ def main() -> None:
             executed_blocks.setdefault(block_key, phase["name"])
             if klatt_active["value"]:
                 klatt_blocks.add(block_key)
+            else:
+                outside_klatt_blocks.add(block_key)
 
         self._full_lifecycle_trace_hook = self.uc.hook_add(
             UC_HOOK_BLOCK if args.block_trace else UC_HOOK_CODE,
@@ -186,6 +204,7 @@ def main() -> None:
     tree = Path(tree_name)
     engine = None
     total = 0
+    pcm_hash = hashlib.sha256()
     try:
         phase["name"] = "construct"
         engine = Engine(str(rom), str(tree), args.language, args.voice)
@@ -193,7 +212,32 @@ def main() -> None:
             from e65_reference_support import write_augmented_rom
             write_augmented_rom(engine.tts.epoc, args.augmented_rom_output)
         phase["name"] = "speak"
-        total = engine.speak(args.text, lambda _pcm: None)
+        def collect_pcm(pcm) -> None:
+            pcm_hash.update(bytes(pcm))
+
+        for _ in range(args.repeat):
+            total += engine.speak(args.text, collect_pcm)
+        if args.trace_pt_delete:
+            # The preserved Python engine leaves this high-level object to
+            # process teardown, whereas the native runtime releases it after
+            # every utterance.  Exercise that destructor explicitly so later
+            # ports do not acquire an untraced cleanup path or a heap leak.
+            phase["name"] = "pt_delete"
+            tts = engine.tts
+            cleanup_text = tts.ptrc16(args.text)
+            cleanup_empty8 = tts.ptrc8()
+            cleanup_empty16 = tts.ptrc16("")
+            parsed_text = tts.epoc.call_l(
+                tts.common_eps[10],
+                (cleanup_text, cleanup_empty8, cleanup_empty16),
+            )
+            segment = tts.epoc.alloc(0x80)
+            tts.epoc.call(
+                tts.common_eps[0], (segment, engine._ensure_style())
+            )
+            tts.epoc.call(tts.common_eps[1], (segment, cleanup_text))
+            tts.epoc.call_l(tts.common_eps[6], (parsed_text, segment, 0))
+            tts.epoc.call(tts.common_eps[12], (parsed_text,))
         phase["name"] = "stop"
         engine.cancel()
         if args.block_trace:
@@ -230,6 +274,11 @@ def main() -> None:
                     klatt_executed[
                         (instruction_address, instruction_thumb)
                     ] = instruction_size
+            for block_key in outside_klatt_blocks:
+                for instruction_address, instruction_size, instruction_thumb in decoded_blocks[block_key]:
+                    outside_klatt_executed[
+                        (instruction_address, instruction_thumb)
+                    ] = instruction_size
     finally:
         phase["name"] = "close"
         if engine is not None:
@@ -249,7 +298,9 @@ def main() -> None:
         "language": args.language,
         "voice": args.voice,
         "text": args.text,
+        "repeat": args.repeat,
         "audio_bytes": total,
+        "pcm_sha256": pcm_hash.hexdigest(),
         "instruction_count": len(instructions),
         "phase_counts": counts,
         "executive_calls": [
@@ -273,6 +324,16 @@ def main() -> None:
             }
             for (address, thumb), size in sorted(klatt_executed.items())
         ]
+        payload["outside_klatt_instruction_count"] = len(outside_klatt_executed)
+        payload["outside_klatt_instructions"] = [
+            {
+                "address": address,
+                "size": size,
+                "thumb": thumb,
+                "phase": first_phase.get((address, thumb), "speak"),
+            }
+            for (address, thumb), size in sorted(outside_klatt_executed.items())
+        ]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + "\n",
                            encoding="utf-8")
@@ -280,6 +341,7 @@ def main() -> None:
           f"{len(instructions)} unique ROM instructions")
     print("phase counts:", counts)
     print("audio bytes:", total)
+    print("PCM SHA-256:", pcm_hash.hexdigest())
 
 
 if __name__ == "__main__":
