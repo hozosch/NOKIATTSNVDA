@@ -523,6 +523,7 @@ jobs:
             gzip -dc "$snapshot" > "build/5500/snapshots/$name"
           done
           test "$(find build/5500/snapshots -name '5500-*.snapshot' | wc -l)" -eq 5
+          python tools/patch_5500_sysreset.py build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844e280:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84516cc:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845180e:$' build/5500/nokia_frontend_5500_full.c
@@ -591,7 +592,6 @@ jobs:
             gzip -dc "$snapshot" > "build/e65/snapshots/$name"
           done
           test "$(find build/e65/snapshots -name 'e65-*.snapshot' | wc -l)" -eq 30
-          python tools/patch_5500_sysreset.py build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f840173a:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840b89e:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f9225154:$' build/e65/nokia_frontend_e65_full.c
