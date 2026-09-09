@@ -32,6 +32,18 @@ binds them into the traced address space before translating the frontend. The
 add-on stores only the observed address-preserving pages and does not contain
 that complete firmware image.
 
+## Nokia 6650 Fold and N85
+
+The Test-71 Nokia 6650 Fold and Test-72 Nokia N85 inputs come from the model
+packages preserved by
+[`joshknnd1982/nokiaklatt-sapi5`](https://github.com/joshknnd1982/nokiaklatt-sapi5).
+The original 47,448,064-byte 6650 image has SHA-256
+`099728f80f593f019ade8c72f4b228ef3d66f30a3556ccc65e5af9c3ff5675d4`;
+the 43,237,376-byte N85 `SYM.ROM` has SHA-256
+`9c49504d97391536d5feb8baa1b51597edf859de5538157c004ea3582277e2a2`.
+Neither complete image is packaged. The add-on contains only the observed
+address-preserving TTS pages together with the corresponding speech data.
+
 ## Future source profiles
 
 DJ Graco's repository also documents reconstructed Nokia N95 8GB RM-320

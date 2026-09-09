@@ -51,6 +51,11 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_6650_snapshot(
     const uint8_t *rom, size_t rom_size,
     const uint8_t *snapshot, size_t snapshot_size);
 
+/* N85 snapshots cover the Tagalog and Vietnamese speech packages. */
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_n85_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *snapshot, size_t snapshot_size);
+
 /* The E65 snapshot contains its ROFS-resident speech device after build-time
    binding; the shipped native runtime therefore needs no E32 loader. */
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(

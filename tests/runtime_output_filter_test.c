@@ -104,6 +104,15 @@ int main(void) {
     assert(snapshot_runtime->profile == NOKIA_PROFILE_6650);
     nokia_runtime_destroy(snapshot_runtime);
 
+    memcpy(minimal_snapshot, "NKN85S01", 8u);
+    snapshot_runtime = nokia_runtime_create_n85_snapshot(
+        minimal_rom, sizeof(minimal_rom),
+        minimal_snapshot, sizeof(minimal_snapshot));
+    assert(snapshot_runtime);
+    assert(snapshot_runtime->rom_base == ROM_BASE_N85);
+    assert(snapshot_runtime->profile == NOKIA_PROFILE_N85);
+    nokia_runtime_destroy(snapshot_runtime);
+
     memset(&runtime, 0, sizeof(runtime));
     runtime.rom_base = ROM_BASE_5320;
     runtime.profile = NOKIA_PROFILE_5320;

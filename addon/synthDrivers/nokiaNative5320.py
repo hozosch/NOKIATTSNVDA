@@ -35,7 +35,7 @@ _PcmCallback = ctypes.CFUNCTYPE(
 _IndexCallback = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint32)
 
 
-# Languages present in the Nokia 5320 EMEA/Hispania configuration set.
+# Languages present across the packaged Nokia model configurations.
 # The numeric values are Symbian TLanguage identifiers and also form part of
 # the stable voice IDs stored by NVDA.
 _LANGUAGES = (
@@ -60,6 +60,7 @@ _LANGUAGES = (
 	(27, "Polish", "pl_PL"),
 	(28, "Slovenian", "sl_SI"),
 	(37, "Arabic", "ar"),
+	(39, "Tagalog", "tl_PH"),
 	(42, "Bulgarian", "bg_BG"),
 	(44, "Catalan", "ca_ES"),
 	(45, "Croatian", "hr_HR"),
@@ -74,11 +75,12 @@ _LANGUAGES = (
 	(79, "Serbian", "sr_RS"),
 	(83, "Spanish (Latin America)", "es_419"),
 	(93, "Ukrainian", "uk_UA"),
+	(96, "Vietnamese", "vi_VN"),
 	(401, "Basque", "eu_ES"),
 	(402, "Galician", "gl_ES"),
 )
 _GENDERS = ("male", "female")
-_MODEL_ORDER = ("5320", "5500", "e65", "6650")
+_MODEL_ORDER = ("5320", "5500", "e65", "6650", "n85")
 _MODEL_VARIANTS = {
 	"5320": _GENDERS,
 	# The 5500 firmware exposes one unnamed standard voice.  Keep the legacy
@@ -87,6 +89,7 @@ _MODEL_VARIANTS = {
 	# The E65 likewise exposes one unnamed standard voice per language.
 	"e65": (None,),
 	"6650": _GENDERS,
+	"n85": _GENDERS,
 }
 _5320_LANGUAGE_IDS = frozenset(
 	(1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 18, 25, 26, 27, 28,
@@ -98,17 +101,20 @@ _E65_LANGUAGE_IDS = frozenset(
 	 37, 42, 45, 49, 54, 57, 67, 68, 78, 79, 93)
 )
 _6650_LANGUAGE_IDS = frozenset((10, 51, 76, 83))
+_N85_LANGUAGE_IDS = frozenset((39, 96))
 _MODEL_LANGUAGE_IDS = {
 	"5320": _5320_LANGUAGE_IDS,
 	"5500": _5500_LANGUAGE_IDS,
 	"e65": _E65_LANGUAGE_IDS,
 	"6650": _6650_LANGUAGE_IDS,
+	"n85": _N85_LANGUAGE_IDS,
 }
 _MODEL_DISPLAY_NAMES = {
 	"5320": "5320",
 	"5500": "5500",
 	"e65": "E65",
 	"6650": "6650 Fold",
+	"n85": "N85",
 }
 _DEFAULT_VOICE = "5320:3-male"
 
@@ -138,7 +144,7 @@ def _findSnapshotPath(path):
 
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
-	description = "Nokia 5320/5500/E65/6650 Native (experimental)"
+	description = "Nokia 5320/5500/E65/6650/N85 Native (experimental)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -164,6 +170,8 @@ class SynthDriver(BaseSynthDriver):
 				data / "e65-core.nrp"
 			).is_file() and _findSnapshotPath(data / "6650-10-male.snapshot") is not None and (
 				data / "6650-core.nrp"
+			).is_file() and _findSnapshotPath(data / "n85-39-male.snapshot") is not None and (
+				data / "n85-core.nrp"
 			).is_file()
 		except Exception:
 			return False
@@ -192,7 +200,7 @@ class SynthDriver(BaseSynthDriver):
 			if any(_voiceModel(voiceId) == model for voiceId in self._voiceSnapshots):
 				self._loadModel(model)
 		# Voice snapshots are about 2 MiB each. Cache only the selected one;
-		# loading all 109 would need roughly 227 MiB for almost no latency gain.
+		# loading all 113 would need roughly 236 MiB for almost no latency gain.
 		self._snapshotVoice = None
 		self._snapshotBytes = None
 		self._snapshot = None

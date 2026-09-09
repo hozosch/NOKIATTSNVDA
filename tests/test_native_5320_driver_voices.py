@@ -203,6 +203,33 @@ class VoiceDiscoveryTest(unittest.TestCase):
                 driver._voices["6650:51-female"].name,
             )
 
+    def test_all_n85_voices_add_tagalog_and_vietnamese(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            for language_id in DRIVER._5320_LANGUAGE_IDS:
+                for gender in DRIVER._GENDERS:
+                    (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._5500_LANGUAGE_IDS:
+                (data / f"5500-{language_id}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._E65_LANGUAGE_IDS:
+                (data / f"e65-{language_id}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._6650_LANGUAGE_IDS:
+                for gender in DRIVER._GENDERS:
+                    (data / f"6650-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._N85_LANGUAGE_IDS:
+                for gender in DRIVER._GENDERS:
+                    (data / f"n85-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            driver = self.make_driver(root)
+            self.assertEqual(113, len(driver._voices))
+            self.assertEqual("tl_PH", driver._voices["n85:39-male"].language)
+            self.assertEqual("vi_VN", driver._voices["n85:96-female"].language)
+            self.assertEqual(
+                "Vietnamese female (Nokia N85)",
+                driver._voices["n85:96-female"].name,
+            )
+
     def test_test43_german_snapshot_name_remains_compatible(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -229,6 +256,10 @@ class VoiceDiscoveryTest(unittest.TestCase):
                 "6650:10-female": (
                     data / "6650-10-female.snapshot.gz",
                     b"6650-state",
+                ),
+                "n85:39-male": (
+                    data / "n85-39-male.snapshot.gz",
+                    b"n85-state",
                 ),
             }
             for path, state in snapshots.values():

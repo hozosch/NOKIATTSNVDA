@@ -29,6 +29,8 @@ HEADER_WORDS = 27
 def snapshot_magic(profile: str) -> bytes:
     if profile.lower() == "e65":
         return b"NKE65S01"
+    if profile.lower() == "n85":
+        return b"NKN85S01"
     magic = f"NK{profile.upper()}S1".encode("ascii")
     if len(magic) != 8:
         raise ValueError(

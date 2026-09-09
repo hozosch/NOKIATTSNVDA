@@ -33,7 +33,7 @@ synthesizer would be fast, but would not necessarily retain the Nokia sound.
 The emulated engine is therefore kept as a reference while the native
 implementation is developed and compared against its parameters and PCM.
 
-## Current status: native-only Test 71 candidate
+## Current status: native-only Test 72 candidate
 
 Normal synthesis now runs entirely in compiled Windows DLLs. Unicorn remains a
 development-time reference for capturing and validating new phone profiles,
@@ -71,9 +71,9 @@ The source tree preserves native Klatt waveform cores for six engine families:
 - Nokia 6220
 - Nokia N85
 
-The Test 71 candidate exposes the 5320, 5500, E65 and 6650 end to end. The
-6220 and N85 currently have Klatt cores only; their matching native frontends,
-compact runtime packs and complete snapshot verification are still pending.
+The Test 72 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
+The 6220 currently has a Klatt core only; its matching native frontend,
+compact runtime pack and complete snapshot verification are still pending.
 
 The expanded SAPI5 reference repository provides the following confirmed
 device inventory. The 5500 and 6220 come from the older NVDA collection and
@@ -84,8 +84,8 @@ are listed separately because that SAPI5 package does not contain them.
 | Nokia 5320 XpressMusic | 33 | 66 | complete |
 | Nokia 5500 | 5 | 5 | complete |
 | Nokia E65 | 30 | 30 | complete |
-| Nokia 6650 Fold | 4 | 8 | Test 71 candidate |
-| Nokia N85 | 2 | 4 | next; adds Tagalog and Vietnamese |
+| Nokia 6650 Fold | 4 | 8 | complete |
+| Nokia N85 | 2 | 4 | Test 72 candidate; adds Tagalog and Vietnamese |
 | Nokia N95 8GB | 30 | 30 | planned; separate engine build |
 | Nokia 6220 Classic | 5 | 10 | Klatt core only; Swedish, Danish, Norwegian, Finnish and Icelandic |
 
@@ -181,9 +181,19 @@ pitch-clamp branch not reached by neutral reference frames. Its 47,448,064-byte
 ROM is represented by a 377,224-byte compact page pack. Together, the NVDA
 add-on now offers 109 voices across 37 languages.
 
+Test 72 adds the Nokia N85 in Tagalog and Vietnamese, again with distinct
+`DefaultMale` and `DefaultFemale` voices. All four snapshots pass two
+consecutive calls on one runtime with reference-identical PCM, followed by a
+third call with changed rate and pitch. The lifted single-threaded
+`LDREX`/`STREX` helper is represented as a deterministic successful store,
+closing the only loop that could otherwise wait forever without an emulated
+exclusive monitor. The original 43,237,376-byte ROM is reduced to a 352,624-byte
+address-preserving page pack. The add-on now offers 113 voices across 39
+languages.
+
 No complete firmware ROM is added. The expanded build uses compact,
-address-preserving code packs for the 5320, 5500, E65 and 6650 and adds only
-the required speech data.
+address-preserving code packs for the 5320, 5500, E65, 6650 and N85 and adds
+only the required speech data.
 The SAPI5 reference also contains a working Nokia N95 8GB profile with 30
 languages. It uses another distinct Nokia engine build and therefore still
 requires separate compact-pack and native-port validation rather than being
@@ -196,8 +206,8 @@ not be compatible.
 
 ## Native-port roadmap
 
-1. Finish and stabilize every preserved phone profile, next N85 and N95 8GB,
-   while retaining exact reference PCM; evaluate the older 6220 separately.
+1. Finish and stabilize every preserved phone profile, next N95 8GB, while
+   retaining exact reference PCM; evaluate the older 6220 separately.
 2. Profile longer ordinary utterances and replace only verified hot frontend
    loops. Do not use smaller text chunks as a latency shortcut.
 3. Add volume control after comparing streaming PCM gain against any usable
