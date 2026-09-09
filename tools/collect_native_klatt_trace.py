@@ -23,6 +23,9 @@ def main() -> None:
     addon = args.upstream / "addon"
     sys.path.insert(0, str(addon / "synthDrivers"))
     import _nokia.harness  # noqa: F401
+    if args.profile == "e65":
+        from e65_reference_support import install_e65_reference_support
+        install_e65_reference_support()
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_CPSR, UC_ARM_REG_LR
     from _nokia.harness import epoc as epoc_module

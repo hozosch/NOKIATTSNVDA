@@ -13,7 +13,7 @@ Klatt engine generations preserved by DJ Graco.
 | `5500` | Nokia 5500 Sport, Symbian 9.1 | 5 verified languages, unnamed/default voice | Integrated in Test 61 with its own native frontend/Klatt runtime, compact code pack and frozen build inputs. It contributes a distinct second German engine variant. |
 | `6650` | Nokia 6650 Fold, Symbian 9.3 FP2 | 4 verified languages, male/female | Closest runtime generation to 5320. Reuse host ABI, allocator, executive and observer work; generate a profile-specific frontend corpus. |
 | `n85` | Nokia N85, Symbian 9.3 FP2 | Tagalog/Vietnamese verified, male/female | Same broad EKA2 generation as 5320. Good second/third frontend-AOT target after 6650. |
-| `e65` | Nokia E65, Symbian 9.1 | 30 verified languages, unnamed/default voice | Speech DLLs live in ROFS and are loaded by the harness' minimal E32 loader. Standalone runtime needs a native E32/ROFS image loader boundary and the older EKA2 executive ABI. |
+| `e65` | Nokia E65, Symbian 9.1 | 30 verified languages, unnamed/default voice | Integrated in Test 66 with build-time E32/ROFS binding, its own frontend/Klatt AOT, compact code pack and frozen snapshots. It contributes a third distinct German engine variant. |
 | `n958gb` | Nokia N95 8GB RM-320, Symbian 9.2 FP1 | 30 verified languages, unnamed/default voice | Uses a reconstructed XIP image and VFP/DFPAEABI on the English path. AOT tooling must preserve VFP helper semantics or replace those helpers natively. |
 | `n95` | Nokia N95 Chinese-market build | Test harness speaks; NVDA path unreliable | Keep as an experimental validation target. A standalone native runtime may remove the current harness/NVDA discrepancy. |
 | `e5` | Nokia E5-00, Symbian 9.3 | Does not start in current harness | Speech devices are ECOM plugins. Requires a minimal native ECOM resolver/loader before frontend porting is useful. |
@@ -59,8 +59,10 @@ profile descriptors or callbacks:
 3. **6650 + N85:** generate frontend traces/AOT using the shared host ABI. Their
    existing native Klatt cores remain the lowest-risk proof that the runtime
    abstraction also works across the Symbian 9.3 FP2 family.
-4. **E65:** implement the remaining Symbian 9.1/E32-loader differences and
-   port its frontend. Its 30-language set makes this high value.
+4. **E65 (completed in Test 66):** bind the two ROFS speech DLLs while building
+   the snapshots, translate the combined address space, and ship only the
+   compact observed pages. All 30 voices match the SAPI5 reference PCM; the
+   original E65 does not expose named male/female styles.
 5. **N95 8GB:** add the 9.2/VFP helper layer and port its frontend. This adds a
    second 30-language engine generation with a distinct sound.
 6. Revisit **N95**, then implement the missing **E5 ECOM** and **5800 9.4 euser**

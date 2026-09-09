@@ -14,6 +14,7 @@
 #define STACK_BASE 0x60000000u
 #define ROM_BASE_5320 0x80000000u
 #define ROM_BASE_5500 0xF80F1000u
+#define ROM_BASE_E65  0xF8000000u
 #define RET_MAGIC  0x7fff0000u
 #define HEAP_SIZE  0x100000u
 #define VT_SIZE    0x1000u
@@ -773,6 +774,14 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
     static const uint8_t magic[8] = {'N','K','5','5','0','0','S','1'};
     return create_snapshot(
         rom, rom_size, s, snapshot_size, magic, ROM_BASE_5500);
+}
+
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *s, size_t snapshot_size) {
+    static const uint8_t magic[8] = {'N','K','E','6','5','S','0','1'};
+    return create_snapshot(
+        rom, rom_size, s, snapshot_size, magic, ROM_BASE_E65);
 }
 
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *r) {

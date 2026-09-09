@@ -43,13 +43,13 @@ fully native reimplementation of the Nokia speech engine**.
 | TTS code and data | Compact address-preserving TTS packs | Data-only voice packages |
 | Text analysis and pronunciation | Nokia ARM32 code through Unicorn | Portable native frontend |
 | Prosody generation | Nokia ARM32 planning with native duration-field control | Portable native frontend |
-| Klatt waveform generation | Bit-exact native x64/ARM64 code for all five bundled families | Portable native core |
+| Klatt waveform generation | Bit-exact native x64/ARM64 code for all six bundled families | Portable native core |
 | Resampling | Native x64/ARM64 | Portable native core |
 | Rate and pitch | Native Nokia duration fields and Klatt F0 parameters in the Test 30 candidate | Fully native controls |
 | Windows ARM host | Native ARM64 helper process | Native ARM64 library/process |
 | Intel/AMD host | In-process x64 Unicorn | Native x64 library/process |
 
-Five full phone ROMs have already been replaced by small `TTS.PAK` files.
+Six full phone ROMs have already been replaced by small `TTS.PAK` files.
 These contain only the address-preserving code pages reached by TTS, together
 with the external speech-resource files that the engines actually open. This
 reduces the add-on from well over 100 MB to roughly 12–17 MB, depending on the
@@ -59,7 +59,7 @@ included host runtimes.
 
 The complete shared Klatt waveform-generator frame routine has now been
 reconstructed as portable C and built as native Windows x64 and ARM64 code for
-the 5320, 5500, 6650, 6220 and N85 families. End-to-end reference tests remain
+the 5320, 5500, E65, 6650, 6220 and N85 families. End-to-end reference tests remain
 PCM-identical and report no ARM fallback. The full 5320 reference sentence is
 about 1.4 times faster locally.
 
@@ -126,10 +126,11 @@ use the resulting native generator.
 
 ## Voices and languages
 
-The current compact build combines five working engine families:
+The current compact build combines six working engine families:
 
 - Nokia 5320
 - Nokia 5500
+- Nokia E65
 - Nokia 6650
 - Nokia 6220
 - Nokia N85
@@ -142,13 +143,15 @@ Greek, Hebrew, Latvian, Lithuanian, Serbian, Catalan, Basque and Galician in
 addition to the previously bundled 5320 languages. All 33 have been verified
 with complete synthesis, non-zero PCM and both distinct Nokia voice variants.
 
-The native-only Test 65 build exposes that complete set directly through NVDA:
+The native-only Test 66 build exposes that complete set directly through NVDA:
 33 Nokia 5320 languages with `DefaultMale` and `DefaultFemale`, plus the Nokia
 5500's single standard voice in British English, French, German, Spanish and
-Arabic. NVDA groups voices by language and then by model, so the Nokia 5500
-variant follows the two Nokia 5320 variants for shared languages. Voice
+Arabic, and the E65's single standard voice in 30 languages. This gives 101
+selectable voices across 33 languages. NVDA groups voices by language and then
+by model, so the Nokia 5500 and E65 variants follow the two Nokia 5320 variants
+for shared languages. Voice
 snapshots are loaded on demand and only the active one remains in memory.
-The verified frontend AOT, Klatt AOT and snapshots for both models are frozen;
+The verified frontend AOT, Klatt AOT and snapshots for all three models are frozen;
 ordinary add-on builds compile them directly rather than recapturing the
 expensive AOT corpora.
 
@@ -172,13 +175,24 @@ tabs and line endings in all five 5500 languages. It also adds the missing
 German frontend continuation at `0xF844F330`, verified with the complete
 reported `Administrator_berechtigungen` sentence.
 
+Test 66 adds the missing Nokia 5500 German frontend instruction at
+`0xF8451E3E`, closing the reported `$SysReset` folder-name path without changing
+the input text. It also adds the Nokia E65 engine from the reconstructed
+[`nokiaklatt-sapi5`](https://github.com/joshknnd1982/nokiaklatt-sapi5)
+profile: all 30 available languages, one standard male-labelled voice per
+language, and native x86, x64, ARM64 and ARM64EC runtimes. Reference sentences
+are PCM-identical for all 30 voices; 1,559 reference-accepted isolated ASCII
+letters and all 30 high-rate cases also pass. The 19 MB source firmware is not
+packaged: its observed TTS pages are stored in an address-preserving core of
+about 373 KB.
+
 No complete firmware ROM is added. The expanded build uses compact,
-address-preserving code packs for both the 5320 and 5500 and adds only the
+address-preserving code packs for the 5320, 5500 and E65 and adds only the
 required speech data.
-DJ Graco's repository also contains working Nokia E65 and Nokia N95 8GB
-profiles with 30 languages each. Those use distinct Nokia engine builds and
-therefore require separate compact-pack and native-port validation rather than
-being silently substituted as 5320 data.
+DJ Graco's repository also contains a working Nokia N95 8GB profile with 30
+languages. It uses another distinct Nokia engine build and therefore still
+requires separate compact-pack and native-port validation rather than being
+silently substituted as 5320 or E65 data.
 
 Other variants, such as French from the Nokia C5 family, require matching C5
 TTS data before they can be analysed and packaged. Data from a different
@@ -232,6 +246,8 @@ another buffering or ROM-compression change.
   [`nokiaKlatt 0.5.1`](https://github.com/djgraco/nokiaKlatt). Many thanks for
   preserving, testing and documenting these difficult-to-find Nokia speech
   resources.
+- SAPI5 packaging used as the E65 reference profile:
+  [`joshknnd1982/nokiaklatt-sapi5`](https://github.com/joshknnd1982/nokiaklatt-sapi5)
 - Continued porting and packaging: the NOKIATTSNVDA project
 - CPU emulation used by transition builds:
   [Unicorn Engine](https://github.com/unicorn-engine/unicorn)

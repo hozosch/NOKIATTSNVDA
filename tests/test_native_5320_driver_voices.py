@@ -149,6 +149,33 @@ class VoiceDiscoveryTest(unittest.TestCase):
                 driver._voices["5500:3"].name,
             )
 
+    def test_all_e65_voices_are_exposed_and_grouped_by_language(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            for language_id, _name, _locale in DRIVER._LANGUAGES:
+                for gender in DRIVER._GENDERS:
+                    (data / f"5320-{language_id}-{gender}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._5500_LANGUAGE_IDS:
+                (data / f"5500-{language_id}.snapshot").write_bytes(b"x")
+            for language_id in DRIVER._E65_LANGUAGE_IDS:
+                (data / f"e65-{language_id}.snapshot").write_bytes(b"x")
+            driver = self.make_driver(root)
+            self.assertEqual(101, len(driver._voices))
+            self.assertEqual(
+                ["5320:3-male", "5320:3-female", "5500:3", "e65:3"],
+                [
+                    voice
+                    for voice in driver._voices
+                    if voice.split(":", 1)[1].split("-", 1)[0] == "3"
+                ],
+            )
+            self.assertEqual("German male (Nokia E65)", driver._voices["e65:3"].name)
+            self.assertNotIn("e65:44", driver._voices)
+            self.assertNotIn("e65:401", driver._voices)
+            self.assertNotIn("e65:402", driver._voices)
+
     def test_test43_german_snapshot_name_remains_compatible(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

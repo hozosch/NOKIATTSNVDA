@@ -45,6 +45,12 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_5500_snapshot(
     const uint8_t *rom, size_t rom_size,
     const uint8_t *snapshot, size_t snapshot_size);
 
+/* The E65 snapshot contains its ROFS-resident speech device after build-time
+   binding; the shipped native runtime therefore needs no E32 loader. */
+NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(
+    const uint8_t *rom, size_t rom_size,
+    const uint8_t *snapshot, size_t snapshot_size);
+
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *runtime);
 NOKIA_RUNTIME_EXPORT int nokia_runtime_set_rate(
     NokiaRuntime *runtime, double factor);

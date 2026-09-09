@@ -40,6 +40,7 @@ REGRESSION_SAMPLES = {
     2: ("a_b", "Ä", "Ö", "Ü", "Ä Ö Ü", "e x", " Ä ", " 1 ", "\t1\n"),
     3: (
         "a_b",
+        "$SysReset",
         " 1 ",
         "\t1\n",
         "Aktuell gespeicherte Einstellungen für die Anmeldung und "

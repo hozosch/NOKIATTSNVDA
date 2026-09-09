@@ -19,9 +19,12 @@ def main() -> None:
                         help="ROM profile expected in every input trace")
     parser.add_argument("--entry", type=lambda value: int(value, 0),
                         help="optional native entry point for AOT inputs")
+    parser.add_argument("--klatt-output", type=Path,
+                        help="write a merged native-Klatt trace as well")
     args = parser.parse_args()
 
     merged: dict[int, dict] = {}
+    merged_klatt: dict[int, dict] = {}
     executive_calls: dict[tuple[bool, int, int, bool], dict] = {}
     sources = []
     total_audio_bytes = 0
@@ -80,6 +83,26 @@ def main() -> None:
                 )
             if previous is None:
                 merged[address] = candidate
+        for item in payload.get("klatt_instructions", []):
+            address = int(item["address"]) & ~1
+            candidate = {
+                "address": address,
+                "size": int(item["size"]),
+                "thumb": bool(item.get("thumb", False)) or bool(
+                    int(item["address"]) & 1
+                ),
+                "phase": "klatt",
+            }
+            previous = merged_klatt.get(address)
+            if previous is not None and (
+                previous["size"] != candidate["size"]
+                or previous["thumb"] != candidate["thumb"]
+            ):
+                raise ValueError(
+                    f"conflicting Klatt decode at 0x{address:08x}"
+                )
+            if previous is None:
+                merged_klatt[address] = candidate
 
     instructions = [merged[address] for address in sorted(merged)]
     phase_counts: dict[str, int] = {}
@@ -109,6 +132,26 @@ def main() -> None:
     print("merged traces:", len(sources))
     print("unique instructions:", len(instructions))
     print("phase counts:", phase_counts)
+    if args.klatt_output is not None:
+        if args.entry is None:
+            raise ValueError("--klatt-output requires --entry")
+        klatt_instructions = [
+            merged_klatt[address] for address in sorted(merged_klatt)
+        ]
+        klatt_payload = {
+            "profile": args.profile,
+            "kind": "merged-native-klatt",
+            "entry": args.entry & ~1,
+            "sources": sources,
+            "instruction_count": len(klatt_instructions),
+            "instructions": klatt_instructions,
+        }
+        args.klatt_output.parent.mkdir(parents=True, exist_ok=True)
+        args.klatt_output.write_text(
+            json.dumps(klatt_payload, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print("unique Klatt instructions:", len(klatt_instructions))
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ def main() -> None:
     ap.add_argument('rom', type=Path)
     ap.add_argument('snapshot', type=Path)
     ap.add_argument('data_dir', type=Path)
-    ap.add_argument('--profile', choices=('5320', '5500'), default='5320')
+    ap.add_argument('--profile', choices=('5320', '5500', 'e65'), default='5320')
     ap.add_argument('--rom-trace', type=Path)
     args = ap.parse_args()
 

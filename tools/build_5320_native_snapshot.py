@@ -27,6 +27,8 @@ HEADER_WORDS = 27
 
 
 def snapshot_magic(profile: str) -> bytes:
+    if profile.lower() == "e65":
+        return b"NKE65S01"
     magic = f"NK{profile.upper()}S1".encode("ascii")
     if len(magic) != 8:
         raise ValueError(
@@ -43,11 +45,16 @@ def main() -> None:
     ap.add_argument("--voice", default="DefaultMale")
     ap.add_argument("--profile", default="5320",
                     help="ROM profile directory below addon/roms")
+    ap.add_argument("--augmented-rom-output", type=Path,
+                    help="write an E65 ROM with its bound ROFS modules")
     args = ap.parse_args()
 
     addon = args.upstream / "addon"
     sys.path.insert(0, str(addon / "synthDrivers"))
     import _nokia.harness  # configure upstream's vendored Unicorn first
+    if args.profile == "e65":
+        from e65_reference_support import install_e65_reference_support
+        install_e65_reference_support()
     from _nokia import romdir
     from _nokia.engine import Engine, RUN_IF_READY
     from _nokia.harness.devtts import Dev
@@ -95,6 +102,10 @@ def main() -> None:
         free_cells = [
             (int(a), int(s)) for a, s in getattr(ep, "free_cells", ())
         ]
+
+        if args.augmented_rom_output is not None:
+            from e65_reference_support import write_augmented_rom
+            write_augmented_rom(ep, args.augmented_rom_output)
 
         words = [
             VERSION, int(args.language), 1 if eng.voice_applied else 0,

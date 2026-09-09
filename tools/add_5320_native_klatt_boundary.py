@@ -8,6 +8,7 @@ from pathlib import Path
 ENTRIES = {
     "5320": 0x830F9DB0,
     "5500": 0xF845AA0C,
+    "e65": 0xF840780C,
 }
 # Small ARM literal veneers that may be called independently of the specialised
 # Klatt entry. They only load a ROM function pointer and dispatch to it. Keeping
@@ -26,6 +27,11 @@ VENEERS = {
         0xF8462488: 0xF846248C,
         0xF84624A8: 0xF84624AC,
         0xF84624E0: 0xF84624E4,
+    },
+    "e65": {
+        0xF840F288: 0xF840F28C,
+        0xF840F2A8: 0xF840F2AC,
+        0xF840F2E0: 0xF840F2E4,
     },
 }
 
@@ -56,16 +62,18 @@ def main() -> None:
         reg_TB=(veneer&1u)!=0;reg_pc=veneer&~1u;goto dispatch;
     }}'''
     helper_cases = ''
-    if args.profile == '5500':
-        helper_cases = '''
-    case 0xf81b4bf8u: {
+    if args.profile in ('5500', 'e65'):
+        signed_div = 0xF81B4BF8 if args.profile == '5500' else 0xF8113F68
+        unsigned_div = 0xF81B4D70 if args.profile == '5500' else 0xF81140E0
+        helper_cases = f'''
+    case 0x{signed_div:08x}u: {{
         int32_t a=(int32_t)reg_r0,b=(int32_t)reg_r1;
         if(!b)goto unsupported;reg_r0=(uint32_t)(a/b);reg_pc=reg_lr;goto dispatch;
-    }
-    case 0xf81b4d70u: {
+    }}
+    case 0x{unsigned_div:08x}u: {{
         uint32_t a=(uint32_t)reg_r0,b=(uint32_t)reg_r1;
         if(!b)goto unsupported;reg_r0=a/b;reg_r1=a%b;reg_pc=reg_lr;goto dispatch;
-    }'''
+    }}'''
     block = anchor + veneer_cases + helper_cases + '''
     case 0xKLATT_ENTRYu: {
         uint32_t kr[17]={(uint32_t)reg_r0,(uint32_t)reg_r1,(uint32_t)reg_r2,(uint32_t)reg_r3,

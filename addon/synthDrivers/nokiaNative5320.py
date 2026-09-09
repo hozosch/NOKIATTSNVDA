@@ -73,14 +73,25 @@ _LANGUAGES = (
 	(402, "Galician", "gl_ES"),
 )
 _GENDERS = ("male", "female")
-_MODEL_ORDER = ("5320", "5500")
+_MODEL_ORDER = ("5320", "5500", "e65")
 _MODEL_VARIANTS = {
 	"5320": _GENDERS,
 	# The 5500 firmware exposes one unnamed standard voice.  Keep the legacy
 	# suffix-free ID while describing the voice as male in NVDA's UI.
 	"5500": (None,),
+	# The E65 likewise exposes one unnamed standard voice per language.
+	"e65": (None,),
 }
 _5500_LANGUAGE_IDS = frozenset((1, 2, 3, 4, 37))
+_E65_LANGUAGE_IDS = frozenset(
+	(1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 18, 25, 26, 27, 28,
+	 37, 42, 45, 49, 54, 57, 67, 68, 78, 79, 93)
+)
+_MODEL_LANGUAGE_IDS = {
+	"5500": _5500_LANGUAGE_IDS,
+	"e65": _E65_LANGUAGE_IDS,
+}
+_MODEL_DISPLAY_NAMES = {"5320": "5320", "5500": "5500", "e65": "E65"}
 _DEFAULT_VOICE = "5320:3-male"
 
 
@@ -102,7 +113,7 @@ class _Callbacks(ctypes.Structure):
 
 class SynthDriver(BaseSynthDriver):
 	name = "nokiaNative5320"
-	description = "Nokia 5320/5500 Native (experimental)"
+	description = "Nokia 5320/5500/E65 Native (experimental)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -124,6 +135,8 @@ class SynthDriver(BaseSynthDriver):
 				or (root / "data" / "SYM.ROM").is_file()
 			) and (data / "5500-3.snapshot").is_file() and (
 				data / "5500-core.nrp"
+			).is_file() and (data / "e65-3.snapshot").is_file() and (
+				data / "e65-core.nrp"
 			).is_file()
 		except Exception:
 			return False
@@ -183,7 +196,7 @@ class SynthDriver(BaseSynthDriver):
 		paths = {}
 		for languageId, _name, _locale in _LANGUAGES:
 			for model in _MODEL_ORDER:
-				if model == "5500" and languageId not in _5500_LANGUAGE_IDS:
+				if model in _MODEL_LANGUAGE_IDS and languageId not in _MODEL_LANGUAGE_IDS[model]:
 					continue
 				for variant in _MODEL_VARIANTS[model]:
 					voiceId = _voiceId(model, languageId, variant)
@@ -210,7 +223,7 @@ class SynthDriver(BaseSynthDriver):
 						variantName = variant or "male"
 						voices[voiceId] = VoiceInfo(
 							voiceId,
-							f"{name} {variantName} (Nokia {model})",
+							f"{name} {variantName} (Nokia {_MODEL_DISPLAY_NAMES[model]})",
 							locale,
 						)
 		return voices
