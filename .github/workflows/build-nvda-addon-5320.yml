@@ -43,6 +43,7 @@ jobs:
             tools/patch_5320_executive_calls.py \
             tools/patch_5500_executive_calls.py \
             tools/patch_5500_sysreset.py \
+            tools/patch_e65_frontend_regressions.py \
             tools/smoke_native_5320_runtime.py \
             tools/smoke_native_5320_voices.py \
             tools/smoke_native_5500_voices.py \
@@ -277,6 +278,7 @@ jobs:
           done
           test "$(find build/e65/snapshots -name 'e65-*.snapshot' | wc -l)" -eq 30
           python tools/patch_5500_sysreset.py build/5500/nokia_frontend_5500_full.c
+          python tools/patch_e65_frontend_regressions.py build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f844e280:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84516cc:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845180e:$' build/5500/nokia_frontend_5500_full.c
@@ -337,6 +339,69 @@ jobs:
           grep -q '^L_f81de6d4:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81f42c4:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f840173a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400422:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840042a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840e34c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840e34e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84094fe:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8409500:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8408f5e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8408f6a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8409156:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840917e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f2c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f2e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f08:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f0a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400a30:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84010ce:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84010d6:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fecec:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fecfc:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fedc4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fedc6:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83feeaa:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83feec4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e6cc:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e6f6:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e85a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e892:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914eda0:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914eda8:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914ee28:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^    case 0xf814088cu: {$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^    case 0xf812ccc0u:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840049c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84005bc:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84006b0:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84006d2:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84006e8:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400752:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840077e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400816:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400830:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400848:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400856:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400888:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8402d96:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8402da4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8403e30:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8406912:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8406936:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840a876:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840a8e0:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840aa10:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840aa18:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840af60:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840af78:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840ed00:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840ed10:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840ee9e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840eeb4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840d0d4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840d0de:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400438:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840043c:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840b89e:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f9225154:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f8407c88:$' build/e65/nokia_klatt_e65.c
@@ -592,7 +657,71 @@ jobs:
             gzip -dc "$snapshot" > "build/e65/snapshots/$name"
           done
           test "$(find build/e65/snapshots -name 'e65-*.snapshot' | wc -l)" -eq 30
+          python tools/patch_e65_frontend_regressions.py build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840173a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400422:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840042a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840e34c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840e34e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84094fe:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8409500:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8408f5e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8408f6a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8409156:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840917e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f2c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f2e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f08:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400f0a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400a30:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84010ce:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84010d6:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fecec:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fecfc:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fedc4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83fedc6:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83feeaa:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f83feec4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e6cc:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e6f6:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e85a:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914e892:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914eda0:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914eda8:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f914ee28:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^    case 0xf814088cu: {$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^    case 0xf812ccc0u:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840049c:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84005bc:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84006b0:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84006d2:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f84006e8:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400752:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840077e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400816:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400830:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400848:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400856:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400888:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8402d96:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8402da4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8403e30:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8406912:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8406936:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840a876:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840a8e0:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840aa10:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840aa18:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840af60:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840af78:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840ed00:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840ed10:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840ee9e:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840eeb4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840d0d4:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840d0de:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f8400438:$' build/e65/nokia_frontend_e65_full.c
+          grep -q '^L_f840043c:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f840b89e:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f9225154:$' build/e65/nokia_frontend_e65_full.c
           grep -q '^L_f8407c88:$' build/e65/nokia_klatt_e65.c
