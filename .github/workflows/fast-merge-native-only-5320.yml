@@ -105,7 +105,7 @@ jobs:
             build/native/nokia_runtime_5320_x64.dll \
             build/test18-addon/data/SYM.ROM \
             build/native/5320-de-male.snapshot \
-            build/test18-addon/data/files/system/data
+            build/test18-addon/data/config
 
       - name: Upload debug runtime
         if: always()
