@@ -299,6 +299,7 @@ jobs:
           test "$(find build/6650/snapshots -name '6650-*-*.snapshot' | wc -l)" -eq 8
           grep -q '^L_80183130:$' build/6650/nokia_frontend_6650_full.c
           grep -q 'Native 6650 single-threaded store-exclusive' build/6650/nokia_frontend_6650_full.c
+          grep -q 'nokia_frontend_yield_pc_value' build/6650/nokia_frontend_6650_full.c
           grep -q '^    case 0x82a62400u: {$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a6287c:$' build/6650/nokia_klatt_6650.c
           python tools/patch_5500_sysreset.py build/5500/nokia_frontend_5500_full.c
@@ -693,6 +694,7 @@ jobs:
           test "$(find build/6650/snapshots -name '6650-*-*.snapshot' | wc -l)" -eq 8
           grep -q '^L_80183130:$' build/6650/nokia_frontend_6650_full.c
           grep -q 'Native 6650 single-threaded store-exclusive' build/6650/nokia_frontend_6650_full.c
+          grep -q 'nokia_frontend_yield_pc_value' build/6650/nokia_frontend_6650_full.c
           grep -q '^    case 0x82a62400u: {$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a6287c:$' build/6650/nokia_klatt_6650.c
           gzip -dc native/generated/nokia_frontend_5500_full.c.gz > build/5500/nokia_frontend_5500_full.c
