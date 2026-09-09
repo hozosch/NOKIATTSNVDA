@@ -11,7 +11,9 @@ from pathlib import Path
 from smoke_native_5500_voices import (
     Callbacks,
     DIAGNOSTICS,
+    GERMAN_SETTINGS_REGRESSION,
     INDEX,
+    LONG_RUNTIME_ERROR_REGRESSION,
     PCM,
     byte_array,
     config_blobs,
@@ -85,10 +87,12 @@ EXPECTED_SHA256 = {
     93: "1a72e2ca084e9e60ef8d237266396b5aa9ba5999caa8062645ff36cc38b8f6bd",
 }
 
-GERMAN_MENU_REGRESSIONS = (
+GERMAN_REGRESSIONS = (
     "NVDA Menü",
     "Optionen Untermenü",
     "Werkzeuge Untermenü",
+    GERMAN_SETTINGS_REGRESSION,
+    LONG_RUNTIME_ERROR_REGRESSION,
 )
 
 # These exact one-character utterances are rejected by the original E65
@@ -225,17 +229,19 @@ def main() -> None:
         # Keep these before the quick-test exit: they guard the ARM64EC path
         # used by the NVDA driver, including its explicit pitch setup.
         if language_id == 3:
-            for menu_text in GERMAN_MENU_REGRESSIONS:
+            for regression_text in GERMAN_REGRESSIONS:
                 try:
-                    menu_audio = synthesize(
-                        dll, rom, len(rom_data), snapshot, menu_text
+                    regression_audio = synthesize(
+                        dll, rom, len(rom_data), snapshot, regression_text
                     )
                 except Exception as error:
-                    failures.append(f"{language_id} {menu_text!r}: {error}")
+                    failures.append(
+                        f"{language_id} {regression_text!r}: {error}"
+                    )
                 else:
                     print(
-                        f"{language_id} {menu_text!r}: "
-                        f"pcm_bytes={len(menu_audio)}"
+                        f"{language_id} {regression_text!r}: "
+                        f"pcm_bytes={len(regression_audio)}"
                     )
         if args.quick:
             continue

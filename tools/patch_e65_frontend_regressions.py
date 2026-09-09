@@ -356,6 +356,464 @@ L_f8400f2e:
     return NOKIA_FRONTEND_CONTINUE;
 """
 
+COUNT_NORMALIZE_DISPATCH_ANCHOR = "    case 0xf840064au: goto L_f840064a;\n"
+COUNT_NORMALIZE_DISPATCH_LINES = """    case 0xf840064cu: goto L_f840064c;
+    case 0xf840064eu: goto L_f840064e;
+    case 0xf8400650u: goto L_f8400650;
+"""
+COUNT_NORMALIZE_BODY_ANCHOR = "L_f8400652:\n"
+COUNT_NORMALIZE_BODY = """L_f840064c:
+    nokia_frontend_last_pc=0xf840064cu;
+    reg_r0 = ((reg_r0 & UINT64_C(0xffffffff)) + UINT64_C(1)) & UINT64_C(0xffffffff);
+    goto L_f840064e;
+L_f840064e:
+    nokia_frontend_last_pc=0xf840064eu;
+    reg_r0 = ((reg_r0 & UINT64_C(0xffffffff)) << 16) & UINT64_C(0xffffffff);
+    goto L_f8400650;
+L_f8400650:
+    nokia_frontend_last_pc=0xf8400650u;
+    reg_r0 = ((reg_r0 & UINT64_C(0xffffffff)) >> 16) & UINT64_C(0xffffffff);
+    goto L_f8400652;
+"""
+
+LONG_TEXT_INCREMENT_DISPATCH_ANCHOR = (
+    "    case 0xf83fcaa4u: goto L_f83fcaa4;\n"
+)
+LONG_TEXT_INCREMENT_DISPATCH_LINES = (
+    "    case 0xf83fcaa6u: goto L_f83fcaa6;\n"
+)
+LONG_TEXT_INCREMENT_BODY_ANCHOR = "L_f83fcaa8:\n"
+LONG_TEXT_INCREMENT_BODY = """L_f83fcaa6:
+    nokia_frontend_last_pc=0xf83fcaa6u;
+    reg_tmpCY = ((uint64_t)(nokia_carry((reg_r5 & UINT64_C(0xffffffff)), (UINT64_C(1) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_tmpOV = ((uint64_t)(nokia_scarry((reg_r5 & UINT64_C(0xffffffff)), (UINT64_C(1) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_r5 = ((uint64_t)((reg_r5 & UINT64_C(0xffffffff)) + (UINT64_C(1) & UINT64_C(0xffffffff)))) & UINT64_C(0xffffffff);
+    reg_tmpNG = ((uint64_t)(nokia_sext((reg_r5 & UINT64_C(0xffffffff)), 4) < nokia_sext((UINT64_C(0) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_tmpZR = ((uint64_t)((reg_r5 & UINT64_C(0xffffffff)) == (UINT64_C(0) & UINT64_C(0xffffffff)))) & UINT64_C(0xff);
+    reg_CY = ((uint64_t)((reg_tmpCY & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_ZR = ((uint64_t)((reg_tmpZR & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_NG = ((uint64_t)((reg_tmpNG & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_OV = ((uint64_t)((reg_tmpOV & UINT64_C(0xff)))) & UINT64_C(0xff);
+    goto L_f83fcaa8;
+"""
+
+LONG_TEXT_FLAG_DISPATCH_ANCHOR = "    case 0xf8400d78u: goto L_f8400d78;\n"
+LONG_TEXT_FLAG_DISPATCH_LINES = """    case 0xf8400d7au: goto L_f8400d7a;
+    case 0xf8400d7cu: goto L_f8400d7c;
+    case 0xf8400d7eu: goto L_f8400d7e;
+"""
+LONG_TEXT_FLAG_BODY_ANCHOR = "L_f8400d82:\n"
+LONG_TEXT_FLAG_BODY = """L_f8400d7a:
+    nokia_frontend_last_pc=0xf8400d7au;
+    reg_r1 = ((uint64_t)((UINT64_C(1) & UINT64_C(0xffffffff)))) & UINT64_C(0xffffffff);
+    reg_tmpNG = ((uint64_t)(nokia_sext((reg_r1 & UINT64_C(0xffffffff)), 4) < nokia_sext((UINT64_C(0) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_tmpZR = ((uint64_t)((reg_r1 & UINT64_C(0xffffffff)) == (UINT64_C(0) & UINT64_C(0xffffffff)))) & UINT64_C(0xff);
+    reg_ZR = ((uint64_t)((reg_tmpZR & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_NG = ((uint64_t)((reg_tmpNG & UINT64_C(0xff)))) & UINT64_C(0xff);
+    goto L_f8400d7c;
+L_f8400d7c:
+    nokia_frontend_last_pc=0xf8400d7cu;
+    reg_r0 = ((uint64_t)((reg_r4 & UINT64_C(0xffffffff)))) & UINT64_C(0xffffffff);
+    reg_tmpNG = ((uint64_t)(nokia_sext((reg_r0 & UINT64_C(0xffffffff)), 4) < nokia_sext((UINT64_C(0) & UINT64_C(0xffffffff)), 4))) & UINT64_C(0xff);
+    reg_tmpZR = ((uint64_t)((reg_r0 & UINT64_C(0xffffffff)) == (UINT64_C(0) & UINT64_C(0xffffffff)))) & UINT64_C(0xff);
+    reg_ZR = ((uint64_t)((reg_tmpZR & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_NG = ((uint64_t)((reg_tmpNG & UINT64_C(0xff)))) & UINT64_C(0xff);
+    goto L_f8400d7e;
+L_f8400d7e:
+    nokia_frontend_last_pc=0xf8400d7eu;
+    reg_lr = ((uint64_t)((UINT64_C(4164947330) & UINT64_C(0xffffffff)) | (UINT64_C(1) & UINT64_C(0xffffffff)))) & UINT64_C(0xffffffff);
+    reg_TB = ((uint64_t)((UINT64_C(1) & UINT64_C(0xff)))) & UINT64_C(0xff);
+    reg_lr=UINT64_C(4164947331);
+    reg_pc=UINT64_C(4164946334); return NOKIA_FRONTEND_CONTINUE;
+"""
+
+LONG_TEXT_TABLE_DISPATCH_ANCHOR = "    case 0xf840067cu: goto L_f840067c;\n"
+LONG_TEXT_TABLE_DISPATCH_LINES = """    case 0xf840067eu: goto L_f840067e;
+    case 0xf8400680u: goto L_f8400680;
+    case 0xf8400682u: goto L_f8400682;
+    case 0xf8400684u: goto L_f8400684;
+    case 0xf8400686u: goto L_f8400686;
+"""
+LONG_TEXT_TABLE_BODY_ANCHOR = "L_f8400688:\n"
+LONG_TEXT_TABLE_BODY = """L_f840067e:
+    nokia_frontend_last_pc=0xf840067eu;
+    u_150a00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(8)) & UINT64_C(0xffffffff);
+    reg_r2 = nokia_mem_load(&machine, u_150a00, 4) & UINT64_C(0xffffffff);
+    goto L_f8400680;
+L_f8400680:
+    nokia_frontend_last_pc=0xf8400680u;
+    reg_r3 = ((reg_r1 & UINT64_C(0xffffffff)) << 1) & UINT64_C(0xffffffff);
+    goto L_f8400682;
+L_f8400682:
+    nokia_frontend_last_pc=0xf8400682u;
+    u_151000 = ((reg_r2 & UINT64_C(0xffffffff)) + (reg_r3 & UINT64_C(0xffffffff))) & UINT64_C(0xffffffff);
+    u_15b700 = nokia_mem_load(&machine, u_151000, 2) & UINT64_C(0xffff);
+    reg_r6 = u_15b700;
+    goto L_f8400684;
+L_f8400684:
+    nokia_frontend_last_pc=0xf8400684u;
+    reg_r6 = ((reg_r6 & UINT64_C(0xffffffff)) + (reg_r0 & UINT64_C(0xffffffff))) & UINT64_C(0xffffffff);
+    goto L_f8400686;
+L_f8400686:
+    nokia_frontend_last_pc=0xf8400686u;
+    u_151000 = ((reg_r2 & UINT64_C(0xffffffff)) + (reg_r3 & UINT64_C(0xffffffff))) & UINT64_C(0xffffffff);
+    u_1afd00 = reg_r6 & UINT64_C(0xffff);
+    if (!nokia_mem_store(&machine, u_151000, u_1afd00, 2)) return NOKIA_FRONTEND_UNSUPPORTED;
+    goto L_f8400688;
+"""
+
+LONG_TEXT_LOOKUP_DISPATCH_ANCHOR = "    case 0xf840065eu: goto L_f840065e;\n"
+LONG_TEXT_LOOKUP_DISPATCH_LINES = """    case 0xf8400660u: goto L_f8400660;
+    case 0xf8400662u: goto L_f8400662;
+    case 0xf8400664u: goto L_f8400664;
+    case 0xf8400666u: goto L_f8400666;
+    case 0xf8400668u: goto L_f8400668;
+    case 0xf840066au: goto L_f840066a;
+    case 0xf840066cu: goto L_f840066c;
+    case 0xf840066eu: goto L_f840066e;
+    case 0xf8400670u: goto L_f8400670;
+    case 0xf8400672u: goto L_f8400672;
+    case 0xf8400674u: goto L_f8400674;
+    case 0xf8400676u: goto L_f8400676;
+    case 0xf8400678u: goto L_f8400678;
+"""
+LONG_TEXT_LOOKUP_BODY_ANCHOR = "L_f840067a:\n"
+LONG_TEXT_LOOKUP_BODY = """L_f8400660:
+    nokia_frontend_last_pc=0xf8400660u;
+    u_151000 = ((reg_r3 & UINT64_C(0xffffffff)) + (reg_r2 & UINT64_C(0xffffffff))) & UINT64_C(0xffffffff);
+    reg_r1 = nokia_mem_load(&machine, u_151000, 4) & UINT64_C(0xffffffff);
+    goto L_f8400662;
+L_f8400662:
+    nokia_frontend_last_pc=0xf8400662u;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(48)) & UINT64_C(0xffffffff);
+    reg_r3 = nokia_mem_load(&machine, u_150c00, 2) & UINT64_C(0xffff);
+    goto L_f8400664;
+L_f8400664:
+    nokia_frontend_last_pc=0xf8400664u;
+    reg_r2 = nokia_mem_load(&machine, reg_r1 & UINT64_C(0xffffffff), 2) & UINT64_C(0xffff);
+    goto L_f8400666;
+L_f8400666:
+    nokia_frontend_last_pc=0xf8400666u;
+    reg_ZR = ((reg_r2 & UINT64_C(0xffffffff)) == (reg_r3 & UINT64_C(0xffffffff)));
+    goto L_f8400668;
+L_f8400668:
+    nokia_frontend_last_pc=0xf8400668u;
+    if (!(reg_ZR & UINT64_C(0xff))) goto L_f840067a;
+    goto L_f840066a;
+L_f840066a:
+    nokia_frontend_last_pc=0xf840066au;
+    reg_r6 = reg_r12 & UINT64_C(0xffffffff);
+    goto L_f840066c;
+L_f840066c:
+    nokia_frontend_last_pc=0xf840066cu;
+    reg_r2 = ((reg_r6 & UINT64_C(0xffffffff)) << 1) & UINT64_C(0xffffffff);
+    goto L_f840066e;
+L_f840066e:
+    nokia_frontend_last_pc=0xf840066eu;
+    reg_r2 = ((reg_r2 & UINT64_C(0xffffffff)) - UINT64_C(2)) & UINT64_C(0xffffffff);
+    goto L_f8400670;
+L_f8400670:
+    nokia_frontend_last_pc=0xf8400670u;
+    u_151000 = ((reg_r1 & UINT64_C(0xffffffff)) + (reg_r2 & UINT64_C(0xffffffff))) & UINT64_C(0xffffffff);
+    reg_r1 = nokia_mem_load(&machine, u_151000, 2) & UINT64_C(0xffff);
+    goto L_f8400672;
+L_f8400672:
+    nokia_frontend_last_pc=0xf8400672u;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(50)) & UINT64_C(0xffffffff);
+    reg_r2 = nokia_mem_load(&machine, u_150c00, 2) & UINT64_C(0xffff);
+    goto L_f8400674;
+L_f8400674:
+    nokia_frontend_last_pc=0xf8400674u;
+    reg_ZR = ((reg_r1 & UINT64_C(0xffffffff)) == (reg_r2 & UINT64_C(0xffffffff)));
+    goto L_f8400676;
+L_f8400676:
+    nokia_frontend_last_pc=0xf8400676u;
+    if (!(reg_ZR & UINT64_C(0xff))) goto L_f840067a;
+    goto L_f8400678;
+L_f8400678:
+    nokia_frontend_last_pc=0xf8400678u;
+    reg_r0 = 0;
+    goto L_f840067a;
+"""
+
+LONG_SETTINGS_LOOKUP_DISPATCH_ANCHOR = "    case 0xf8400c42u: goto L_f8400c42;\n"
+LONG_SETTINGS_LOOKUP_DISPATCH_LINES = """    case 0xf8400c44u: goto L_f8400c44;
+    case 0xf8400c46u: goto L_f8400c46;
+    case 0xf8400c48u: goto L_f8400c48;
+"""
+LONG_SETTINGS_LOOKUP_BODY_ANCHOR = "L_f8400c4a:\n"
+LONG_SETTINGS_LOOKUP_BODY = """L_f8400c44:
+    nokia_frontend_last_pc=0xf8400c44u;
+    reg_r1 = ((reg_r1 & UINT64_C(0xffffffff)) + UINT64_C(2)) & UINT64_C(0xffffffff);
+    goto L_f8400c46;
+L_f8400c46:
+    nokia_frontend_last_pc=0xf8400c46u;
+    u_151000 = ((reg_r0 & UINT64_C(0xffffffff)) + (reg_r1 & UINT64_C(0xffffffff))) & UINT64_C(0xffffffff);
+    reg_r1 = nokia_mem_load(&machine, u_151000, 2) & UINT64_C(0xffff);
+    goto L_f8400c48;
+L_f8400c48:
+    nokia_frontend_last_pc=0xf8400c48u;
+    goto L_f8400c4c;
+"""
+
+LONG_SETTINGS_FLAG_DISPATCH_ANCHOR = "    case 0xf83fc11eu: goto L_f83fc11e;\n"
+LONG_SETTINGS_FLAG_DISPATCH_LINES = "    case 0xf83fc120u: goto L_f83fc120;\n"
+LONG_SETTINGS_FLAG_BODY_ANCHOR = "L_f83fc122:\n"
+LONG_SETTINGS_FLAG_BODY = """L_f83fc120:
+    nokia_frontend_last_pc=0xf83fc120u;
+    reg_r4 = 1;
+    goto L_f83fc122;
+"""
+
+LONG_ERROR_TABLE_DISPATCH_ANCHOR = "    case 0xf8400d00u: goto L_f8400d00;\n"
+LONG_ERROR_TABLE_DISPATCH_LINES = """    case 0xf8400d02u: goto L_f8400d02;
+    case 0xf8400d04u: goto L_f8400d04;
+"""
+LONG_ERROR_TABLE_BODY_ANCHOR = "L_f8400d06:\n"
+LONG_ERROR_TABLE_BODY = """L_f8400d02:
+    nokia_frontend_last_pc=0xf8400d02u;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(54)) & UINT64_C(0xffffffff);
+    reg_r1 = nokia_mem_load(&machine, u_150c00, 2) & UINT64_C(0xffff);
+    goto L_f8400d04;
+L_f8400d04:
+    nokia_frontend_last_pc=0xf8400d04u;
+    goto L_f8400d08;
+"""
+
+LONG_TEXT_COPY_DISPATCH_ANCHOR = "    case 0xf83fcc10u: goto L_f83fcc10;\n"
+LONG_TEXT_COPY_DISPATCH_LINES = """    case 0xf83fcc12u: goto L_f83fcc12;
+    case 0xf83fcc14u: goto L_f83fcc14;
+    case 0xf83fcc16u: goto L_f83fcc16;
+    case 0xf83fcc1au: goto L_f83fcc1a;
+"""
+LONG_TEXT_COPY_BODY_ANCHOR = "L_f83fcc1c:\n"
+LONG_TEXT_COPY_BODY = """L_f83fcc12:
+    nokia_frontend_last_pc=0xf83fcc12u;
+    u_151300 = ((reg_sp & UINT64_C(0xffffffff)) + UINT64_C(76)) & UINT64_C(0xffffffff);
+    reg_r0 = nokia_mem_load(&machine, u_151300, 4) & UINT64_C(0xffffffff);
+    goto L_f83fcc14;
+L_f83fcc14:
+    nokia_frontend_last_pc=0xf83fcc14u;
+    u_151300 = ((reg_sp & UINT64_C(0xffffffff)) + UINT64_C(32)) & UINT64_C(0xffffffff);
+    reg_r1 = nokia_mem_load(&machine, u_151300, 4) & UINT64_C(0xffffffff);
+    goto L_f83fcc16;
+L_f83fcc16:
+    nokia_frontend_last_pc=0xf83fcc16u;
+    reg_TB = 1;
+    reg_lr = UINT64_C(4164930587);
+    reg_pc = UINT64_C(4164931292);
+    return NOKIA_FRONTEND_CONTINUE;
+L_f83fcc1a:
+    nokia_frontend_last_pc=0xf83fcc1au;
+    reg_r4 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(1)) & UINT64_C(0xffffffff);
+    goto L_f83fcc1c;
+"""
+
+LONG_ERROR_ASSERT_DISPATCH_ANCHOR = "    case 0xf84071aau: goto L_f84071aa;\n"
+LONG_ERROR_ASSERT_DISPATCH_LINES = """    case 0xf84071e2u: goto L_f84071e2;
+    case 0xf84071e4u: goto L_f84071e4;
+    case 0xf84071e6u: goto L_f84071e6;
+    case 0xf84071e8u: goto L_f84071e8;
+    case 0xf84071eau: goto L_f84071ea;
+    case 0xf84071ecu: goto L_f84071ec;
+    case 0xf84071f0u: goto L_f84071f0;
+"""
+LONG_ERROR_ASSERT_BODY_ANCHOR = "L_f84071f2:\n"
+LONG_ERROR_ASSERT_BODY = """L_f84071e2:
+    nokia_frontend_last_pc=0xf84071e2u;
+    reg_ZR = ((reg_r0 & UINT64_C(0xffffffff)) == 0);
+    goto L_f84071e4;
+L_f84071e4:
+    nokia_frontend_last_pc=0xf84071e4u;
+    reg_mult_addr = reg_sp & UINT64_C(0xffffffff);
+    reg_mult_addr = (reg_mult_addr - UINT64_C(4)) & UINT64_C(0xffffffff);
+    if (!nokia_mem_store(&machine, reg_mult_addr, reg_lr, 4)) return NOKIA_FRONTEND_UNSUPPORTED;
+    reg_mult_addr = (reg_mult_addr - UINT64_C(4)) & UINT64_C(0xffffffff);
+    if (!nokia_mem_store(&machine, reg_mult_addr, reg_r4, 4)) return NOKIA_FRONTEND_UNSUPPORTED;
+    reg_sp = reg_mult_addr;
+    goto L_f84071e6;
+L_f84071e6:
+    nokia_frontend_last_pc=0xf84071e6u;
+    if (reg_ZR & UINT64_C(0xff)) goto L_f84071f0;
+    goto L_f84071e8;
+L_f84071e8:
+    nokia_frontend_last_pc=0xf84071e8u;
+    reg_r0 = UINT64_C(18);
+    goto L_f84071ea;
+L_f84071ea:
+    nokia_frontend_last_pc=0xf84071eau;
+    reg_r0 = (~reg_r0) & UINT64_C(0xffffffff);
+    goto L_f84071ec;
+L_f84071ec:
+    nokia_frontend_last_pc=0xf84071ecu;
+    reg_lr = UINT64_C(4164973041);
+    u_a7f00 = nokia_mem_load(&machine, UINT64_C(4165005524), 4) & UINT64_C(0xffffffff);
+    reg_TB = ((u_a7f00 & UINT64_C(1)) != 0);
+    reg_pc = u_a7f00 & UINT64_C(0xfffffffe);
+    return NOKIA_FRONTEND_CONTINUE;
+L_f84071f0:
+    nokia_frontend_last_pc=0xf84071f0u;
+    reg_mult_addr = reg_sp & UINT64_C(0xffffffff);
+    reg_r4 = nokia_mem_load(&machine, reg_mult_addr, 4) & UINT64_C(0xffffffff);
+    reg_mult_addr = (reg_mult_addr + UINT64_C(4)) & UINT64_C(0xffffffff);
+    reg_pc = nokia_mem_load(&machine, reg_mult_addr, 4) & UINT64_C(0xffffffff);
+    reg_mult_addr = (reg_mult_addr + UINT64_C(4)) & UINT64_C(0xffffffff);
+    reg_sp = reg_mult_addr;
+    reg_TB = ((reg_pc & UINT64_C(1)) != 0);
+    reg_pc &= UINT64_C(0xfffffffe);
+    return NOKIA_FRONTEND_CONTINUE;
+"""
+
+LONG_ERROR_OBJECT_DISPATCH_ANCHOR = "    case 0xf8408cd0u: goto L_f8408cd0;\n"
+LONG_ERROR_OBJECT_DISPATCH_LINES = """    case 0xf8408cd2u: goto L_f8408cd2;
+    case 0xf8408cd4u: goto L_f8408cd4;
+    case 0xf8408cd6u: goto L_f8408cd6;
+    case 0xf8408cdau: goto L_f8408cda;
+    case 0xf8408cdcu: goto L_f8408cdc;
+    case 0xf8408cdeu: goto L_f8408cde;
+    case 0xf8408ce0u: goto L_f8408ce0;
+    case 0xf8408ce2u: goto L_f8408ce2;
+    case 0xf8408ce6u: goto L_f8408ce6;
+    case 0xf8408ce8u: goto L_f8408ce8;
+    case 0xf8408ceau: goto L_f8408cea;
+    case 0xf8408cecu: goto L_f8408cec;
+"""
+LONG_ERROR_OBJECT_BODY_ANCHOR = "L_f8408cee:\n"
+LONG_ERROR_OBJECT_BODY = """L_f8408cd2:
+    nokia_frontend_last_pc=0xf8408cd2u;
+    reg_r1 = ((reg_r0 & UINT64_C(0xffffffff)) << 4) & UINT64_C(0xffffffff);
+    goto L_f8408cd4;
+L_f8408cd4:
+    nokia_frontend_last_pc=0xf8408cd4u;
+    u_150a00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(12)) & UINT64_C(0xffffffff);
+    reg_r0 = nokia_mem_load(&machine, u_150a00, 4) & UINT64_C(0xffffffff);
+    goto L_f8408cd6;
+L_f8408cd6:
+    nokia_frontend_last_pc=0xf8408cd6u;
+    reg_TB = 1;
+    reg_lr = UINT64_C(4164979931);
+    reg_pc = UINT64_C(4164973080);
+    return NOKIA_FRONTEND_CONTINUE;
+L_f8408cda:
+    nokia_frontend_last_pc=0xf8408cdau;
+    reg_r5 = reg_r0 & UINT64_C(0xffffffff);
+    reg_ZR = (reg_r5 == 0);
+    reg_NG = ((reg_r5 & UINT64_C(0x80000000)) != 0);
+    goto L_f8408cdc;
+L_f8408cdc:
+    nokia_frontend_last_pc=0xf8408cdcu;
+    if (!(reg_ZR & UINT64_C(0xff))) goto L_f8408ce6;
+    goto L_f8408cde;
+L_f8408cde:
+    nokia_frontend_last_pc=0xf8408cdeu;
+    reg_r0 = 1;
+    goto L_f8408ce0;
+L_f8408ce0:
+    nokia_frontend_last_pc=0xf8408ce0u;
+    reg_r1 = UINT64_C(4164980508);
+    goto L_f8408ce2;
+L_f8408ce2:
+    nokia_frontend_last_pc=0xf8408ce2u;
+    reg_TB = 1;
+    reg_lr = UINT64_C(4164979943);
+    reg_pc = UINT64_C(4164973026);
+    return NOKIA_FRONTEND_CONTINUE;
+L_f8408ce6:
+    nokia_frontend_last_pc=0xf8408ce6u;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(8)) & UINT64_C(0xffffffff);
+    reg_r0 = nokia_mem_load(&machine, u_150c00, 2) & UINT64_C(0xffff);
+    goto L_f8408ce8;
+L_f8408ce8:
+    nokia_frontend_last_pc=0xf8408ce8u;
+    reg_r0 = ((reg_r0 & UINT64_C(0xffffffff)) << 1) & UINT64_C(0xffffffff);
+    goto L_f8408cea;
+L_f8408cea:
+    nokia_frontend_last_pc=0xf8408ceau;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(8)) & UINT64_C(0xffffffff);
+    if (!nokia_mem_store(&machine, u_150c00, reg_r0 & UINT64_C(0xffff), 2)) return NOKIA_FRONTEND_UNSUPPORTED;
+    goto L_f8408cec;
+L_f8408cec:
+    nokia_frontend_last_pc=0xf8408cecu;
+    u_150a00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(12)) & UINT64_C(0xffffffff);
+    if (!nokia_mem_store(&machine, u_150a00, reg_r5 & UINT64_C(0xffffffff), 4)) return NOKIA_FRONTEND_UNSUPPORTED;
+    goto L_f8408cee;
+"""
+
+LONG_ERROR_SECOND_DISPATCH_ANCHOR = "    case 0xf8408638u: goto L_f8408638;\n"
+LONG_ERROR_SECOND_DISPATCH_LINES = """    case 0xf840863au: goto L_f840863a;
+    case 0xf840863cu: goto L_f840863c;
+    case 0xf840863eu: goto L_f840863e;
+    case 0xf8408642u: goto L_f8408642;
+    case 0xf8408644u: goto L_f8408644;
+    case 0xf8408646u: goto L_f8408646;
+    case 0xf8408648u: goto L_f8408648;
+    case 0xf840864au: goto L_f840864a;
+    case 0xf840864eu: goto L_f840864e;
+    case 0xf8408650u: goto L_f8408650;
+    case 0xf8408652u: goto L_f8408652;
+    case 0xf8408654u: goto L_f8408654;
+"""
+LONG_ERROR_SECOND_BODY_ANCHOR = "L_f8408656:\n"
+LONG_ERROR_SECOND_BODY = """L_f840863a:
+    nokia_frontend_last_pc=0xf840863au;
+    reg_r1 = ((reg_r0 & UINT64_C(0xffffffff)) << 4) & UINT64_C(0xffffffff);
+    goto L_f840863c;
+L_f840863c:
+    nokia_frontend_last_pc=0xf840863cu;
+    u_150a00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(12)) & UINT64_C(0xffffffff);
+    reg_r0 = nokia_mem_load(&machine, u_150a00, 4) & UINT64_C(0xffffffff);
+    goto L_f840863e;
+L_f840863e:
+    nokia_frontend_last_pc=0xf840863eu;
+    reg_TB = 1;
+    reg_lr = UINT64_C(4164978243);
+    reg_pc = UINT64_C(4164973080);
+    return NOKIA_FRONTEND_CONTINUE;
+L_f8408642:
+    nokia_frontend_last_pc=0xf8408642u;
+    reg_r5 = reg_r0 & UINT64_C(0xffffffff);
+    reg_ZR = (reg_r5 == 0);
+    reg_NG = ((reg_r5 & UINT64_C(0x80000000)) != 0);
+    goto L_f8408644;
+L_f8408644:
+    nokia_frontend_last_pc=0xf8408644u;
+    if (!(reg_ZR & UINT64_C(0xff))) goto L_f840864e;
+    goto L_f8408646;
+L_f8408646:
+    nokia_frontend_last_pc=0xf8408646u;
+    reg_r0 = 1;
+    goto L_f8408648;
+L_f8408648:
+    nokia_frontend_last_pc=0xf8408648u;
+    reg_r1 = UINT64_C(4164978468);
+    goto L_f840864a;
+L_f840864a:
+    nokia_frontend_last_pc=0xf840864au;
+    reg_TB = 1;
+    reg_lr = UINT64_C(4164978255);
+    reg_pc = UINT64_C(4164973026);
+    return NOKIA_FRONTEND_CONTINUE;
+L_f840864e:
+    nokia_frontend_last_pc=0xf840864eu;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(8)) & UINT64_C(0xffffffff);
+    reg_r0 = nokia_mem_load(&machine, u_150c00, 2) & UINT64_C(0xffff);
+    goto L_f8408650;
+L_f8408650:
+    nokia_frontend_last_pc=0xf8408650u;
+    reg_r0 = ((reg_r0 & UINT64_C(0xffffffff)) << 1) & UINT64_C(0xffffffff);
+    goto L_f8408652;
+L_f8408652:
+    nokia_frontend_last_pc=0xf8408652u;
+    u_150c00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(8)) & UINT64_C(0xffffffff);
+    if (!nokia_mem_store(&machine, u_150c00, reg_r0 & UINT64_C(0xffff), 2)) return NOKIA_FRONTEND_UNSUPPORTED;
+    goto L_f8408654;
+L_f8408654:
+    nokia_frontend_last_pc=0xf8408654u;
+    u_150a00 = ((reg_r4 & UINT64_C(0xffffffff)) + UINT64_C(12)) & UINT64_C(0xffffffff);
+    if (!nokia_mem_store(&machine, u_150a00, reg_r5 & UINT64_C(0xffffffff), 4)) return NOKIA_FRONTEND_UNSUPPORTED;
+    goto L_f8408656;
+"""
+
 
 def add_patch(
     text: str,
@@ -433,6 +891,102 @@ def main() -> None:
             RANGE_DISPATCH_LINES,
             RANGE_BODY_ANCHOR,
             RANGE_BODY,
+        ),
+        (
+            "E65 count normalization",
+            "L_f840064c:",
+            COUNT_NORMALIZE_DISPATCH_ANCHOR,
+            COUNT_NORMALIZE_DISPATCH_LINES,
+            COUNT_NORMALIZE_BODY_ANCHOR,
+            COUNT_NORMALIZE_BODY,
+        ),
+        (
+            "E65 long-text increment",
+            "L_f83fcaa6:",
+            LONG_TEXT_INCREMENT_DISPATCH_ANCHOR,
+            LONG_TEXT_INCREMENT_DISPATCH_LINES,
+            LONG_TEXT_INCREMENT_BODY_ANCHOR,
+            LONG_TEXT_INCREMENT_BODY,
+        ),
+        (
+            "E65 long-text flag path",
+            "L_f8400d7a:",
+            LONG_TEXT_FLAG_DISPATCH_ANCHOR,
+            LONG_TEXT_FLAG_DISPATCH_LINES,
+            LONG_TEXT_FLAG_BODY_ANCHOR,
+            LONG_TEXT_FLAG_BODY,
+        ),
+        (
+            "E65 long-text table update",
+            "L_f840067e:",
+            LONG_TEXT_TABLE_DISPATCH_ANCHOR,
+            LONG_TEXT_TABLE_DISPATCH_LINES,
+            LONG_TEXT_TABLE_BODY_ANCHOR,
+            LONG_TEXT_TABLE_BODY,
+        ),
+        (
+            "E65 long-text lookup",
+            "L_f8400660:",
+            LONG_TEXT_LOOKUP_DISPATCH_ANCHOR,
+            LONG_TEXT_LOOKUP_DISPATCH_LINES,
+            LONG_TEXT_LOOKUP_BODY_ANCHOR,
+            LONG_TEXT_LOOKUP_BODY,
+        ),
+        (
+            "E65 long settings lookup",
+            "L_f8400c44:",
+            LONG_SETTINGS_LOOKUP_DISPATCH_ANCHOR,
+            LONG_SETTINGS_LOOKUP_DISPATCH_LINES,
+            LONG_SETTINGS_LOOKUP_BODY_ANCHOR,
+            LONG_SETTINGS_LOOKUP_BODY,
+        ),
+        (
+            "E65 long settings flag",
+            "L_f83fc120:",
+            LONG_SETTINGS_FLAG_DISPATCH_ANCHOR,
+            LONG_SETTINGS_FLAG_DISPATCH_LINES,
+            LONG_SETTINGS_FLAG_BODY_ANCHOR,
+            LONG_SETTINGS_FLAG_BODY,
+        ),
+        (
+            "E65 long error table",
+            "L_f8400d02:",
+            LONG_ERROR_TABLE_DISPATCH_ANCHOR,
+            LONG_ERROR_TABLE_DISPATCH_LINES,
+            LONG_ERROR_TABLE_BODY_ANCHOR,
+            LONG_ERROR_TABLE_BODY,
+        ),
+        (
+            "E65 long-text copy loop",
+            "L_f83fcc12:",
+            LONG_TEXT_COPY_DISPATCH_ANCHOR,
+            LONG_TEXT_COPY_DISPATCH_LINES,
+            LONG_TEXT_COPY_BODY_ANCHOR,
+            LONG_TEXT_COPY_BODY,
+        ),
+        (
+            "E65 long error assert helper",
+            "L_f84071e2:",
+            LONG_ERROR_ASSERT_DISPATCH_ANCHOR,
+            LONG_ERROR_ASSERT_DISPATCH_LINES,
+            LONG_ERROR_ASSERT_BODY_ANCHOR,
+            LONG_ERROR_ASSERT_BODY,
+        ),
+        (
+            "E65 long error object",
+            "L_f8408cd2:",
+            LONG_ERROR_OBJECT_DISPATCH_ANCHOR,
+            LONG_ERROR_OBJECT_DISPATCH_LINES,
+            LONG_ERROR_OBJECT_BODY_ANCHOR,
+            LONG_ERROR_OBJECT_BODY,
+        ),
+        (
+            "E65 second long error object",
+            "L_f840863a:",
+            LONG_ERROR_SECOND_DISPATCH_ANCHOR,
+            LONG_ERROR_SECOND_DISPATCH_LINES,
+            LONG_ERROR_SECOND_BODY_ANCHOR,
+            LONG_ERROR_SECOND_BODY,
         ),
     )
     changed = False

@@ -35,6 +35,27 @@ EXTENDED_SAMPLES = {
     4: "Árbol, niño, corazón, pingüino.",
     37: "1234567890",
 }
+GERMAN_SETTINGS_REGRESSION = (
+    "Aktuell gespeicherte Einstellungen für die Anmeldung und "
+    "Sicherheitsmeldungen verwenden (benötigt "
+    "Administrator_berechtigungen)"
+)
+LONG_RUNTIME_ERROR_REGRESSION = (
+    "RuntimeError: Native runtime error -2002; model=e65, "
+    "runtimeArch=arm64ec, runtimeDll=nokia_runtime_e65_arm64ec.dll, "
+    "klattFailure=0x00000000, klattR0=0x00000000, "
+    "klattR1=0x00000000, klattR2=0x00000000, klattR3=0x00000000, "
+    "klattRSp=0x00000000, klattCount=0x00000000, "
+    "klattGain=0x00000000, klattLastPc=0x00000000, "
+    "klattLastR0=0x00000000, klattLastR7=0x00000000, "
+    "klattBadAddress=0x00000000, failedLastPc=0xf840064a, "
+    "failedPc=0xf840064c, failedLr=0xf8400eab, failedSp=0x600fedc8, "
+    "failedFlags=0x60000000, failedBadAddress=0x00000000, "
+    "failedYieldPc=0xf840064c, failedYieldReason=0x00000003, "
+    "failedEntry=0xf9225155, failedStage=0x00000005, "
+    "finalLastPc=0xf914e6f6, finalBadAddress=0x00000000, "
+    "finalYieldPc=0xf840064c, finalYieldReason=0x00000003"
+)
 REGRESSION_SAMPLES = {
     1: ("a_b", " 1 ", "\t1\n"),
     2: ("a_b", "Ä", "Ö", "Ü", "Ä Ö Ü", "e x", " Ä ", " 1 ", "\t1\n"),
@@ -43,9 +64,8 @@ REGRESSION_SAMPLES = {
         "$SysReset",
         " 1 ",
         "\t1\n",
-        "Aktuell gespeicherte Einstellungen für die Anmeldung und "
-        "Sicherheitsmeldungen verwenden (benötigt "
-        "Administrator_berechtigungen)",
+        GERMAN_SETTINGS_REGRESSION,
+        LONG_RUNTIME_ERROR_REGRESSION,
     ),
     4: ("a_b", " 1 ", "\t1\n"),
     37: ("a_b", "e x", " 1 ", "\t1\n"),

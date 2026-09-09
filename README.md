@@ -186,6 +186,14 @@ letters and all 30 high-rate cases also pass. The 19 MB source firmware is not
 packaged: its observed TTS pages are stored in an address-preserving core of
 about 373 KB.
 
+Test 67 closes the reported E65 ARM64EC continuation at `0xF840064C` and the
+additional frontend and Klatt paths exercised by the long saved-settings and
+runtime-error messages. The same long runtime-error regression is covered on
+the Nokia 5500. Because the Nokia 5320 set has no CJK voice, unsupported CJK
+spans are now removed before they reach its original frontend: surrounding
+supported text is still spoken, while an all-CJK utterance succeeds silently.
+This behavior is verified with every one of the 66 packaged 5320 snapshots.
+
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for the 5320, 5500 and E65 and adds only the
 required speech data.

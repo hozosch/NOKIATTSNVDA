@@ -48,7 +48,7 @@ SAMPLES = {
 }
 GENDERS = ("male", "female")
 REGRESSION_SAMPLES = {
-    (3, "male"): ("Gegen", "Google"),
+    (3, "male"): ("Gegen", "Google", "Hallo 你好，世界 Test"),
     (3, "female"): (
         "Zwölf Boxkämpfer jagen Viktor quer über den großen Sylter Deich.",
     ),
@@ -159,7 +159,9 @@ def bind(dll):
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
 
 
-def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str):
+def synthesize(
+    dll, rom, rom_size, snapshot_path: Path, text: str, *, allow_silence=False
+):
     snapshot_data, snapshot = byte_array(snapshot_path)
     runtime = dll.nokia_runtime_create_5320_snapshot(
         rom,
@@ -197,7 +199,9 @@ def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str):
         audio = b"".join(pcm)
         if callback_error:
             raise RuntimeError(callback_error[0])
-        if not ok or error or not audio or not any(audio):
+        if not ok or error or (
+            not allow_silence and (not audio or not any(audio))
+        ):
             raise RuntimeError(
                 f"synthesis result={ok}, error={error}, pcm_bytes={len(audio)}"
             )
@@ -248,6 +252,19 @@ def main() -> None:
             digest = hashlib.sha256(audio).hexdigest()
             hashes[label] = digest
             print(f"{label}: pcm_bytes={len(audio)} sha256={digest}")
+            try:
+                cjk_audio = synthesize(
+                    dll,
+                    rom,
+                    len(rom_data),
+                    snapshot,
+                    "你好，世界",
+                    allow_silence=True,
+                )
+            except Exception as error:
+                failures.append(f"{label}-CJK: {error}")
+            else:
+                print(f"{label}-CJK: handled, pcm_bytes={len(cjk_audio)}")
 
     for language_id in SAMPLES:
         male = hashes.get(f"{language_id}-male")

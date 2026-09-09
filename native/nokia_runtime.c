@@ -863,6 +863,16 @@ NOKIA_RUNTIME_EXPORT void nokia_runtime_cancel(NokiaRuntime *r){if(r)r->cancelle
 static int text_space16(uint16_t c) {
     return c <= 0x20u || c == 0x00a0u || c == 0x2028u || c == 0x2029u;
 }
+static int text_cjk_codepoint(uint32_t value) {
+    return (value >= 0x2e80u && value <= 0x33ffu) ||
+           (value >= 0x3400u && value <= 0x4dbfu) ||
+           (value >= 0x4e00u && value <= 0x9fffu) ||
+           (value >= 0xac00u && value <= 0xd7afu) ||
+           (value >= 0xf900u && value <= 0xfaffu) ||
+           (value >= 0xfe30u && value <= 0xfe4fu) ||
+           (value >= 0xff00u && value <= 0xffefu) ||
+           (value >= 0x20000u && value <= 0x323afu);
+}
 static int text_terminal16(uint16_t c) {
     return c == '.' || c == '!' || c == '?' || c == 0x2026u ||
            c == 0x3002u || c == 0xff01u || c == 0xff1fu;
@@ -1278,6 +1288,35 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
        utterance remain unchanged and are still synthesized in one call. */
     while(len&&text_space16(*text)){++text;--len;}
     while(len&&text_space16(text[len-1u]))--len;
+    /* The 5320 voice set has no CJK frontend. Passing CJK ideographs and
+       related punctuation into any language snapshot can make the original
+       engine abort the complete utterance. Drop only those spans; supported
+       surrounding text is still spoken, while all-CJK input succeeds without
+       producing audio. */
+    if(r->rom_base==ROM_BASE_5320){
+        for(i=0;i<len;++i){
+            uint32_t codepoint=text[i],units=1u;
+            if(codepoint>=0xd800u&&codepoint<=0xdbffu&&i+1u<len&&
+               text[i+1u]>=0xdc00u&&text[i+1u]<=0xdfffu){
+                codepoint=0x10000u+((codepoint-0xd800u)<<10)+
+                          (text[i+1u]-0xdc00u);
+                units=2u;
+            }
+            if(!text_cjk_codepoint(codepoint))continue;
+            if(!normalized_text){
+                normalized_text=(uint16_t*)malloc((size_t)len*sizeof(*normalized_text));
+                if(!normalized_text){r->last_error=-3011;return 0;}
+                memcpy(normalized_text,text,(size_t)len*sizeof(*normalized_text));
+            }
+            normalized_text[i]=' ';
+            if(units==2u)normalized_text[++i]=' ';
+        }
+        if(normalized_text){
+            text=normalized_text;
+            while(len&&text_space16(*text)){++text;--len;}
+            while(len&&text_space16(text[len-1u]))--len;
+        }
+    }
     /* The original 5500 frontend rejects a few isolated character names even
        though the opposite-case spelling synthesizes normally.  Apply the
        case change only to whitespace-delimited one-character tokens, so

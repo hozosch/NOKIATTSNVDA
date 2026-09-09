@@ -66,6 +66,9 @@ int main(void) {
     NokiaRuntime *snapshot_runtime;
     uint8_t minimal_snapshot[8u + SNAP_WORDS * 4u] = {0};
     const uint8_t minimal_rom[1] = {0};
+    const uint16_t cjk_only[] = {0x4f60u, 0x597du, 0xff0cu,
+                                 0x4e16u, 0x754cu};
+    const uint16_t supplementary_cjk[] = {0xd840u, 0xdc00u};
     int16_t first[1100], second[1300];
     int16_t phones[3] = {2, 19, 0};
     int16_t durations[3] = {100, 201, 66};
@@ -90,6 +93,18 @@ int main(void) {
         minimal_rom, sizeof(minimal_rom),
         minimal_snapshot, sizeof(minimal_snapshot)));
     nokia_runtime_destroy(snapshot_runtime);
+
+    memset(&runtime, 0, sizeof(runtime));
+    runtime.rom_base = ROM_BASE_5320;
+    runtime.dev = 1u;
+    assert(nokia_runtime_speak_utf16(
+        &runtime, cjk_only, 5u, &callbacks));
+    assert(runtime.last_error == 0);
+    assert(output_samples == 0u);
+    assert(nokia_runtime_speak_utf16(
+        &runtime, supplementary_cjk, 2u, &callbacks));
+    assert(runtime.last_error == 0);
+    assert(output_samples == 0u);
 
     for (i = 0; i < 100; ++i) first[i] = 1000;
     memset(first + 100, 0, 1000 * sizeof(*first));
