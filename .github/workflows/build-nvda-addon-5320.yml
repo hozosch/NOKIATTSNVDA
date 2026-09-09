@@ -2,9 +2,6 @@ name: Build multilingual native Nokia 5320 and 5500 NVDA add-on
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - codex/nokia-5500-letters-test63
 
 permissions:
   actions: read
