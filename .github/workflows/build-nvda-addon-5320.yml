@@ -2,6 +2,9 @@ name: Build multilingual native Nokia 5320 and 5500 NVDA add-on
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex/nokia-5500-letters-test63
 
 permissions:
   actions: read
@@ -302,6 +305,11 @@ jobs:
           grep -q '^L_f844fc08:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84500ea:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844fc3e:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f844fcb6:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f8450fac:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f845388a:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f8453e50:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f8453f86:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84553de:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de230:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de234:$' build/5500/nokia_frontend_5500_full.c
@@ -495,6 +503,11 @@ jobs:
           grep -q '^L_f844fc08:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84500ea:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844fc3e:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f844fcb6:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f8450fac:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f845388a:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f8453e50:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f8453f86:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f84553de:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de230:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f81de234:$' build/5500/nokia_frontend_5500_full.c
@@ -592,7 +605,7 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: nokia-rom-pages-5320-x64-test63
+          name: nokia-rom-pages-5320-x64-test64
           path: build/native-x64/rom-pages.json
           if-no-files-found: error
 
@@ -602,7 +615,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test63' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test64' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -625,8 +638,8 @@ jobs:
           Copy-Item build/runtime-data/5320-config.ncf "$stage/data/5320-config.ncf"
           Copy-Item build/runtime-data/5500-core.nrp "$stage/data/5500-core.nrp"
           Copy-Item build/runtime-data/5500-config.ncf "$stage/data/5500-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test63.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test63.zip build/nokiaNative5320-0.1.0-test63.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test64.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test64.zip build/nokiaNative5320-0.1.0-test64.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -666,11 +679,11 @@ jobs:
           Get-Item build/addon/data/5320-core.nrp | Format-List Name,Length
           Get-Item build/addon/data/5500-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/5500-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test63.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test64.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test63
-          path: build/nokiaNative5320-0.1.0-test63.nvda-addon
+          name: nokiaNative5320-0.1.0-test64
+          path: build/nokiaNative5320-0.1.0-test64.nvda-addon
           if-no-files-found: error

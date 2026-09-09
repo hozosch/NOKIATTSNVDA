@@ -142,7 +142,7 @@ Greek, Hebrew, Latvian, Lithuanian, Serbian, Catalan, Basque and Galician in
 addition to the previously bundled 5320 languages. All 33 have been verified
 with complete synthesis, non-zero PCM and both distinct Nokia voice variants.
 
-The native-only Test 63 build exposes that complete set directly through NVDA:
+The native-only Test 64 build exposes that complete set directly through NVDA:
 33 Nokia 5320 languages with `DefaultMale` and `DefaultFemale`, plus the Nokia
 5500's single standard voice in British English, French, German, Spanish and
 Arabic. NVDA groups voices by language and then by model, so the Nokia 5500
@@ -157,6 +157,12 @@ synthesis, including distinct uppercase and lowercase routes, and uncommon
 lookup/initialization outcomes such as the reported yield at `0xF8451E9A`. It
 also restores a two-instruction Klatt fallthrough used by accented Spanish
 words. The established 5320 and high-rate PCM paths remain unchanged.
+
+Test 64 closes the reported Nokia 5500 Thumb fallthroughs at `0xF844FCB6` and
+`0xF8450FAC`. It also maps only whitespace-delimited French `Ä`, `Ö` and `Ü`
+tokens to the lowercase spellings accepted by the original 5500 frontend;
+ordinary mixed-case words remain unchanged. The regression suite exercises
+embedded underscores and the isolated French and Arabic letter combinations.
 
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for both the 5320 and 5500 and adds only the

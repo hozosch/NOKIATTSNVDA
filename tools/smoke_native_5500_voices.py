@@ -35,6 +35,13 @@ EXTENDED_SAMPLES = {
     4: "Árbol, niño, corazón, pingüino.",
     37: "1234567890",
 }
+REGRESSION_SAMPLES = {
+    1: ("a_b",),
+    2: ("a_b", "Ä", "Ö", "Ü", "Ä Ö Ü", "e x"),
+    3: ("a_b",),
+    4: ("a_b",),
+    37: ("a_b", "e x"),
+}
 
 PCM = ctypes.CFUNCTYPE(
     None, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int16),
@@ -207,6 +214,7 @@ def main() -> None:
     failures = []
     validated_voices = 0
     extended_passed = 0
+    regression_passed = 0
     high_rate_passed = 0
     for language_id, sample in SAMPLES.items():
         snapshot = args.snapshot_dir / f"5500-{language_id}.snapshot"
@@ -236,6 +244,22 @@ def main() -> None:
                 failures.append(f"{language_id} {value!r}: silent output")
                 continue
             extended_passed += 1
+        for value in REGRESSION_SAMPLES[language_id]:
+            try:
+                regression = synthesize(
+                    dll, rom, len(rom_data), snapshot, value
+                )
+            except Exception as error:
+                failures.append(
+                    f"{language_id} regression {value!r}: {error}"
+                )
+                continue
+            if not regression or not any(regression):
+                failures.append(
+                    f"{language_id} regression {value!r}: silent output"
+                )
+                continue
+            regression_passed += 1
         try:
             fast = synthesize(
                 dll, rom, len(rom_data), snapshot, sample, rate=4.0
@@ -253,6 +277,8 @@ def main() -> None:
         print("wrote ROM trace:", args.rom_trace)
     print(f"validated voices: {validated_voices}/{len(SAMPLES)}; failures: {len(failures)}")
     print(f"extended utterances passed: {extended_passed}/{len(SAMPLES) * 53}")
+    regression_total = sum(len(values) for values in REGRESSION_SAMPLES.values())
+    print(f"reported regressions passed: {regression_passed}/{regression_total}")
     print(f"high-rate utterances passed: {high_rate_passed}/{len(SAMPLES)}")
     if failures:
         raise SystemExit("\n".join(failures))
