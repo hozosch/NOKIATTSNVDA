@@ -1264,6 +1264,11 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     uint16_t *normalized_text = NULL;
     int incremental;
     if(!r||!text||!len||!r->dev){if(r)r->last_error=-3000;return 0;}
+    /* Match the original Engine.speak boundary: outer whitespace is not
+       submitted to the Nokia frontend.  Interior spacing and the complete
+       utterance remain unchanged and are still synthesized in one call. */
+    while(len&&text_space16(*text)){++text;--len;}
+    while(len&&text_space16(text[len-1u]))--len;
     /* The original 5500 frontend rejects a few isolated character names even
        though the opposite-case spelling synthesizes normally.  Apply the
        case change only to whitespace-delimited one-character tokens, so
