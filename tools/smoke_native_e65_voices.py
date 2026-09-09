@@ -85,6 +85,12 @@ EXPECTED_SHA256 = {
     93: "1a72e2ca084e9e60ef8d237266396b5aa9ba5999caa8062645ff36cc38b8f6bd",
 }
 
+GERMAN_MENU_REGRESSIONS = (
+    "NVDA Menü",
+    "Optionen Untermenü",
+    "Werkzeuge Untermenü",
+)
+
 # These exact one-character utterances are rejected by the original E65
 # engine itself and therefore are not native-AOT coverage failures.
 REFERENCE_REJECTED_LETTERS = {1: frozenset("r")}
@@ -107,6 +113,8 @@ def bind(dll) -> None:
     dll.nokia_runtime_speak_utf16.restype = ctypes.c_int
     dll.nokia_runtime_set_rate.argtypes = [ctypes.c_void_p, ctypes.c_double]
     dll.nokia_runtime_set_rate.restype = ctypes.c_int
+    dll.nokia_runtime_set_pitch.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    dll.nokia_runtime_set_pitch.restype = ctypes.c_int
     dll.nokia_runtime_last_error.argtypes = [ctypes.c_void_p]
     dll.nokia_runtime_last_error.restype = ctypes.c_int
     dll.nokia_runtime_destroy.argtypes = [ctypes.c_void_p]
@@ -120,7 +128,10 @@ def bind(dll) -> None:
             function.restype = ctypes.c_uint32
 
 
-def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str, rate=1.0):
+def synthesize(
+    dll, rom, rom_size, snapshot_path: Path, text: str,
+    rate=1.0, pitch=1.0,
+):
     snapshot_data, snapshot = byte_array(snapshot_path)
     runtime = dll.nokia_runtime_create_e65_snapshot(
         rom, rom_size, snapshot, len(snapshot_data)
@@ -130,6 +141,9 @@ def synthesize(dll, rom, rom_size, snapshot_path: Path, text: str, rate=1.0):
     if not dll.nokia_runtime_set_rate(runtime, rate):
         dll.nokia_runtime_destroy(runtime)
         raise RuntimeError(f"setting rate {rate} failed")
+    if not dll.nokia_runtime_set_pitch(runtime, pitch):
+        dll.nokia_runtime_destroy(runtime)
+        raise RuntimeError(f"setting pitch {pitch} failed")
     pcm = []
 
     @PCM
@@ -208,6 +222,21 @@ def main() -> None:
             )
         else:
             validated += 1
+        # Keep these before the quick-test exit: they guard the ARM64EC path
+        # used by the NVDA driver, including its explicit pitch setup.
+        if language_id == 3:
+            for menu_text in GERMAN_MENU_REGRESSIONS:
+                try:
+                    menu_audio = synthesize(
+                        dll, rom, len(rom_data), snapshot, menu_text
+                    )
+                except Exception as error:
+                    failures.append(f"{language_id} {menu_text!r}: {error}")
+                else:
+                    print(
+                        f"{language_id} {menu_text!r}: "
+                        f"pcm_bytes={len(menu_audio)}"
+                    )
         if args.quick:
             continue
         for value in string.ascii_letters:

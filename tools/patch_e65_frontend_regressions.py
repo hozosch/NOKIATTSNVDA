@@ -511,6 +511,12 @@ def main() -> None:
             "    case 0xf8400a2eu: goto L_f8400a2e;\n",
             "L_f8400a32:\n",
         ),
+        "menu_branch": (
+            "E65 NVDA menu branch",
+            "L_f8400a68:",
+            "    case 0xf8400a66u: goto L_f8400a66;\n",
+            "L_f8400a72:\n",
+        ),
         "rate_65_return": (
             "E65 NVDA rate 65 return",
             "L_f84010ce:",

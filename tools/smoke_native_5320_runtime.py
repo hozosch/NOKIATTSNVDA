@@ -314,6 +314,13 @@ def main() -> None:
     for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ':
         speak_case(f'isolated letter {letter}', letter)
     speak_case('known crash word', 'Einstellungen')
+    if args.profile == 'e65':
+        for label, menu_text in (
+            ('E65 NVDA menu', 'NVDA Menü'),
+            ('E65 options submenu', 'Optionen Untermenü'),
+            ('E65 tools submenu', 'Werkzeuge Untermenü'),
+        ):
+            speak_case(label, menu_text)
     speak_case(
         'neutral German G in Gegen',
         'Gegen',
