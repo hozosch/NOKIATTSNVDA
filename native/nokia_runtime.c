@@ -1261,8 +1261,18 @@ failed:
 NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     NokiaRuntime *r,const uint16_t *text,uint32_t len,const NokiaRuntimeCallbacks *cb) {
     uint32_t offset = 0, chunk, remaining;
+    uint16_t normalized_letter;
     int incremental;
     if(!r||!text||!len||!r->dev){if(r)r->last_error=-3000;return 0;}
+    /* The original 5500 frontend rejects isolated lowercase e/x for its
+       French and Arabic voices, although the matching uppercase letter names
+       synthesize normally. NVDA expects case-independent character speech. */
+    if(r->rom_base==ROM_BASE_5500&&len==1u&&
+       (r->language_id==2u||r->language_id==37u)&&
+       (text[0]=='e'||text[0]=='x')){
+        normalized_letter=(uint16_t)(text[0]-('a'-'A'));
+        text=&normalized_letter;
+    }
     r->cancelled=0;r->done=0;r->pending_count=0;r->callbacks=cb;r->last_error=0;r->frontend_ticks=0;r->audio_ticks=0;
     r->first_pcm_ticks=0;r->first_pcm_seen=0;r->text_chunks=0;
     r->seam_trimmed_samples=0;r->seam_quiet_count=0;
