@@ -168,7 +168,9 @@ Test 65 matches the original Nokia engine's text boundary by removing only
 leading and trailing whitespace before native synthesis. Interior spacing and
 the complete one-call utterance are preserved. This closes the reported Nokia
 5500 ARM64EC yield at `0xF8453C0C`; regression coverage includes spaces,
-tabs and line endings in all five 5500 languages.
+tabs and line endings in all five 5500 languages. It also adds the missing
+German frontend continuation at `0xF844F330`, verified with the complete
+reported `Administrator_berechtigungen` sentence.
 
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for both the 5320 and 5500 and adds only the

@@ -38,7 +38,14 @@ EXTENDED_SAMPLES = {
 REGRESSION_SAMPLES = {
     1: ("a_b", " 1 ", "\t1\n"),
     2: ("a_b", "Ä", "Ö", "Ü", "Ä Ö Ü", "e x", " Ä ", " 1 ", "\t1\n"),
-    3: ("a_b", " 1 ", "\t1\n"),
+    3: (
+        "a_b",
+        " 1 ",
+        "\t1\n",
+        "Aktuell gespeicherte Einstellungen für die Anmeldung und "
+        "Sicherheitsmeldungen verwenden (benötigt "
+        "Administrator_berechtigungen)",
+    ),
     4: ("a_b", " 1 ", "\t1\n"),
     37: ("a_b", "e x", " 1 ", "\t1\n"),
 }

@@ -306,6 +306,7 @@ jobs:
           grep -q '^L_f84500ea:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844fc3e:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844fcb6:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f844f330:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8450fac:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845388a:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453e50:$' build/5500/nokia_frontend_5500_full.c
@@ -504,6 +505,7 @@ jobs:
           grep -q '^L_f84500ea:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844fc3e:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f844fcb6:$' build/5500/nokia_frontend_5500_full.c
+          grep -q '^L_f844f330:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8450fac:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f845388a:$' build/5500/nokia_frontend_5500_full.c
           grep -q '^L_f8453e50:$' build/5500/nokia_frontend_5500_full.c
