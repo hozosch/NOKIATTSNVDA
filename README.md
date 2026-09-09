@@ -64,10 +64,11 @@ and report no ARM fallback. The current end-to-end add-on integrates the first
 three families; the full 5320 reference sentence is about 1.4 times faster
 locally.
 
-Nokia text analysis, pronunciation and prosody preparation still execute as
-ARM32 code through Unicorn. Because most preparation for a short utterance
-happens before its first synthesis frame, some first-audio latency remains.
-That frontend is the next major performance target.
+Nokia text analysis, pronunciation and prosody preparation still execute in
+an instruction-shaped portable-C frontend lifted from the original ARM32
+code. Because most preparation for a short utterance happens before its first
+synthesis frame, some first-audio latency remains. That frontend is the next
+major performance target.
 
 The Test 30 candidate moves rate control before waveform generation. After
 `PrimeSynthesisL`, the native bridge scales Nokia's phoneme-duration array and
@@ -211,6 +212,13 @@ and decompresses only the selected voice into the existing runtime buffer.
 Uncompressed snapshot data fall from 219,727,056 to 398,770 installed bytes;
 the complete local add-on footprint falls from about 273 MB to about 54 MB.
 The driver still accepts unpacked snapshots for compatibility.
+
+Test 70 reduces Nokia 5320 time to first audio by collapsing two verified
+Prime iterator loops and a fixed-stride helper into direct C. In local x64
+A/B measurements, the median first PCM callback for the reported German menu
+phrase falls from about 40.6 ms to 31.0 ms; a longer German settings sentence
+falls from 70.6 ms to 54.0 ms. The complete PCM output remains bit-identical,
+and all 66 multilingual 5320 voices plus their regression samples pass.
 
 No complete firmware ROM is added. The expanded build uses compact,
 address-preserving code packs for the 5320, 5500 and E65 and adds only the
