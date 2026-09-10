@@ -31,6 +31,17 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
     source = source_path.read_text(encoding="utf-8")
     trace = json.loads(trace_path.read_text(encoding="utf-8"))
     rom, rom_base = read_rom(rom_path, rom_base)
+    def translate(address: int, thumb: bool):
+        data = rom[address - rom_base:address - rom_base + 16]
+        # A SLEIGH context is stateful.  The trace is grouped by split chunk,
+        # not execution order.  Context.reset() does not discard every
+        # address-bound mode change, so use an independent context here.
+        context = pypcode.Context(
+            "ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8"
+        )
+        return context.translate(
+            data, base_address=address, max_instructions=1
+        )
 
     existing = {
         int(value, 16)
@@ -116,14 +127,7 @@ def extend(source_path: Path, trace_path: Path, rom_path: Path,
         for item in items:
             address = int(item["address"])
             thumb = bool(item.get("thumb", False))
-            context = pypcode.Context(
-                "ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8"
-            )
-            translation = context.translate(
-                rom[address - rom_base:address - rom_base + 16],
-                base_address=address,
-                max_instructions=1,
-            )
+            translation = translate(address, thumb)
             operations = list(translation.ops)
             for operation in operations:
                 nodes = (

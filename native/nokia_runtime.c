@@ -18,6 +18,9 @@
 #define ROM_BASE_N85  0x80000000u
 #define ROM_BASE_E65  0xF8000000u
 #define RET_MAGIC  0x7fff0000u
+#define N85_TLS_KEY          0x802D6A88u
+#define N85_TLS_OBJECT_SIZE  0xB0u
+#define N85_TLS_OBJECT_VTABLE 0x80900F1Cu
 #define HEAP_SIZE  0x100000u
 #define VT_SIZE    0x1000u
 #define TRAP_SIZE  0x10000u
@@ -217,6 +220,10 @@ typedef enum {
     NOKIA_PROFILE_E65,
 } NokiaRuntimeProfile;
 
+typedef struct {
+    uint32_t key, value;
+} RuntimeTlsEntry;
+
 struct NokiaRuntime {
     uint8_t *rom;
     size_t rom_size;
@@ -225,6 +232,8 @@ struct NokiaRuntime {
     uint8_t *heap, *vtable, *traps, *pool, *stack;
     RuntimeBlock *blocks;
     uint32_t block_count, block_capacity;
+    RuntimeTlsEntry *tls_entries;
+    uint32_t tls_count, tls_capacity;
     uint32_t pool_next;
     uint32_t language_id, voice_applied;
     uint32_t dev, observer, style_id, scheduler_error;
@@ -255,6 +264,54 @@ struct NokiaRuntime {
     uint8_t pcm_unwrapped_have;
     NokiaFrontendHost host;
 };
+
+uint32_t nokia_runtime_tls_get(void *context, uint32_t key) {
+    NokiaRuntime *r = (NokiaRuntime *)context;
+    uint32_t i;
+    if (!r) return 0;
+    for (i = 0; i < r->tls_count; ++i)
+        if (r->tls_entries[i].key == key) return r->tls_entries[i].value;
+    return 0;
+}
+
+uint32_t nokia_runtime_tls_set(void *context, uint32_t key, uint32_t value) {
+    NokiaRuntime *r = (NokiaRuntime *)context;
+    RuntimeTlsEntry *entries;
+    uint32_t i, capacity;
+    if (!r) return 0;
+    for (i = 0; i < r->tls_count; ++i) {
+        if (r->tls_entries[i].key == key) {
+            r->tls_entries[i].value = value;
+            return 0;
+        }
+    }
+    if (r->tls_count == r->tls_capacity) {
+        capacity = r->tls_capacity ? r->tls_capacity * 2u : 4u;
+        entries = (RuntimeTlsEntry *)realloc(
+            r->tls_entries, capacity * sizeof(*entries));
+        if (!entries) return 0;
+        r->tls_entries = entries;
+        r->tls_capacity = capacity;
+    }
+    r->tls_entries[r->tls_count].key = key;
+    r->tls_entries[r->tls_count].value = value;
+    ++r->tls_count;
+    return 0;
+}
+
+uint32_t nokia_runtime_tls_free(void *context, uint32_t key) {
+    NokiaRuntime *r = (NokiaRuntime *)context;
+    uint32_t i;
+    if (!r) return 0;
+    for (i = 0; i < r->tls_count; ++i) {
+        if (r->tls_entries[i].key != key) continue;
+        memmove(&r->tls_entries[i], &r->tls_entries[i + 1],
+                (r->tls_count - i - 1u) * sizeof(*r->tls_entries));
+        --r->tls_count;
+        break;
+    }
+    return 0;
+}
 
 static uint32_t rd32(const uint8_t *p) {
     uint32_t v; memcpy(&v, p, 4); return v;
@@ -806,9 +863,35 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_n85_snapshot(
     const uint8_t *rom, size_t rom_size,
     const uint8_t *s, size_t snapshot_size) {
     static const uint8_t magic[8] = {'N','K','N','8','5','S','0','1'};
-    return create_snapshot(
+    NokiaRuntime *r = create_snapshot(
         rom, rom_size, s, snapshot_size, magic, ROM_BASE_N85,
         NOKIA_PROFILE_N85);
+    uint32_t i, object = 0;
+    if (!r) return NULL;
+
+    /* Version-1 snapshots predate Dll::Tls persistence, but the allocation
+       referenced by that map is already part of the saved pool.  Recover the
+       fully initialized object instead of constructing a second, incomplete
+       locale state.  The vtable signature also makes the lookup independent
+       of the allocator address used when the snapshot was produced. */
+    for (i = 0; i < r->block_count; ++i) {
+        RuntimeBlock *block = &r->blocks[i];
+        if (!block->used || block->size != N85_TLS_OBJECT_SIZE ||
+            guest_u32(r, block->address) != N85_TLS_OBJECT_VTABLE)
+            continue;
+        if (object) {
+            object = 0;
+            break;
+        }
+        object = block->address;
+    }
+    if (!object || nokia_runtime_tls_set(r, N85_TLS_KEY, object) != 0u ||
+        nokia_runtime_tls_get(r, N85_TLS_KEY) != object) {
+        nokia_runtime_destroy(r);
+        return NULL;
+    }
+    r->last_error = 0;
+    return r;
 }
 
 NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(
@@ -823,7 +906,8 @@ NOKIA_RUNTIME_EXPORT NokiaRuntime *nokia_runtime_create_e65_snapshot(
 NOKIA_RUNTIME_EXPORT void nokia_runtime_destroy(NokiaRuntime *r) {
     if (!r) return;
     free(r->pcm_pending); free(r->seam_quiet);
-    free(r->pending); free(r->blocks); free(r->heap); free(r->vtable);
+    free(r->pending); free(r->tls_entries); free(r->blocks);
+    free(r->heap); free(r->vtable);
     free(r->traps); free(r->pool); free(r->stack); free(r->rom); free(r);
 }
 
@@ -895,6 +979,9 @@ NOKIA_RUNTIME_EXPORT void nokia_runtime_cancel(NokiaRuntime *r){if(r)r->cancelle
 #ifndef NOKIA_TEXT_CHUNK_LIMIT
 #define NOKIA_TEXT_CHUNK_LIMIT    384u
 #endif
+#ifndef NOKIA_N85_DENSE_TEXT_CHUNK_LIMIT
+#define NOKIA_N85_DENSE_TEXT_CHUNK_LIMIT 128u
+#endif
 
 static int text_space16(uint16_t c) {
     return c <= 0x20u || c == 0x00a0u || c == 0x2028u || c == 0x2029u;
@@ -917,6 +1004,17 @@ static int text_closer16(uint16_t c) {
     return c == '"' || c == '\'' || c == ')' || c == ']' || c == '}' ||
            c == 0x00bbu || c == 0x2019u || c == 0x201du;
 }
+static int text_machine_dense(const uint16_t *text, uint32_t len) {
+    uint32_t equals = 0, hex_prefixes = 0, i;
+    for (i = 0; i < len; ++i) {
+        if (text[i] == '=') ++equals;
+        if (text[i] == '0' && i + 1u < len &&
+            (text[i + 1u] == 'x' || text[i + 1u] == 'X'))
+            ++hex_prefixes;
+        if (equals >= 4u || hex_prefixes >= 4u) return 1;
+    }
+    return 0;
+}
 static int text_period_is_internal(const uint16_t *text, uint32_t pos,
                                    uint32_t len) {
     uint32_t i, letters = 0;
@@ -932,7 +1030,8 @@ static int text_period_is_internal(const uint16_t *text, uint32_t pos,
     /* Do not split initials such as "z. B." or "A. Smith". */
     return letters == 1u;
 }
-static uint32_t next_text_chunk(const uint16_t *text, uint32_t len) {
+static uint32_t next_text_chunk(const uint16_t *text, uint32_t len,
+                                uint32_t limit) {
     uint32_t i, j, last_terminal = 0, last_soft = 0, last_word = 0;
     for (i = 0; i < len; ++i) {
         uint16_t c = text[i];
@@ -959,7 +1058,7 @@ static uint32_t next_text_chunk(const uint16_t *text, uint32_t len) {
                 continue;
             }
         }
-        if (i + 1u >= NOKIA_TEXT_CHUNK_LIMIT) {
+        if (i + 1u >= limit) {
             if (last_terminal) return last_terminal;
             if (last_soft) return last_soft;
             if (last_word) return last_word;
@@ -1316,6 +1415,7 @@ failed:
 NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     NokiaRuntime *r,const uint16_t *text,uint32_t len,const NokiaRuntimeCallbacks *cb) {
     uint32_t offset = 0, chunk, remaining, i;
+    uint32_t chunk_limit = NOKIA_TEXT_CHUNK_LIMIT;
     uint16_t *normalized_text = NULL;
     int incremental;
     if(!r||!text||!len||!r->dev){if(r)r->last_error=-3000;return 0;}
@@ -1387,10 +1487,18 @@ NOKIA_RUNTIME_EXPORT int nokia_runtime_speak_utf16(
     r->pcm_unwrapped_previous=0;r->pcm_unwrapped_have=0;
     r->speak_started=clock();
     incremental = len > NOKIA_LONG_TEXT_THRESHOLD;
+    /* The Vietnamese N85 analyser has a smaller token workspace for dense
+       machine-readable text than for ordinary prose.  Keep normal long-text
+       chunking unchanged; only diagnostic-style runs with repeated fields or
+       hexadecimal values use the model's safe native boundary. */
+    if(incremental&&r->profile==NOKIA_PROFILE_N85&&r->language_id==96u&&
+       text_machine_dense(text,len))
+        chunk_limit=NOKIA_N85_DENSE_TEXT_CHUNK_LIMIT;
     r->seam_enabled = incremental ? 1u : 0u;
     while(offset < len && !r->cancelled) {
         remaining = len - offset;
-        chunk = incremental ? next_text_chunk(text + offset, remaining) : remaining;
+        chunk = incremental
+            ? next_text_chunk(text + offset,remaining,chunk_limit) : remaining;
         if(!chunk || chunk > remaining){r->last_error=-3010;goto failed;}
         ++r->text_chunks;
         if(!synthesize_text_chunk(r,text + offset,chunk,offset+chunk<len))goto failed;

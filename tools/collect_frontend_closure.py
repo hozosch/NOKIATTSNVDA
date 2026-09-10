@@ -62,6 +62,8 @@ def main() -> None:
     parser.add_argument("--stop-labels-source", type=Path)
     parser.add_argument("--max-call-depth", type=int, default=2)
     parser.add_argument("--max-instructions", type=int, default=12000)
+    parser.add_argument("--address-start", type=lambda value: int(value, 0))
+    parser.add_argument("--address-end", type=lambda value: int(value, 0))
     args = parser.parse_args()
 
     rom = args.rom.read_bytes()
@@ -90,10 +92,33 @@ def main() -> None:
     pending: list[tuple[int, bool, int]] = [
         (address, thumb, 0) for address, thumb in args.entry
     ]
+    skipped_bad_data: set[tuple[int, bool]] = set()
+
+    def translate(address: int, thumb: bool):
+        data = rom[address - args.rom_base:address - args.rom_base + 16]
+        # SLEIGH contexts retain ARM/Thumb context changes made while decoding
+        # an instruction.  Closure traversal is deliberately non-linear, so a
+        # preceding BLX can otherwise make an unrelated Thumb instruction
+        # decode as ARM.  Context.reset() does not discard every address-bound
+        # context change, so each independent instruction needs a fresh one.
+        context = pypcode.Context(
+            "ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8"
+        )
+        try:
+            return context.translate(
+                data,
+                base_address=address,
+                max_instructions=1,
+            )
+        except pypcode.BadDataError:
+            skipped_bad_data.add((address, thumb))
+            return None
 
     def allowed(address: int) -> bool:
         return (
             args.rom_base <= address < rom_end
+            and (args.address_start is None or address >= args.address_start)
+            and (args.address_end is None or address < args.address_end)
             and address not in excluded
             and (address not in stops or address in roots)
         )
@@ -108,14 +133,9 @@ def main() -> None:
         if old_depth is not None and old_depth <= depth:
             continue
         best_depth[key] = depth
-        context = pypcode.Context(
-            "ARM:LE:32:v8T" if thumb else "ARM:LE:32:v8"
-        )
-        translation = context.translate(
-            rom[address - args.rom_base:address - args.rom_base + 16],
-            base_address=address,
-            max_instructions=1,
-        )
+        translation = translate(address, thumb)
+        if translation is None:
+            continue
         operations = list(translation.ops)
         size = instruction_size(operations)
         result[key] = size
@@ -156,10 +176,17 @@ def main() -> None:
             "kind": "control-flow-closure",
             "instruction_count": len(instructions),
             "instructions": instructions,
+            "skipped_bad_data": [
+                {"address": address, "thumb": thumb}
+                for address, thumb in sorted(skipped_bad_data)
+            ],
         }, indent=2) + "\n",
         encoding="utf-8",
     )
-    print(f"collected {len(instructions)} closure instructions")
+    print(
+        f"collected {len(instructions)} closure instructions; "
+        f"skipped bad data: {len(skipped_bad_data)}"
+    )
 
 
 if __name__ == "__main__":

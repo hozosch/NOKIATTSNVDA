@@ -15,8 +15,8 @@ int nokia_frontend_aot(uint8_t *a, uint8_t *b, uint8_t *c, uint8_t *d,
                        uint8_t *e, const uint8_t *f, uint32_t g, size_t h,
                        uint32_t i[17], uint32_t j,
                        const NokiaFrontendHost *k) {
-    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;(void)i;
-    (void)j;(void)k;
+    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+    (void)i;(void)j;(void)k;
     return 0;
 }
 
@@ -64,11 +64,16 @@ int main(void) {
     NokiaRuntime runtime;
     NokiaRuntimeCallbacks callbacks = {pcm, NULL, NULL};
     NokiaRuntime *snapshot_runtime;
-    uint8_t minimal_snapshot[8u + SNAP_WORDS * 4u] = {0};
+    uint8_t minimal_snapshot[8u + SNAP_WORDS * 4u + 12u + 8u +
+                             N85_TLS_OBJECT_SIZE] = {0};
     const uint8_t minimal_rom[1] = {0};
     const uint16_t cjk_only[] = {0x4f60u, 0x597du, 0xff0cu,
                                  0x4e16u, 0x754cu};
     const uint16_t supplementary_cjk[] = {0xd840u, 0xdc00u};
+    const uint16_t dense_machine_text[] =
+        u"one=0x1, two=0x2, three=0x3, four=0x4";
+    const uint16_t ordinary_long_text[] =
+        u"This ordinary sentence contains no repeated diagnostic fields.";
     int16_t first[1100], second[1300];
     int16_t phones[3] = {2, 19, 0};
     int16_t durations[3] = {100, 201, 66};
@@ -105,13 +110,49 @@ int main(void) {
     nokia_runtime_destroy(snapshot_runtime);
 
     memcpy(minimal_snapshot, "NKN85S01", 8u);
+    wr32(minimal_snapshot + 8u + 10u * 4u, POOL_BASE);
+    wr32(minimal_snapshot + 8u + 24u * 4u, 1u);
+    wr32(minimal_snapshot + 8u + 25u * 4u, 1u);
+    wr32(minimal_snapshot + 8u + SNAP_WORDS * 4u, POOL_BASE);
+    wr32(minimal_snapshot + 8u + SNAP_WORDS * 4u + 4u,
+         N85_TLS_OBJECT_SIZE);
+    wr32(minimal_snapshot + 8u + SNAP_WORDS * 4u + 8u,
+         8u + SNAP_WORDS * 4u + 12u + 8u);
+    wr32(minimal_snapshot + 8u + SNAP_WORDS * 4u + 12u, POOL_BASE);
+    wr32(minimal_snapshot + 8u + SNAP_WORDS * 4u + 16u,
+         N85_TLS_OBJECT_SIZE);
+    wr32(minimal_snapshot + 8u + SNAP_WORDS * 4u + 20u,
+         N85_TLS_OBJECT_VTABLE);
     snapshot_runtime = nokia_runtime_create_n85_snapshot(
         minimal_rom, sizeof(minimal_rom),
         minimal_snapshot, sizeof(minimal_snapshot));
     assert(snapshot_runtime);
     assert(snapshot_runtime->rom_base == ROM_BASE_N85);
     assert(snapshot_runtime->profile == NOKIA_PROFILE_N85);
+    assert(nokia_runtime_tls_get(snapshot_runtime, N85_TLS_KEY) == POOL_BASE);
     nokia_runtime_destroy(snapshot_runtime);
+
+    memset(&runtime, 0, sizeof(runtime));
+    assert(nokia_runtime_tls_get(&runtime, 0x1234u) == 0u);
+    assert(nokia_runtime_tls_set(&runtime, 0x1234u, 0x5678u) == 0u);
+    assert(nokia_runtime_tls_get(&runtime, 0x1234u) == 0x5678u);
+    assert(nokia_runtime_tls_set(&runtime, 0x1234u, 0x9abcu) == 0u);
+    assert(nokia_runtime_tls_get(&runtime, 0x1234u) == 0x9abcu);
+    assert(nokia_runtime_tls_set(&runtime, 0x4321u, 0x8765u) == 0u);
+    assert(nokia_runtime_tls_free(&runtime, 0x1234u) == 0u);
+    assert(nokia_runtime_tls_get(&runtime, 0x1234u) == 0u);
+    assert(nokia_runtime_tls_get(&runtime, 0x4321u) == 0x8765u);
+    free(runtime.tls_entries);
+
+    assert(text_machine_dense(
+        dense_machine_text,
+        (uint32_t)(sizeof(dense_machine_text) / sizeof(uint16_t) - 1u)));
+    assert(!text_machine_dense(
+        ordinary_long_text,
+        (uint32_t)(sizeof(ordinary_long_text) / sizeof(uint16_t) - 1u)));
+    assert(next_text_chunk(dense_machine_text,
+        (uint32_t)(sizeof(dense_machine_text) / sizeof(uint16_t) - 1u),
+        24u) <= 24u);
 
     memset(&runtime, 0, sizeof(runtime));
     runtime.rom_base = ROM_BASE_5320;

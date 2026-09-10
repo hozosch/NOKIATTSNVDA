@@ -25,6 +25,7 @@ jobs:
           python tests/test_patch_5320_frontend_latency.py
           python -m unittest tests.test_patch_6650_exclusive_store
           python -m unittest tests.test_patch_n85_exclusive_store
+          python -m unittest tests.test_patch_n85_executive_calls
           python -m py_compile \
             addon/synthDrivers/nokiaNative5320.py \
             tools/build_config_pack.py \
@@ -52,6 +53,7 @@ jobs:
             tools/patch_5500_sysreset.py \
             tools/patch_6650_exclusive_store.py \
             tools/patch_n85_exclusive_store.py \
+            tools/patch_n85_executive_calls.py \
             tools/patch_e65_klatt_regressions.py \
             tools/patch_e65_frontend_regressions.py \
             tools/package_voice_snapshots.py \
@@ -309,6 +311,8 @@ jobs:
           grep -q '^    case 0x82a62400u: {$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a5b21c:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a5a736:$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5b454:$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5b45c:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a5ae0e:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a638c6:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a6287c:$' build/6650/nokia_klatt_6650.c
@@ -323,12 +327,17 @@ jobs:
             gzip -dc "$snapshot" > "build/n85/snapshots/$name"
           done
           test "$(find build/n85/snapshots -name 'n85-*-*.snapshot' | wc -l)" -eq 4
+          python tools/patch_n85_executive_calls.py build/n85/nokia_frontend_n85_full.c
           grep -q 'Native N85 single-threaded store-exclusive' build/n85/nokia_frontend_n85_full.c
+          grep -q 'Nokia N85 SVC 0xde default return' build/n85/nokia_frontend_n85_full.c
+          grep -q 'nokia_runtime_tls_get' build/n85/nokia_frontend_n85_full.c
           grep -q 'nokia_frontend_yield_pc_value' build/n85/nokia_frontend_n85_full.c
           grep -q '^    case 0x8204ef10u: {$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_82048502:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_820530d8:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_8204786a:$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_82047eb0:$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_82047eb8:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_82055bf2:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_80296480:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_802966dc:$' build/n85/nokia_frontend_n85_full.c
@@ -626,7 +635,8 @@ jobs:
             build/native-6650-arm64ec/nokia_runtime_6650_arm64ec.dll \
             build/6650/6650-core.nrp \
             build/6650/snapshots \
-            build/6650/6650-config.ncf
+            build/6650/6650-config.ncf \
+            --coverage-one-gender
 
       - name: Smoke-test ARM64EC Nokia N85 voices
         shell: bash
@@ -635,7 +645,8 @@ jobs:
             build/native-n85-arm64ec/nokia_runtime_n85_arm64ec.dll \
             build/n85/n85-core.nrp \
             build/n85/snapshots \
-            build/n85/n85-config.ncf
+            build/n85/n85-config.ncf \
+            --coverage-one-gender
 
       - uses: actions/setup-python@v6
         with:
@@ -667,7 +678,8 @@ jobs:
             build/native-6650-arm64/nokia_runtime_6650_arm64.dll \
             build/6650/6650-core.nrp \
             build/6650/snapshots \
-            build/6650/6650-config.ncf
+            build/6650/6650-config.ncf \
+            --coverage-one-gender
 
       - name: Smoke-test ARM64 Nokia N85 voices
         shell: bash
@@ -676,7 +688,8 @@ jobs:
             build/native-n85-arm64/nokia_runtime_n85_arm64.dll \
             build/n85/n85-core.nrp \
             build/n85/snapshots \
-            build/n85/n85-config.ncf
+            build/n85/n85-config.ncf \
+            --coverage-one-gender
 
       - uses: actions/upload-artifact@v6
         with:
@@ -764,6 +777,8 @@ jobs:
           grep -q '^    case 0x82a62400u: {$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a5b21c:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a5a736:$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5b454:$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5b45c:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a5ae0e:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a638c6:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a6287c:$' build/6650/nokia_klatt_6650.c
@@ -778,12 +793,17 @@ jobs:
             gzip -dc "$snapshot" > "build/n85/snapshots/$name"
           done
           test "$(find build/n85/snapshots -name 'n85-*-*.snapshot' | wc -l)" -eq 4
+          python tools/patch_n85_executive_calls.py build/n85/nokia_frontend_n85_full.c
           grep -q 'Native N85 single-threaded store-exclusive' build/n85/nokia_frontend_n85_full.c
+          grep -q 'Nokia N85 SVC 0xde default return' build/n85/nokia_frontend_n85_full.c
+          grep -q 'nokia_runtime_tls_get' build/n85/nokia_frontend_n85_full.c
           grep -q 'nokia_frontend_yield_pc_value' build/n85/nokia_frontend_n85_full.c
           grep -q '^    case 0x8204ef10u: {$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_82048502:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_820530d8:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_8204786a:$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_82047eb0:$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_82047eb8:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_82055bf2:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_80296480:$' build/n85/nokia_frontend_n85_full.c
           grep -q '^L_802966dc:$' build/n85/nokia_frontend_n85_full.c
@@ -1144,7 +1164,7 @@ jobs:
           $stage = 'build/addon'
           New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test74' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test75' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
@@ -1192,8 +1212,8 @@ jobs:
           Copy-Item build/runtime-data/6650-config.ncf "$stage/data/6650-config.ncf"
           Copy-Item build/runtime-data/n85-core.nrp "$stage/data/n85-core.nrp"
           Copy-Item build/runtime-data/n85-config.ncf "$stage/data/n85-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test74.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test74.zip build/nokiaNative5320-0.1.0-test74.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test75.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test75.zip build/nokiaNative5320-0.1.0-test75.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -1275,11 +1295,11 @@ jobs:
           Get-Item build/addon/data/6650-core.nrp | Format-List Name,Length
           Get-Item build/addon/data/n85-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/n85-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test74.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test75.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test74
-          path: build/nokiaNative5320-0.1.0-test74.nvda-addon
+          name: nokiaNative5320-0.1.0-test75
+          path: build/nokiaNative5320-0.1.0-test75.nvda-addon
           if-no-files-found: error

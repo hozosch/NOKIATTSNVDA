@@ -71,6 +71,42 @@ COMMON_CASES = (
         "runtimeArch=arm64ec, runtimeDll=nokia_runtime_n85_arm64ec.dll, "
         "failedPc=0x82048502, failedYieldReason=0x00000003, failedStage=5.",
     ),
+    (
+        "reported-6650-runtime-error",
+        "RuntimeError: Native runtime error -2002; model=6650, "
+        "runtimeArch=arm64ec, runtimeDll=nokia_runtime_6650_arm64ec.dll, "
+        "klattFailure=0x00000000, klattR0=0x00000000, "
+        "klattR1=0x00000000, klattR2=0x00000000, "
+        "klattR3=0x00000000, klattRSp=0x00000000, "
+        "klattCount=0x00000000, klattGain=0x00000000, "
+        "klattLastPc=0x00000000, klattLastR0=0x00000000, "
+        "klattLastR7=0x00000000, klattBadAddress=0x00000000, "
+        "failedLastPc=0x82a5b482, failedPc=0x82a5b454, "
+        "failedLr=0x82a5b481, failedSp=0x600fed68, "
+        "failedFlags=0x60000000, failedBadAddress=0x00000000, "
+        "failedYieldPc=0x82a5b454, failedYieldReason=0x00000003, "
+        "failedEntry=0x823de64d, failedStage=0x00000005, "
+        "finalLastPc=0x823e0f22, finalBadAddress=0x00000000, "
+        "finalYieldPc=0x82a5b454, finalYieldReason=0x00000003",
+    ),
+    (
+        "reported-n85-runtime-error",
+        "RuntimeError: Native runtime error -2002; model=n85, "
+        "runtimeArch=arm64ec, runtimeDll=nokia_runtime_n85_arm64ec.dll, "
+        "klattFailure=0x00000000, klattR0=0x00000000, "
+        "klattR1=0x00000000, klattR2=0x00000000, "
+        "klattR3=0x00000000, klattRSp=0x00000000, "
+        "klattCount=0x00000000, klattGain=0x00000000, "
+        "klattLastPc=0x00000000, klattLastR0=0x00000000, "
+        "klattLastR7=0x00000000, klattBadAddress=0x00000000, "
+        "failedLastPc=0x82047ede, failedPc=0x82047eb0, "
+        "failedLr=0x82047edd, failedSp=0x600fed68, "
+        "failedFlags=0x60000000, failedBadAddress=0x00000000, "
+        "failedYieldPc=0x82047eb0, failedYieldReason=0x00000003, "
+        "failedEntry=0x81c2c81d, failedStage=0x00000005, "
+        "finalLastPc=0x81c2f102, finalBadAddress=0x00000000, "
+        "finalYieldPc=0x82047eb0, finalYieldReason=0x00000003",
+    ),
 )
 
 

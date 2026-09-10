@@ -33,7 +33,7 @@ synthesizer would be fast, but would not necessarily retain the Nokia sound.
 The emulated engine is therefore kept as a reference while the native
 implementation is developed and compared against its parameters and PCM.
 
-## Current status: native-only Test 74 candidate
+## Current status: native-only Test 75 candidate
 
 Normal synthesis now runs entirely in compiled Windows DLLs. Unicorn remains a
 development-time reference for capturing and validating new phone profiles,
@@ -72,7 +72,7 @@ families:
 - historical `6220` capture (exact device attribution still unverified)
 - Nokia N85
 
-The Test 74 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
+The Test 75 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
 The historical `6220`-labelled capture currently has a Klatt core only. Its
 exact device attribution, matching frontend, language data, compact runtime
 pack and snapshots must be recovered and verified before it is exposed.
@@ -88,8 +88,8 @@ outside the confirmed inventory.
 | Nokia 5320 XpressMusic | 33 | 66 | complete |
 | Nokia 5500 | 5 | 5 | complete |
 | Nokia E65 | 30 | 30 | complete |
-| Nokia 6650 Fold | 4 | 8 | Test 74 candidate; broad text corpus passes |
-| Nokia N85 | 2 | 4 | Test 74 candidate; broad text corpus passes |
+| Nokia 6650 Fold | 4 | 8 | Test 75 candidate; broad text corpus passes |
+| Nokia N85 | 2 | 4 | Test 75 candidate; broad text corpus passes |
 | Nokia N95 8GB | 30 | 30 | planned; separate engine build |
 
 The preserved Klatt source named `nokia_klatt_6220` is not enough to prove
@@ -234,6 +234,19 @@ four N85 voices. The missing original-ROM frontend and Klatt paths are now
 included; all 576 broad-corpus syntheses pass on x64 locally, and the existing
 repeated-call PCM hashes remain byte-identical. CI repeats the complete corpus
 on x64, ARM64EC and pure ARM64.
+
+Test 75 adds the two complete 736/738-character runtime-error reports to the
+regression corpus and closes the newly exposed original frontend paths at
+`0x82A5B454` on the 6650 and `0x82047EB0` on the N85. It also restores the
+N85 slow-executive default and the saved `Dll::Tls` locale object used by the
+original engine. All eight 6650 voices retain their reference PCM hashes, and
+the complete corpus passes in US English, Canadian French, Brazilian
+Portuguese and Latin American Spanish. All four N85 voices likewise retain
+their hashes and pass in Tagalog and Vietnamese. The Vietnamese analyser has a
+smaller native token workspace for dense diagnostic strings, so only text with
+repeated assignment fields or hexadecimal values uses a conservative
+128-unit boundary; ordinary long prose keeps the existing 384-unit chunk
+limit. The compact 6650 and N85 ROM packs remain byte-identical to Test 74.
 
 Other variants, such as French from the Nokia C5 family, require matching C5
 TTS data before they can be analysed and packaged. Data from a different
