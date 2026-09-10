@@ -26,6 +26,7 @@ jobs:
           python -m unittest tests.test_patch_6650_exclusive_store
           python -m unittest tests.test_patch_n85_exclusive_store
           python -m unittest tests.test_patch_n85_executive_calls
+          python -m unittest tests.test_rechunk_split_frontend_aot
           python -m py_compile \
             addon/synthDrivers/nokiaNative5320.py \
             tools/build_config_pack.py \
@@ -54,6 +55,7 @@ jobs:
             tools/patch_6650_exclusive_store.py \
             tools/patch_n85_exclusive_store.py \
             tools/patch_n85_executive_calls.py \
+            tools/rechunk_split_frontend_aot.py \
             tools/patch_e65_klatt_regressions.py \
             tools/patch_e65_frontend_regressions.py \
             tools/package_voice_snapshots.py \
@@ -328,6 +330,7 @@ jobs:
           done
           test "$(find build/n85/snapshots -name 'n85-*-*.snapshot' | wc -l)" -eq 4
           python tools/patch_n85_executive_calls.py build/n85/nokia_frontend_n85_full.c
+          python tools/rechunk_split_frontend_aot.py build/n85/nokia_frontend_n85_full.c
           grep -q 'Native N85 single-threaded store-exclusive' build/n85/nokia_frontend_n85_full.c
           grep -q 'Nokia N85 SVC 0xde default return' build/n85/nokia_frontend_n85_full.c
           grep -q 'nokia_runtime_tls_get' build/n85/nokia_frontend_n85_full.c
@@ -794,6 +797,7 @@ jobs:
           done
           test "$(find build/n85/snapshots -name 'n85-*-*.snapshot' | wc -l)" -eq 4
           python tools/patch_n85_executive_calls.py build/n85/nokia_frontend_n85_full.c
+          python tools/rechunk_split_frontend_aot.py build/n85/nokia_frontend_n85_full.c
           grep -q 'Native N85 single-threaded store-exclusive' build/n85/nokia_frontend_n85_full.c
           grep -q 'Nokia N85 SVC 0xde default return' build/n85/nokia_frontend_n85_full.c
           grep -q 'nokia_runtime_tls_get' build/n85/nokia_frontend_n85_full.c
