@@ -69,19 +69,18 @@ families:
 - Nokia 5500
 - Nokia E65
 - Nokia 6650
-- historical `6220` capture (exact device attribution still unverified)
+- Nokia 6220 Classic
 - Nokia N85
 
 The Test 75 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
-The historical `6220`-labelled capture currently has a Klatt core only. Its
-exact device attribution, matching frontend, language data, compact runtime
-pack and snapshots must be recovered and verified before it is exposed.
+The native tree currently has only the 6220 Klatt core. Guillem Leon's original
+0.5.0 reference package identifies the matching profile as Nokia 6220 Classic
+and contains its `6220c.rom` image and speech data; its frontend, compact
+runtime pack and snapshots still need to be captured for the native add-on.
 
-The expanded SAPI5 reference repository provides the following confirmed
-device inventory. The 5500 comes from the older NVDA collection and is listed
-separately because that SAPI5 package does not contain it. The `6220` label is
-not independently confirmed by the SAPI5 collection and is therefore kept
-outside the confirmed inventory.
+The expanded SAPI5 reference repository provides most of the following device
+inventory. The 5500 and 6220 Classic come from the original NVDA collection
+instead because that SAPI5 package does not contain them.
 
 | Model | Languages | Voices | Native NVDA status |
 |---|---:|---:|---|
@@ -89,16 +88,17 @@ outside the confirmed inventory.
 | Nokia 5500 | 5 | 5 | complete |
 | Nokia E65 | 30 | 30 | complete |
 | Nokia 6650 Fold | 4 | 8 | Test 75 candidate; broad text corpus passes |
+| Nokia 6220 Classic | 5 | 10 | original reference recovered; native port pending |
 | Nokia N85 | 2 | 4 | Test 75 candidate; broad text corpus passes |
 | Nokia N95 8GB | 30 | 30 | planned; separate engine build |
 
-The preserved Klatt source named `nokia_klatt_6220` is not enough to prove
-that the original profile was specifically a Nokia 6220 Classic rather than a
-mislabelled or incomplete capture. No matching 6220/6620 profile exists in the
-SAPI5 reference, and this repository retains no frontend, snapshots or voice
-data that could settle the name or a language count. It will remain a
-provisional historical capture until the original package or ROM provenance
-can confirm it.
+The recovered [`nokiaKlatt 0.5.0`](https://guilevi.me/nokiaKlatt-0.5.0.nvda-addon)
+profile labels the source consistently as Nokia 6220 Classic and supplies
+Swedish, Danish, Norwegian, Finnish and Icelandic with male and female styles.
+Its complete British-English package faults the original emulated engine and
+is deliberately not offered. The precise RM variant and firmware version are
+not yet established from an internal version record, so those narrower claims
+remain open even though the source profile is no longer missing.
 
 The 5320 and E65 language lists already match the SAPI5 inventory exactly.
 The packaged 5500 resources also confirm that its five-language set—British
@@ -256,8 +256,8 @@ not be compatible.
 ## Native-port roadmap
 
 1. Finish and stabilize every verified phone profile, next N95 8GB, while
-   retaining exact reference PCM; investigate the provisional `6220` capture
-   separately only after recovering enough provenance and matching data.
+   retaining exact reference PCM; then port the recovered 6220 Classic
+   reference with its five working Nordic languages.
 2. Profile longer ordinary utterances and replace only verified hot frontend
    loops. Do not use smaller text chunks as a latency shortcut.
 3. Add volume control after comparing streaming PCM gain against any usable
@@ -299,7 +299,9 @@ avoidable churn. NVDA remains the first supported frontend after the rename.
 
 ## Attribution
 
-- Original NVDA experiment: Guillem Leon, `nokiaKlatt 0.5.0`
+- Original NVDA experiment and recovered Nokia 6220 Classic reference:
+  Guillem Leon,
+  [`nokiaKlatt 0.5.0`](https://guilevi.me/nokiaKlatt-0.5.0.nvda-addon)
 - Expanded RM-409 language collection, E65/N95 8GB reconstruction and detailed
   firmware provenance: DJ Graco,
   [`nokiaKlatt 0.5.1`](https://github.com/djgraco/nokiaKlatt). Many thanks for

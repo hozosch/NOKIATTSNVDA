@@ -44,6 +44,23 @@ the 43,237,376-byte N85 `SYM.ROM` has SHA-256
 Neither complete image is packaged. The add-on contains only the observed
 address-preserving TTS pages together with the corresponding speech data.
 
+## Nokia 6220 Classic reference
+
+Guillem Leon's original
+[`nokiaKlatt 0.5.0`](https://guilevi.me/nokiaKlatt-0.5.0.nvda-addon)
+contains a complete reference profile named Nokia 6220 Classic: the
+39,403,520-byte `roms/6220/6220c.rom`, matching speech-data files and driver
+metadata for Swedish, Danish, Norwegian, Finnish and Icelandic in male and
+female styles. The ROM image has SHA-256
+`3319812683b4580a9a8ccf40062e3fffdd488b39ab82cb0c7412330086ea4941`.
+The exact RM variant and firmware version have not yet been recovered from an
+internal version record. The complete British-English speech package is also
+present but faults the original emulated engine and is intentionally blocked.
+
+This recovered package supplies the missing reference inputs for a future
+native 6220 frontend capture. It does not grant redistribution permission;
+the complete ROM will not be committed to this repository.
+
 ## Future source profiles
 
 DJ Graco's repository also documents reconstructed Nokia N95 8GB RM-320
