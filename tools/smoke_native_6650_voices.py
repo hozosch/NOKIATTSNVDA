@@ -16,6 +16,7 @@ from smoke_native_5500_voices import (
     config_blobs,
     write_rom_trace,
 )
+from native_text_regressions import cases_for
 
 
 SAMPLES = {
@@ -24,16 +25,6 @@ SAMPLES = {
     76: "Olá mundo 123. Menu NVDA opções ferramentas configurações.",
     83: "Hola mundo 123. Menú NVDA opciones herramientas configuración.",
 }
-
-# The language-appropriate reference sentences above do not cover the path
-# taken when NVDA sends its German interface labels to a non-German voice.
-# Test the same practical input against every 6650 snapshot so an incomplete
-# lifted frontend cannot pass merely because its own-language sample works.
-NVDA_UI_REGRESSIONS = (
-    "NVDA Menü",
-    "Optionen Untermenü",
-    "Werkzeuge Untermenü",
-)
 
 # Each digest covers two consecutive calls on one restored runtime. Besides
 # output fidelity, this guards paths that are used only after a warm call.
@@ -232,6 +223,11 @@ def main() -> None:
     parser.add_argument("rom", type=Path)
     parser.add_argument("snapshot_dir", type=Path)
     parser.add_argument("config", type=Path)
+    parser.add_argument(
+        "--coverage-one-gender",
+        action="store_true",
+        help="run the broad text corpus on male snapshots only",
+    )
     parser.add_argument("--rom-trace", type=Path)
     args = parser.parse_args()
 
@@ -274,18 +270,20 @@ def main() -> None:
                 failures.append(f"{voice}: expected {expected}, got {digest}")
             else:
                 validated += 1
-            for regression_text in NVDA_UI_REGRESSIONS:
+            if args.coverage_one_gender and gender != "male":
+                continue
+            for case_name, regression_text in cases_for("6650", language_id):
                 try:
                     regression_audio = synthesize_once(
                         dll, rom, len(rom_data), snapshot, regression_text
                     )
                 except Exception as error:
                     failures.append(
-                        f"{voice} {regression_text!r}: {error}"
+                        f"{voice} {case_name} {regression_text!r}: {error}"
                     )
                 else:
                     print(
-                        f"{voice} {regression_text!r}: "
+                        f"{voice} {case_name}: "
                         f"pcm_bytes={len(regression_audio)}"
                     )
 

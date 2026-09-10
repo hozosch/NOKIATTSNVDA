@@ -12,7 +12,7 @@ Klatt engine generations preserved by DJ Graco.
 | `5320` | Nokia 5320 XpressMusic, Symbian 9.3 FP2 | 33 verified languages, male/female | Primary frontend-AOT target. Existing 14k+ instruction corpus and native Klatt core. |
 | `5500` | Nokia 5500 Sport, Symbian 9.1 | 5 verified languages, unnamed/default voice | Integrated in Test 61 with its own native frontend/Klatt runtime, compact code pack and frozen build inputs. It contributes a distinct second German engine variant. |
 | `6650` | Nokia 6650 Fold, Symbian 9.3 FP2 | 4 verified languages, male/female | Integrated in Test 71 with its own frontend/Klatt AOT, compact code pack and eight frozen snapshots. |
-| `6220` | Nokia 6220 classic, Symbian 9.3 FP2 | Native Klatt core preserved; matching frontend package absent from this repository | Recover the original profile data and capture initialized snapshots and a frontend corpus before add-on integration. |
+| `6220` (provisional label) | Exact phone/platform unverified | Native Klatt core preserved; no matching frontend, voice package, snapshots or SAPI5 profile available here | Recover the original package or ROM provenance before assigning the device name, then capture initialized snapshots and a frontend corpus. |
 | `n85` | Nokia N85, Symbian 9.3 FP2 | Tagalog/Vietnamese verified, male/female | Integrated in Test 72 with its own frontend/Klatt AOT, compact code pack and four frozen snapshots. |
 | `e65` | Nokia E65, Symbian 9.1 | 30 verified languages, unnamed/default voice | Integrated in Test 66 with build-time E32/ROFS binding, its own frontend/Klatt AOT, compact code pack and frozen snapshots. It contributes a third distinct German engine variant. |
 | `n958gb` | Nokia N95 8GB RM-320, Symbian 9.2 FP1 | 30 verified languages, unnamed/default voice | Uses a reconstructed XIP image and VFP/DFPAEABI on the English path. AOT tooling must preserve VFP helper semantics or replace those helpers natively. |
@@ -59,8 +59,9 @@ profile descriptors or callbacks:
    this per-stub convention so the 5500 AOT generator need not guess it.
 3. **6650 and N85 (completed in Tests 71 and 72):** both reuse the shared host
    ABI with model-specific frontend/Klatt AOT, compact code packs and frozen
-   snapshots. The older 6220 still needs its matching frontend/data package
-   recovered before the same process can be applied.
+   snapshots. The provisional `6220` capture still needs its provenance and
+   matching frontend/data package recovered before the same process can be
+   applied.
 4. **E65 (completed in Test 66):** bind the two ROFS speech DLLs while building
    the snapshots, translate the combined address space, and ship only the
    compact observed pages. All 30 voices match the SAPI5 reference PCM; the

@@ -33,7 +33,7 @@ synthesizer would be fast, but would not necessarily retain the Nokia sound.
 The emulated engine is therefore kept as a reference while the native
 implementation is developed and compared against its parameters and PCM.
 
-## Current status: native-only Test 73 candidate
+## Current status: native-only Test 74 candidate
 
 Normal synthesis now runs entirely in compiled Windows DLLs. Unicorn remains a
 development-time reference for capturing and validating new phone profiles,
@@ -62,32 +62,43 @@ extra buffering.
 
 ## Voices and languages
 
-The source tree preserves native Klatt waveform cores for six engine families:
+The source tree preserves native Klatt waveform cores labelled for six engine
+families:
 
 - Nokia 5320
 - Nokia 5500
 - Nokia E65
 - Nokia 6650
-- Nokia 6220
+- historical `6220` capture (exact device attribution still unverified)
 - Nokia N85
 
-The Test 73 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
-The 6220 currently has a Klatt core only; its matching native frontend,
-compact runtime pack and complete snapshot verification are still pending.
+The Test 74 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
+The historical `6220`-labelled capture currently has a Klatt core only. Its
+exact device attribution, matching frontend, language data, compact runtime
+pack and snapshots must be recovered and verified before it is exposed.
 
 The expanded SAPI5 reference repository provides the following confirmed
-device inventory. The 5500 and 6220 come from the older NVDA collection and
-are listed separately because that SAPI5 package does not contain them.
+device inventory. The 5500 comes from the older NVDA collection and is listed
+separately because that SAPI5 package does not contain it. The `6220` label is
+not independently confirmed by the SAPI5 collection and is therefore kept
+outside the confirmed inventory.
 
 | Model | Languages | Voices | Native NVDA status |
 |---|---:|---:|---|
 | Nokia 5320 XpressMusic | 33 | 66 | complete |
 | Nokia 5500 | 5 | 5 | complete |
 | Nokia E65 | 30 | 30 | complete |
-| Nokia 6650 Fold | 4 | 8 | Test 73 candidate; UI fallback paths expanded |
-| Nokia N85 | 2 | 4 | Test 73 candidate; Tagalog and Vietnamese |
+| Nokia 6650 Fold | 4 | 8 | Test 74 candidate; broad text corpus passes |
+| Nokia N85 | 2 | 4 | Test 74 candidate; broad text corpus passes |
 | Nokia N95 8GB | 30 | 30 | planned; separate engine build |
-| Nokia 6220 Classic | 5 | 10 | Klatt core only; Swedish, Danish, Norwegian, Finnish and Icelandic |
+
+The preserved Klatt source named `nokia_klatt_6220` is not enough to prove
+that the original profile was specifically a Nokia 6220 Classic rather than a
+mislabelled or incomplete capture. No matching 6220/6620 profile exists in the
+SAPI5 reference, and this repository retains no frontend, snapshots or voice
+data that could settle the name or a language count. It will remain a
+provisional historical capture until the original package or ROM provenance
+can confirm it.
 
 The 5320 and E65 language lists already match the SAPI5 inventory exactly.
 The packaged 5500 resources also confirm that its five-language set—British
@@ -214,6 +225,16 @@ model runtimes as pure ARM64 DLLs: ARM64EC is the runtime selected by the NVDA
 processes targeted on Windows ARM. Pure ARM64 builds and smoke tests remain in
 CI for future native-ARM64 NVDA support.
 
+Test 74 replaces that narrow three-phrase check with 48 practical utterances
+per voice: NVDA and Windows interface labels, role announcements, letters,
+numbers, punctuation, paths, identifiers, long settings text, a runtime-error
+message and native-language sentences with diacritics. Against the Test 73
+sources this found 278 failing cases on the eight 6650 voices and 162 on the
+four N85 voices. The missing original-ROM frontend and Klatt paths are now
+included; all 576 broad-corpus syntheses pass on x64 locally, and the existing
+repeated-call PCM hashes remain byte-identical. CI repeats the complete corpus
+on x64, ARM64EC and pure ARM64.
+
 Other variants, such as French from the Nokia C5 family, require matching C5
 TTS data before they can be analysed and packaged. Data from a different
 phone is not silently substituted, because engine and resource versions may
@@ -221,8 +242,9 @@ not be compatible.
 
 ## Native-port roadmap
 
-1. Finish and stabilize every preserved phone profile, next N95 8GB, while
-   retaining exact reference PCM; evaluate the older 6220 separately.
+1. Finish and stabilize every verified phone profile, next N95 8GB, while
+   retaining exact reference PCM; investigate the provisional `6220` capture
+   separately only after recovering enough provenance and matching data.
 2. Profile longer ordinary utterances and replace only verified hot frontend
    loops. Do not use smaller text chunks as a latency shortcut.
 3. Add volume control after comparing streaming PCM gain against any usable

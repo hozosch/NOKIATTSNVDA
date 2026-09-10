@@ -54,7 +54,8 @@ axes.
 ## Validation
 
 At neutral rate and pitch, the Test 30 candidate matched the ARM reference PCM
-byte-for-byte on the 5320, 5500, 6650, 6220 and N85 families. Changing rate,
+byte-for-byte on the 5320, 5500, 6650, provisionally labelled `6220`, and N85
+Klatt captures. Changing rate,
 pitch and then returning both to neutral restored the original PCM hash on
 both German 5320 named voices.
 
