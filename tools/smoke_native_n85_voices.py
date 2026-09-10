@@ -23,6 +23,15 @@ SAMPLES = {
     96: "Xin chao, toi la bo tong hop giong noi Nokia Klatt va toi noi tieng Viet.",
 }
 
+# Exercise the real cross-language input NVDA sends when the UI language is
+# German. The own-language reference sentences alone missed incomplete
+# frontend paths in both N85 languages.
+NVDA_UI_REGRESSIONS = (
+    "NVDA Menü",
+    "Optionen Untermenü",
+    "Werkzeuge Untermenü",
+)
+
 # Each digest covers two consecutive calls on one restored runtime. Besides
 # output fidelity, this guards paths that are used only after a warm call.
 EXPECTED_REPEATED_SHA256 = {
@@ -142,6 +151,50 @@ def synthesize_repeated_and_prosody(
         dll.nokia_runtime_destroy(runtime)
 
 
+def synthesize_once(
+    dll, rom, rom_size, snapshot_path: Path, text: str
+) -> bytes:
+    snapshot_data, snapshot = byte_array(snapshot_path)
+    runtime = dll.nokia_runtime_create_n85_snapshot(
+        rom, rom_size, snapshot, len(snapshot_data)
+    )
+    if not runtime:
+        raise RuntimeError("snapshot restore failed")
+    output = []
+
+    @PCM
+    def on_pcm(_user, samples, count, sample_rate):
+        if sample_rate != 16000:
+            raise RuntimeError(f"unexpected sample rate {sample_rate}")
+        output.append(ctypes.string_at(samples, count * 2))
+
+    @INDEX
+    def on_index(_user, _index):
+        pass
+
+    callbacks = Callbacks(on_pcm, on_index, None)
+    encoded = text.encode("utf-16-le")
+    units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
+    try:
+        if not dll.nokia_runtime_set_rate(runtime, 1.0):
+            raise RuntimeError("setting neutral rate failed")
+        if not dll.nokia_runtime_set_pitch(runtime, 1.0):
+            raise RuntimeError("setting neutral pitch failed")
+        ok = dll.nokia_runtime_speak_utf16(
+            runtime, units, len(units), ctypes.byref(callbacks)
+        )
+        error = dll.nokia_runtime_last_error(runtime)
+        audio = b"".join(output)
+        if not ok or error or not audio or not any(audio):
+            raise RuntimeError(
+                _failure_details(dll, 1, ok, error)
+                + f", pcm_bytes={len(audio)}"
+            )
+        return audio
+    finally:
+        dll.nokia_runtime_destroy(runtime)
+
+
 def _failure_details(dll, call, result, error) -> str:
     diagnostics = ", ".join(
         f"{label}=0x{function():08x}"
@@ -202,6 +255,20 @@ def main() -> None:
                 failures.append(f"{voice}: expected {expected}, got {digest}")
             else:
                 validated += 1
+            for regression_text in NVDA_UI_REGRESSIONS:
+                try:
+                    regression_audio = synthesize_once(
+                        dll, rom, len(rom_data), snapshot, regression_text
+                    )
+                except Exception as error:
+                    failures.append(
+                        f"{voice} {regression_text!r}: {error}"
+                    )
+                else:
+                    print(
+                        f"{voice} {regression_text!r}: "
+                        f"pcm_bytes={len(regression_audio)}"
+                    )
 
     if args.rom_trace:
         write_rom_trace(dll, rom_data, args.rom_trace)

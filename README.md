@@ -20,7 +20,7 @@ small, responsive NVDA synthesizer that:
 
 - preserves the characteristic Nokia pronunciation, prosody and formant voices;
 - executes the time-critical Klatt/DSP synthesis path as native Windows code;
-- supports Windows x86, x64, ARM64 and ARM64EC;
+- supports Windows x86, x64 and ARM64EC in the NVDA add-on;
 - needs no complete Symbian ROM, ARM32 emulator, Unicorn or embedded Python at runtime;
 - starts producing audio with screen-reader-friendly latency;
 - cancels reliably during rapid navigation;
@@ -33,7 +33,7 @@ synthesizer would be fast, but would not necessarily retain the Nokia sound.
 The emulated engine is therefore kept as a reference while the native
 implementation is developed and compared against its parameters and PCM.
 
-## Current status: native-only Test 72 candidate
+## Current status: native-only Test 73 candidate
 
 Normal synthesis now runs entirely in compiled Windows DLLs. Unicorn remains a
 development-time reference for capturing and validating new phone profiles,
@@ -46,7 +46,7 @@ but it is not shipped and is never used as a runtime fallback.
 | Runtime TTS code | Small address-preserving code-page packs | Eventually data-only voice packages |
 | Text analysis and pronunciation | Original Nokia logic lifted to portable C | Optimise verified hot loops, then progressively decode it |
 | Prosody and Klatt synthesis | Native duration/F0 control and bit-exact portable C | Preserve exact output across every added model |
-| Architectures | x86, x64, ARM64 and ARM64EC DLLs | Keep one feature set on every architecture |
+| Architectures | Packaged x86, x64 and ARM64EC DLLs; pure ARM64 remains CI-tested | Add pure ARM64 when NVDA can load it directly |
 | Volume | Not yet exposed | Compare streaming PCM gain with any usable native control |
 
 Rate is applied to Nokia's phoneme durations and prosody timelines before
@@ -71,7 +71,7 @@ The source tree preserves native Klatt waveform cores for six engine families:
 - Nokia 6220
 - Nokia N85
 
-The Test 72 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
+The Test 73 candidate exposes the 5320, 5500, E65, 6650 and N85 end to end.
 The 6220 currently has a Klatt core only; its matching native frontend,
 compact runtime pack and complete snapshot verification are still pending.
 
@@ -84,8 +84,8 @@ are listed separately because that SAPI5 package does not contain them.
 | Nokia 5320 XpressMusic | 33 | 66 | complete |
 | Nokia 5500 | 5 | 5 | complete |
 | Nokia E65 | 30 | 30 | complete |
-| Nokia 6650 Fold | 4 | 8 | complete |
-| Nokia N85 | 2 | 4 | Test 72 candidate; adds Tagalog and Vietnamese |
+| Nokia 6650 Fold | 4 | 8 | Test 73 candidate; UI fallback paths expanded |
+| Nokia N85 | 2 | 4 | Test 73 candidate; Tagalog and Vietnamese |
 | Nokia N95 8GB | 30 | 30 | planned; separate engine build |
 | Nokia 6220 Classic | 5 | 10 | Klatt core only; Swedish, Danish, Norwegian, Finnish and Icelandic |
 
@@ -93,6 +93,11 @@ The 5320 and E65 language lists already match the SAPI5 inventory exactly.
 The packaged 5500 resources also confirm that its five-language set—British
 English, French, German, Spanish and Arabic—is complete; no hidden 5500
 language was omitted.
+
+The N85 data tree also contains a complete language-ID 1 (British English)
+package, but the SAPI5 reference deliberately blocks it because it faults the
+original emulated engine. It is therefore not counted as an available N85
+language and is not exposed as a voice.
 
 Test 29 expanded the Nokia 5320 from 9 to 33 verified languages using the
 native RM-409 05.16 regional data preserved and documented by DJ Graco in
@@ -198,6 +203,16 @@ The SAPI5 reference also contains a working Nokia N95 8GB profile with 30
 languages. It uses another distinct Nokia engine build and therefore still
 requires separate compact-pack and native-port validation rather than being
 silently substituted as 5320 or E65 data.
+
+Test 73 closes the missing original frontend paths exposed when German NVDA
+interface labels are sent to the 6650 or N85 voices. All eight 6650 and all
+four N85 voices now synthesize the three separate `NVDA Menü`,
+`Optionen Untermenü` and `Werkzeuge Untermenü` regression utterances in
+addition to retaining their reference-identical PCM hashes. The NVDA package
+no longer duplicates the five
+model runtimes as pure ARM64 DLLs: ARM64EC is the runtime selected by the NVDA
+processes targeted on Windows ARM. Pure ARM64 builds and smoke tests remain in
+CI for future native-ARM64 NVDA support.
 
 Other variants, such as French from the Nokia C5 family, require matching C5
 TTS data before they can be analysed and packaged. Data from a different

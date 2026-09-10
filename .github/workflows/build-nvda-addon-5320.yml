@@ -305,6 +305,8 @@ jobs:
           grep -q 'Native 6650 single-threaded store-exclusive' build/6650/nokia_frontend_6650_full.c
           grep -q 'nokia_frontend_yield_pc_value' build/6650/nokia_frontend_6650_full.c
           grep -q '^    case 0x82a62400u: {$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5b21c:$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5a736:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a6287c:$' build/6650/nokia_klatt_6650.c
           gzip -dc native/generated/nokia_frontend_n85_full.c.gz > build/n85/nokia_frontend_n85_full.c
           gzip -dc native/generated/nokia_klatt_n85.c.gz > build/n85/nokia_klatt_n85.c
@@ -318,6 +320,8 @@ jobs:
           grep -q 'Native N85 single-threaded store-exclusive' build/n85/nokia_frontend_n85_full.c
           grep -q 'nokia_frontend_yield_pc_value' build/n85/nokia_frontend_n85_full.c
           grep -q '^    case 0x8204ef10u: {$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_82048502:$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_820530d8:$' build/n85/nokia_frontend_n85_full.c
           python tools/patch_5500_sysreset.py build/5500/nokia_frontend_5500_full.c
           python tools/patch_5500_klatt_regressions.py build/5500/nokia_klatt_5500.c
           python tools/patch_e65_frontend_regressions.py build/e65/nokia_frontend_e65_full.c
@@ -710,12 +714,6 @@ jobs:
           name: nokia-runtime-5320-arm64ec-current
           path: build/runtime-arm64ec
 
-      - name: Download current ARM64 runtime
-        uses: actions/download-artifact@v7
-        with:
-          name: nokia-runtime-5320-arm64-current
-          path: build/runtime-arm64
-
       - name: Download current Nokia 5500, E65, 6650 and N85 ARM runtimes
         uses: actions/download-artifact@v7
         with:
@@ -752,6 +750,8 @@ jobs:
           grep -q 'Native 6650 single-threaded store-exclusive' build/6650/nokia_frontend_6650_full.c
           grep -q 'nokia_frontend_yield_pc_value' build/6650/nokia_frontend_6650_full.c
           grep -q '^    case 0x82a62400u: {$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5b21c:$' build/6650/nokia_frontend_6650_full.c
+          grep -q '^L_82a5a736:$' build/6650/nokia_frontend_6650_full.c
           grep -q '^L_82a6287c:$' build/6650/nokia_klatt_6650.c
           gzip -dc native/generated/nokia_frontend_n85_full.c.gz > build/n85/nokia_frontend_n85_full.c
           gzip -dc native/generated/nokia_klatt_n85.c.gz > build/n85/nokia_klatt_n85.c
@@ -765,6 +765,8 @@ jobs:
           grep -q 'Native N85 single-threaded store-exclusive' build/n85/nokia_frontend_n85_full.c
           grep -q 'nokia_frontend_yield_pc_value' build/n85/nokia_frontend_n85_full.c
           grep -q '^    case 0x8204ef10u: {$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_82048502:$' build/n85/nokia_frontend_n85_full.c
+          grep -q '^L_820530d8:$' build/n85/nokia_frontend_n85_full.c
           gzip -dc native/generated/nokia_frontend_5500_full.c.gz > build/5500/nokia_frontend_5500_full.c
           gzip -dc native/generated/nokia_klatt_5500.c.gz > build/5500/nokia_klatt_5500.c
           gzip -dc native/generated/5500-core.nrp.gz > build/runtime-data/5500-core.nrp
@@ -1118,41 +1120,32 @@ jobs:
         shell: pwsh
         run: |
           $stage = 'build/addon'
-          New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
+          New-Item -ItemType Directory -Force "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64ec", "$stage/data", "$stage/synthDrivers" | Out-Null
           Copy-Item addon/manifest.ini "$stage/manifest.ini"
-          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test72' | Set-Content "$stage/manifest.ini" -Encoding utf8
+          (Get-Content "$stage/manifest.ini" -Raw) -replace '(?m)^version\s*=.*$', 'version = 0.1.0-test73' | Set-Content "$stage/manifest.ini" -Encoding utf8
           Copy-Item addon/synthDrivers/nokiaNative5320.py "$stage/synthDrivers/nokiaNative5320.py"
           Copy-Item build/native-x86/nokia_runtime_5320_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5320_x64.dll "$stage/bin/x64/"
-          Copy-Item build/runtime-arm64/nokia_runtime_5320_arm64.dll "$stage/bin/arm64/"
           Copy-Item build/runtime-arm64ec/nokia_runtime_5320_arm64ec.dll "$stage/bin/arm64ec/"
           Copy-Item build/native-x86/nokia_runtime_5500_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_5500_x64.dll "$stage/bin/x64/"
-          $runtime5500Arm64 = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_5500_arm64.dll' | Select-Object -First 1
           $runtime5500Arm64ec = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_5500_arm64ec.dll' | Select-Object -First 1
-          if (!$runtime5500Arm64 -or !$runtime5500Arm64ec) { throw 'Downloaded Nokia 5500 ARM runtimes are incomplete' }
-          Copy-Item $runtime5500Arm64.FullName "$stage/bin/arm64/"
+          if (!$runtime5500Arm64ec) { throw 'Downloaded Nokia 5500 ARM64EC runtime is missing' }
           Copy-Item $runtime5500Arm64ec.FullName "$stage/bin/arm64ec/"
           Copy-Item build/native-x86/nokia_runtime_e65_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_e65_x64.dll "$stage/bin/x64/"
-          $runtimeE65Arm64 = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_e65_arm64.dll' | Select-Object -First 1
           $runtimeE65Arm64ec = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_e65_arm64ec.dll' | Select-Object -First 1
-          if (!$runtimeE65Arm64 -or !$runtimeE65Arm64ec) { throw 'Downloaded Nokia E65 ARM runtimes are incomplete' }
-          Copy-Item $runtimeE65Arm64.FullName "$stage/bin/arm64/"
+          if (!$runtimeE65Arm64ec) { throw 'Downloaded Nokia E65 ARM64EC runtime is missing' }
           Copy-Item $runtimeE65Arm64ec.FullName "$stage/bin/arm64ec/"
           Copy-Item build/native-x86/nokia_runtime_6650_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_6650_x64.dll "$stage/bin/x64/"
-          $runtime6650Arm64 = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_6650_arm64.dll' | Select-Object -First 1
           $runtime6650Arm64ec = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_6650_arm64ec.dll' | Select-Object -First 1
-          if (!$runtime6650Arm64 -or !$runtime6650Arm64ec) { throw 'Downloaded Nokia 6650 ARM runtimes are incomplete' }
-          Copy-Item $runtime6650Arm64.FullName "$stage/bin/arm64/"
+          if (!$runtime6650Arm64ec) { throw 'Downloaded Nokia 6650 ARM64EC runtime is missing' }
           Copy-Item $runtime6650Arm64ec.FullName "$stage/bin/arm64ec/"
           Copy-Item build/native-x86/nokia_runtime_n85_x86.dll "$stage/bin/x86/"
           Copy-Item build/native-x64/nokia_runtime_n85_x64.dll "$stage/bin/x64/"
-          $runtimeN85Arm64 = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_n85_arm64.dll' | Select-Object -First 1
           $runtimeN85Arm64ec = Get-ChildItem -Recurse build/runtime-5500-e65-arm -Filter 'nokia_runtime_n85_arm64ec.dll' | Select-Object -First 1
-          if (!$runtimeN85Arm64 -or !$runtimeN85Arm64ec) { throw 'Downloaded Nokia N85 ARM runtimes are incomplete' }
-          Copy-Item $runtimeN85Arm64.FullName "$stage/bin/arm64/"
+          if (!$runtimeN85Arm64ec) { throw 'Downloaded Nokia N85 ARM64EC runtime is missing' }
           Copy-Item $runtimeN85Arm64ec.FullName "$stage/bin/arm64ec/"
           $snapshots = Get-ChildItem -Recurse build/multilingual-input -Filter '5320-*-*.snapshot'
           if ($snapshots.Count -ne 66) { throw "Expected 66 voice snapshots, found $($snapshots.Count)" }
@@ -1177,8 +1170,8 @@ jobs:
           Copy-Item build/runtime-data/6650-config.ncf "$stage/data/6650-config.ncf"
           Copy-Item build/runtime-data/n85-core.nrp "$stage/data/n85-core.nrp"
           Copy-Item build/runtime-data/n85-config.ncf "$stage/data/n85-config.ncf"
-          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test72.zip -Force
-          Move-Item build/nokiaNative5320-0.1.0-test72.zip build/nokiaNative5320-0.1.0-test72.nvda-addon
+          Compress-Archive -Path "$stage/*" -DestinationPath build/nokiaNative5320-0.1.0-test73.zip -Force
+          Move-Item build/nokiaNative5320-0.1.0-test73.zip build/nokiaNative5320-0.1.0-test73.nvda-addon
 
       - name: Verify package contents
         shell: pwsh
@@ -1188,23 +1181,18 @@ jobs:
             'build/addon/synthDrivers/nokiaNative5320.py',
             'build/addon/bin/x86/nokia_runtime_5320_x86.dll',
             'build/addon/bin/x64/nokia_runtime_5320_x64.dll',
-            'build/addon/bin/arm64/nokia_runtime_5320_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_5320_arm64ec.dll',
             'build/addon/bin/x86/nokia_runtime_5500_x86.dll',
             'build/addon/bin/x64/nokia_runtime_5500_x64.dll',
-            'build/addon/bin/arm64/nokia_runtime_5500_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_5500_arm64ec.dll',
             'build/addon/bin/x86/nokia_runtime_e65_x86.dll',
             'build/addon/bin/x64/nokia_runtime_e65_x64.dll',
-            'build/addon/bin/arm64/nokia_runtime_e65_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_e65_arm64ec.dll',
             'build/addon/bin/x86/nokia_runtime_6650_x86.dll',
             'build/addon/bin/x64/nokia_runtime_6650_x64.dll',
-            'build/addon/bin/arm64/nokia_runtime_6650_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_6650_arm64ec.dll',
             'build/addon/bin/x86/nokia_runtime_n85_x86.dll',
             'build/addon/bin/x64/nokia_runtime_n85_x64.dll',
-            'build/addon/bin/arm64/nokia_runtime_n85_arm64.dll',
             'build/addon/bin/arm64ec/nokia_runtime_n85_arm64ec.dll',
             'build/addon/data/5320-1-male.snapshot.gz',
             'build/addon/data/5320-3-male.snapshot.gz',
@@ -1234,6 +1222,10 @@ jobs:
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "Missing package file: $path" }
           }
+          $pureArm64Dlls = @(Get-ChildItem build/addon -Recurse -Filter '*_arm64.dll')
+          if ($pureArm64Dlls.Count -ne 0) {
+            throw "Pure ARM64 DLLs must not be shipped in the NVDA add-on: $($pureArm64Dlls.FullName -join ', ')"
+          }
           if ((Get-ChildItem build/addon/data -Filter '5320-*-*.snapshot.gz').Count -ne 66) {
             throw 'Packaged voice snapshot count is not 66'
           }
@@ -1261,11 +1253,11 @@ jobs:
           Get-Item build/addon/data/6650-core.nrp | Format-List Name,Length
           Get-Item build/addon/data/n85-config.ncf | Format-List Name,Length
           Get-Item build/addon/data/n85-core.nrp | Format-List Name,Length
-          Get-Item build/nokiaNative5320-0.1.0-test72.nvda-addon | Format-List Name,Length
+          Get-Item build/nokiaNative5320-0.1.0-test73.nvda-addon | Format-List Name,Length
 
       - name: Upload NVDA add-on
         uses: actions/upload-artifact@v6
         with:
-          name: nokiaNative5320-0.1.0-test72
-          path: build/nokiaNative5320-0.1.0-test72.nvda-addon
+          name: nokiaNative5320-0.1.0-test73
+          path: build/nokiaNative5320-0.1.0-test73.nvda-addon
           if-no-files-found: error
