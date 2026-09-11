@@ -18,7 +18,7 @@ ACOUSTIC_FRAME_MS = 40
 ACOUSTIC_HOP_MS = 20
 MIN_F0_HZ = 65
 MAX_F0_HZ = 320
-SPECTRUM_STEP_HZ = 100
+SPECTRUM_STEP_HZ = 25
 SPECTRUM_MAX_HZ = 5000
 
 
@@ -133,6 +133,12 @@ def acoustic_metrics(samples: list[int], rate: int) -> dict:
         frequency, periodicity = _pitch_for_frame(frame, rate)
         if frequency is not None:
             pitch_points.append((start, frequency, periodicity))
+    raw_pitch_center = percentile([point[1] for point in pitch_points], 0.5)
+    if raw_pitch_center is not None:
+        pitch_points = [
+            point for point in pitch_points
+            if raw_pitch_center * 0.55 <= point[1] <= raw_pitch_center * 1.65
+        ]
     pitches = [point[1] for point in pitch_points]
     periodicities = [point[2] for point in pitch_points]
 
@@ -171,9 +177,10 @@ def acoustic_metrics(samples: list[int], rate: int) -> dict:
         return round(10.0 * math.log10(max(power, 1e-20) / total_power), 3)
 
     smoothed = []
+    smoothing_radius = max(1, 100 // SPECTRUM_STEP_HZ)
     for index, value in enumerate(powers):
-        first = max(0, index - 1)
-        last = min(len(powers), index + 2)
+        first = max(0, index - smoothing_radius)
+        last = min(len(powers), index + smoothing_radius + 1)
         smoothed.append(sum(powers[first:last]) / (last - first))
 
     def peak_in(first: int, last: int) -> int | None:

@@ -83,7 +83,7 @@ Existing output is never overwritten unless `--force` is supplied.
 
 `tools/analyze_s60_blackbox.py` measures utterance length, active boundaries,
 internal quiet intervals, RMS, peak level and zero-crossing density. It now
-also derives a 24-point F0 contour, F0 range and periodicity, a 100 Hz-spaced
+also derives a 24-point F0 contour, F0 range and periodicity, a 25 Hz-spaced
 spectral envelope through 5 kHz, spectral tilt, coarse spectral bands and
 three regional resonance peaks. Candidate comparisons summarize the duration,
 F0-contour and spectrum errors by probe group. Explicit contrast pairs also

@@ -184,7 +184,7 @@ static const phoneme_spec PHONEMES[] = {
  * are represented here; no firmware tables or extracted voice data are used.
  */
 static const voice_profile VOICE_PROFILES[] = {
-    {114.5, 0.970, 1.05, 0.84, 0.98, 2.30, 0.42, 3550.0, 4550.0, 80.0},
+    {100.0, 0.970, 1.05, 0.84, 0.98, 2.30, 0.42, 3550.0, 4550.0, 80.0},
     {200.0, 1.025, 1.40, 0.80, 0.94, 1.35, 0.40, 3900.0, 5000.0, 400.0},
 };
 
@@ -771,12 +771,21 @@ static int synthesize_segments(
     double highpass_state = 0.0, highpass_input = 0.0;
     double highpass_alpha = exp(-2.0 * CK_PI * profile->highpass_hz / (double)CK_SAMPLE_RATE);
     size_t segment_index;
+    size_t word_count = 0u;
+    size_t word_start = 0u;
+    size_t word_end = 0u;
 
     writer.callbacks = callbacks;
     engine->noise_state = 0x434b4c54u;
     engine->phase = 0.0;
     engine->previous_glottal = 0.0;
 
+    for (segment_index = 0; segment_index < segments->count; ++segment_index) {
+        if (segments->items[segment_index].phoneme == PH_SIL) word_count += 1u;
+    }
+    while (word_end < segments->count && segments->items[word_end].phoneme != PH_SIL) {
+        word_end += 1u;
+    }
     for (segment_index = 0; segment_index < segments->count; ++segment_index) {
         const segment *segment = &segments->items[segment_index];
         const phoneme_spec *spec = &PHONEMES[segment->phoneme];
@@ -796,8 +805,19 @@ static int synthesize_segments(
             double transition = position < 0.30 ? position / 0.30 : 1.0;
             double utterance_position = segments->count > 1u
                 ? ((double)segment_index + position) / (double)segments->count : position;
-            double f0 = base_f0 * pitch_scale
-                * (1.06 - 0.16 * utterance_position + 0.075 * segment->accent);
+            double word_position = word_end > word_start
+                ? ((double)(segment_index - word_start) + position)
+                    / (double)(word_end - word_start)
+                : 0.0;
+            double phrase_boost = word_count > 1u ? 0.23 : 0.0;
+            double accent_boost = word_count > 1u ? 0.10 : 0.06;
+            double word_slope = word_count > 1u ? 0.28 : 0.10;
+            double utterance_slope = word_count > 1u ? 0.12 : 0.04;
+            double f0 = base_f0 * pitch_scale * (
+                1.04 + phrase_boost - word_slope * word_position
+                - utterance_slope * utterance_position
+                + accent_boost * segment->accent
+            );
             double amplitude_envelope = 1.0;
             double source = 0.0;
             double noise = next_noise(engine);
@@ -902,6 +922,15 @@ static int synthesize_segments(
             previous_f1 = spec->f1;
             previous_f2 = spec->f2;
             previous_f3 = spec->f3;
+        } else {
+            word_start = segment_index + 1u;
+            word_end = word_start;
+            while (
+                word_end < segments->count
+                && segments->items[word_end].phoneme != PH_SIL
+            ) {
+                word_end += 1u;
+            }
         }
     }
     return pcm_flush(&writer);
