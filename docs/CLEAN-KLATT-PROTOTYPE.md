@@ -1,7 +1,7 @@
-# Independent Classic Klatt prototype
+# Independent S60 Klatt prototype
 
-`classicKlatt-0.1.0-clean-test1` is a deliberately separate NVDA add-on. Its
-package name, driver name and user-facing product name are **Classic Klatt**.
+`s60Klatt-0.1.0-clean-test1` is a deliberately separate NVDA add-on. Its
+package name, driver name and user-facing product name are **S60 Klatt**.
 Its explicit goal is to recreate the pronunciation behaviour, prosody and
 acoustic character of the historical Nokia S60 TTS systems through newly
 authored code and independently defined voice profiles. Those systems are
@@ -15,7 +15,7 @@ pronunciation code. Its build reads only:
 
 - `native/clean/classic_klatt.c` and `.h`;
 - `addonClean/manifest.ini`;
-- `addonClean/synthDrivers/classicKlatt.py`.
+- `addonClean/synthDrivers/s60Klatt.py`.
 
 It does not read or package a firmware image, compact ROM page pack, generated
 AOT source, extracted configuration blob, voice snapshot or original speech

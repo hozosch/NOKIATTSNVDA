@@ -40,18 +40,18 @@ class _Callbacks(ctypes.Structure):
 
 _VOICES = OrderedDict((
 	(
-		"classic-de-male",
+		"s60-de-male",
 		VoiceInfo(
-			"classic-de-male",
-			"German male (classic phone reference, prototype)",
+			"s60-de-male",
+			"German male (historical S60 reference, prototype)",
 			"de_DE",
 		),
 	),
 	(
-		"classic-de-female",
+		"s60-de-female",
 		VoiceInfo(
-			"classic-de-female",
-			"German female (classic phone reference, prototype)",
+			"s60-de-female",
+			"German female (historical S60 reference, prototype)",
 			"de_DE",
 		),
 	),
@@ -59,8 +59,8 @@ _VOICES = OrderedDict((
 
 
 class SynthDriver(BaseSynthDriver):
-	name = "classicKlatt"
-	description = "Classic Klatt (independent prototype)"
+	name = "s60Klatt"
+	description = "S60 Klatt (independent historical S60 TTS recreation)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -81,7 +81,7 @@ class SynthDriver(BaseSynthDriver):
 	def __init__(self):
 		self._rate = 50
 		self._pitch = 50
-		self._voice = "classic-de-male"
+		self._voice = "s60-de-male"
 		self._arch = self._getProcessArchitecture()
 		root = Path(__file__).resolve().parent.parent
 		self._dllPath = root / "bin" / self._arch / f"classic_klatt_{self._arch}.dll"
@@ -89,14 +89,14 @@ class SynthDriver(BaseSynthDriver):
 			self._dll = ctypes.CDLL(str(self._dllPath))
 		except OSError as error:
 			raise OSError(
-				f"Could not load the {self._arch} independent Classic Klatt runtime: "
+				f"Could not load the {self._arch} independent S60 Klatt runtime: "
 				f"{self._dllPath}; loader error: {error!r}; "
 				f"winerror={getattr(error, 'winerror', None)}"
 			) from error
 		self._bindApi()
 		self._engine = self._dll.classic_klatt_create()
 		if not self._engine:
-			raise RuntimeError("Could not create the independent Classic Klatt engine")
+			raise RuntimeError("Could not create the independent S60 Klatt engine")
 		self._player = nvwave.WavePlayer(
 			channels=1,
 			samplesPerSec=16000,
@@ -109,7 +109,7 @@ class SynthDriver(BaseSynthDriver):
 		self._generation = 0
 		self._thread = threading.Thread(
 			target=self._worker,
-			name="ClassicKlatt",
+			name="S60Klatt",
 			daemon=True,
 		)
 		self._thread.start()
@@ -207,7 +207,7 @@ class SynthDriver(BaseSynthDriver):
 
 	@staticmethod
 	def _voiceNumber(voiceId):
-		return 1 if voiceId == "classic-de-female" else 0
+		return 1 if voiceId == "s60-de-female" else 0
 
 	def speak(self, speechSequence):
 		runs = []
@@ -285,7 +285,7 @@ class SynthDriver(BaseSynthDriver):
 			try:
 				self._runUtterance(generation, voiceId, runs, indexes, rate)
 			except Exception:
-				log.error("Independent Classic Klatt synthesis failed", exc_info=True)
+				log.error("Independent S60 Klatt synthesis failed", exc_info=True)
 
 	def _runUtterance(self, generation, voiceId, runs, indexes, rate):
 		with self._lock:
@@ -318,7 +318,7 @@ class SynthDriver(BaseSynthDriver):
 			)
 			if not ok and generation == self._generation:
 				raise RuntimeError(
-					f"Independent Classic Klatt runtime rejected synthesis; "
+					f"Independent S60 Klatt runtime rejected synthesis; "
 					f"version={self._dll.classic_klatt_version().decode('ascii', 'replace')}, "
 					f"arch={self._arch}, voice={voiceId}"
 				)

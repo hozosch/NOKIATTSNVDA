@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit checks for the independent Classic Klatt NVDA driver."""
+"""Unit checks for the independent S60 Klatt NVDA driver."""
 from __future__ import annotations
 
 import importlib.util
@@ -70,9 +70,9 @@ def load_driver():
 			Path(__file__).resolve().parents[1]
 			/ "addonClean"
 			/ "synthDrivers"
-			/ "classicKlatt.py"
+			/ "s60Klatt.py"
 		)
-		spec = importlib.util.spec_from_file_location("classicKlatt_test", path)
+		spec = importlib.util.spec_from_file_location("s60Klatt_test", path)
 		module = importlib.util.module_from_spec(spec)
 		spec.loader.exec_module(module)
 		return module
@@ -87,12 +87,12 @@ def load_driver():
 DRIVER = load_driver()
 
 
-class ClassicKlattDriverTest(unittest.TestCase):
+class S60KlattDriverTest(unittest.TestCase):
 	def make_driver(self):
 		driver = DRIVER.SynthDriver.__new__(DRIVER.SynthDriver)
 		driver._rate = 50
 		driver._pitch = 50
-		driver._voice = "classic-de-male"
+		driver._voice = "s60-de-male"
 		driver._generation = 3
 		driver._lock = threading.Lock()
 		driver._requests = queue.Queue()
@@ -100,18 +100,18 @@ class ClassicKlattDriverTest(unittest.TestCase):
 
 	def test_two_independent_german_prototype_voices(self):
 		voices = DRIVER.SynthDriver._get_availableVoices(self.make_driver())
-		self.assertEqual(["classic-de-male", "classic-de-female"], list(voices))
+		self.assertEqual(["s60-de-male", "s60-de-female"], list(voices))
 		self.assertTrue(all(voice.language == "de_DE" for voice in voices.values()))
 		self.assertTrue(all("Nokia" not in voice.name for voice in voices.values()))
 
 	def test_speech_request_keeps_voice_rate_and_pitch_runs(self):
 		driver = self.make_driver()
-		driver._voice = "classic-de-female"
+		driver._voice = "s60-de-female"
 		driver._rate = 61
 		driver.speak(["Hallo ", _PitchCommand(70), "Welt"])
 		request = driver._requests.get_nowait()
 		self.assertEqual(3, request[0])
-		self.assertEqual("classic-de-female", request[1])
+		self.assertEqual("s60-de-female", request[1])
 		self.assertEqual((("Hallo ", 50), ("Welt", 70)), request[2])
 		self.assertEqual(61, request[4])
 

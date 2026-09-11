@@ -13,10 +13,10 @@ can be driven by NVDA through a small Symbian compatibility harness. This
 repository continues that work. It is an independent preservation and
 porting experiment and is not an official Nokia project.
 
-## Independent Classic Klatt experiment
+## Independent S60 Klatt experiment
 
 A separate, newly written prototype now explores the long-term ROM-free
-direction under the neutral product name **Classic Klatt**. Clean test 1 uses
+direction under the descriptive product name **S60 Klatt**. Clean test 1 uses
 its own compact C formant synthesizer and German pronunciation rules and does
 not load or package firmware, ROM pages, generated AOT, snapshots or extracted
 speech data. Its explicit goal is to recreate, through newly authored code and

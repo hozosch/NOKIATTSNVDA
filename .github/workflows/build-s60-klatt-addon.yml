@@ -1,4 +1,4 @@
-name: Build independent Classic Klatt NVDA test add-on
+name: Build independent S60 Klatt NVDA test add-on
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       - name: Test and compile-check the NVDA driver
         run: |
           python -m unittest tests.test_classic_klatt_driver
-          python -m py_compile addonClean/synthDrivers/classicKlatt.py
+          python -m py_compile addonClean/synthDrivers/s60Klatt.py
       - name: Verify the clean add-on source boundary
         shell: pwsh
         run: |
@@ -52,20 +52,20 @@ jobs:
           New-Item -ItemType Directory -Force build/runtime | Out-Null
           cl /nologo /std:c11 /O2 /W4 /WX /LD native/clean/classic_klatt.c `
             /link /OPT:REF /OPT:ICF "/OUT:build/runtime/classic_klatt_${{ matrix.arch }}.dll"
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt runtime build failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt runtime build failed' }
           cl /nologo /std:c11 /O2 /W4 /WX `
             native/clean/classic_klatt.c tests/classic_klatt_core_test.c `
             "/Fe:build/runtime/classic_klatt_test_${{ matrix.arch }}.exe"
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt native test build failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt native test build failed' }
           & "build/runtime/classic_klatt_test_${{ matrix.arch }}.exe"
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt native test failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt native test failed' }
           $exports = dumpbin /exports "build/runtime/classic_klatt_${{ matrix.arch }}.dll"
           if ($LASTEXITCODE -ne 0 -or $exports -notmatch 'classic_klatt_speak_utf16') {
-            throw 'Classic Klatt synthesis export is missing'
+            throw 'S60 Klatt synthesis export is missing'
           }
       - uses: actions/upload-artifact@v6
         with:
-          name: classic-klatt-${{ matrix.arch }}
+          name: s60-klatt-${{ matrix.arch }}
           path: build/runtime/classic_klatt_${{ matrix.arch }}.dll
           if-no-files-found: error
 
@@ -81,16 +81,16 @@ jobs:
           New-Item -ItemType Directory -Force build/runtime | Out-Null
           cl /nologo /std:c11 /arm64EC /O2 /W4 /WX /LD native/clean/classic_klatt.c `
             /link /MACHINE:ARM64EC /OPT:REF /OPT:ICF "/OUT:build/runtime/classic_klatt_arm64ec.dll"
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt ARM64EC runtime build failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt ARM64EC runtime build failed' }
           cl /nologo /std:c11 /O2 /W4 /WX /LD native/clean/classic_klatt.c `
             /link /MACHINE:ARM64 /OPT:REF /OPT:ICF "/OUT:build/runtime/classic_klatt_arm64.dll"
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt ARM64 runtime build failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt ARM64 runtime build failed' }
           cl /nologo /std:c11 /O2 /W4 /WX `
             native/clean/classic_klatt.c tests/classic_klatt_core_test.c `
             "/Fe:build/runtime/classic_klatt_test_arm64.exe"
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt ARM64 test build failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt ARM64 test build failed' }
           & build/runtime/classic_klatt_test_arm64.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Classic Klatt ARM64 test failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt ARM64 test failed' }
 
           $arm64ec = [IO.File]::ReadAllBytes('build/runtime/classic_klatt_arm64ec.dll')
           $arm64ecOffset = [BitConverter]::ToInt32($arm64ec, 0x3c)
@@ -106,7 +106,7 @@ jobs:
           }
       - uses: actions/upload-artifact@v6
         with:
-          name: classic-klatt-arm
+          name: s60-klatt-arm
           path: build/runtime/classic_klatt_arm*.dll
           if-no-files-found: error
 
@@ -117,24 +117,24 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
         with:
-          name: classic-klatt-x86
+          name: s60-klatt-x86
           path: build/download/x86
       - uses: actions/download-artifact@v7
         with:
-          name: classic-klatt-x64
+          name: s60-klatt-x64
           path: build/download/x64
       - uses: actions/download-artifact@v7
         with:
-          name: classic-klatt-arm
+          name: s60-klatt-arm
           path: build/download/arm
       - name: Assemble independent NVDA add-on
         shell: pwsh
         run: |
-          $stage = 'build/classic-addon'
+          $stage = 'build/s60-addon'
           New-Item -ItemType Directory -Force `
             "$stage/synthDrivers", "$stage/bin/x86", "$stage/bin/x64", "$stage/bin/arm64ec" | Out-Null
           Copy-Item addonClean/manifest.ini "$stage/manifest.ini"
-          Copy-Item addonClean/synthDrivers/classicKlatt.py "$stage/synthDrivers/classicKlatt.py"
+          Copy-Item addonClean/synthDrivers/s60Klatt.py "$stage/synthDrivers/s60Klatt.py"
           Copy-Item build/download/x86/classic_klatt_x86.dll "$stage/bin/x86/"
           Copy-Item build/download/x64/classic_klatt_x64.dll "$stage/bin/x64/"
           Copy-Item build/download/arm/classic_klatt_arm64ec.dll "$stage/bin/arm64ec/"
@@ -149,11 +149,11 @@ jobs:
           if ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum -gt 2MB) {
             throw 'Independent prototype package unexpectedly exceeds 2 MiB'
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath build/classicKlatt-0.1.0-clean-test1.zip -Force
-          Move-Item build/classicKlatt-0.1.0-clean-test1.zip build/classicKlatt-0.1.0-clean-test1.nvda-addon
-          Get-Item build/classicKlatt-0.1.0-clean-test1.nvda-addon | Format-List Name,Length
+          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.1.0-clean-test1.zip -Force
+          Move-Item build/s60Klatt-0.1.0-clean-test1.zip build/s60Klatt-0.1.0-clean-test1.nvda-addon
+          Get-Item build/s60Klatt-0.1.0-clean-test1.nvda-addon | Format-List Name,Length
       - uses: actions/upload-artifact@v6
         with:
-          name: classicKlatt-0.1.0-clean-test1
-          path: build/classicKlatt-0.1.0-clean-test1.nvda-addon
+          name: s60Klatt-0.1.0-clean-test1
+          path: build/s60Klatt-0.1.0-clean-test1.nvda-addon
           if-no-files-found: error
