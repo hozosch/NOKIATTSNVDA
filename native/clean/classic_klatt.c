@@ -44,6 +44,7 @@ typedef enum phoneme_id {
     PH_OE,
     PH_UE,
     PH_SCHWA,
+    PH_ER,
     PH_P,
     PH_B,
     PH_T,
@@ -108,6 +109,19 @@ typedef struct resonator {
     double y2;
 } resonator;
 
+typedef struct voice_profile {
+    double base_f0;
+    double duration_scale;
+    double f1_scale;
+    double f2_scale;
+    double f3_scale;
+    double voiced_gain;
+    double noise_gain;
+    double f4;
+    double f5;
+    double highpass_hz;
+} voice_profile;
+
 typedef struct pcm_writer {
     const classic_klatt_callbacks *callbacks;
     int16_t samples[CK_CHUNK_SAMPLES];
@@ -141,6 +155,7 @@ static const phoneme_spec PHONEMES[] = {
     [PH_OE]     = {"oe", SOURCE_VOWEL,      470, 1430, 2280,   75,  110,  165,  98, 0.76f, 0.02f},
     [PH_UE]     = {"ue", SOURCE_VOWEL,      330, 1660, 2350,   65,  105,  155,  92, 0.72f, 0.02f},
     [PH_SCHWA]  = {"@",  SOURCE_VOWEL,      510, 1460, 2450,  100,  140,  190,  62, 0.61f, 0.03f},
+    [PH_ER]     = {"6",  SOURCE_VOWEL,      520, 1320, 1640,  120,  180,  240,  68, 0.58f, 0.03f},
     [PH_P]      = {"p",  SOURCE_STOP,      1050, 2500, 4200,  220,  320,  500,  62, 0.52f, 1.00f},
     [PH_B]      = {"b",  SOURCE_STOP,       650, 1700, 3100,  190,  300,  480,  58, 0.49f, 0.55f},
     [PH_T]      = {"t",  SOURCE_STOP,      1800, 3600, 5200,  260,  420,  650,  55, 0.55f, 1.00f},
@@ -161,6 +176,16 @@ static const phoneme_spec PHONEMES[] = {
     [PH_L]      = {"l",  SOURCE_VOICED,     390, 1180, 2650,  100,  170,  250,  72, 0.61f, 0.01f},
     [PH_R]      = {"r",  SOURCE_VOICED,     430, 1280, 1760,  130,  210,  280,  72, 0.56f, 0.06f},
     [PH_Y]      = {"j",  SOURCE_VOICED,     300, 2200, 2950,   80,  140,  210,  62, 0.55f, 0.01f},
+};
+
+/*
+ * Independently measured starting profiles for the German 5320 references.
+ * Only broad acoustic observations (F0 range, duration and spectral balance)
+ * are represented here; no firmware tables or extracted voice data are used.
+ */
+static const voice_profile VOICE_PROFILES[] = {
+    {114.5, 0.970, 1.05, 0.84, 0.98, 2.30, 0.42, 3550.0, 4550.0, 80.0},
+    {200.0, 1.025, 1.40, 0.80, 0.94, 1.35, 0.40, 3900.0, 5000.0, 400.0},
 };
 
 static int engine_cancelled(const classic_klatt_engine *engine) {
@@ -239,6 +264,56 @@ static int is_vowel_character(uint16_t c) {
     return c == (uint16_t)'a' || c == (uint16_t)'e' || c == (uint16_t)'i'
         || c == (uint16_t)'o' || c == (uint16_t)'u' || c == (uint16_t)'y'
         || c == 0x00e4u || c == 0x00f6u || c == 0x00fcu;
+}
+
+static int is_consonant_character(uint16_t c) {
+    return is_word_character(c) && !is_ascii_digit(c) && !is_vowel_character(c);
+}
+
+static int word_equals_ascii(const uint16_t *word, size_t length, const char *ascii) {
+    size_t i;
+    size_t ascii_length = strlen(ascii);
+    if (length != ascii_length) return 0;
+    for (i = 0; i < length; ++i) {
+        if (word[i] != (uint16_t)(unsigned char)ascii[i]) return 0;
+    }
+    return 1;
+}
+
+static int vowel_is_long(const uint16_t *word, size_t length, size_t at) {
+    uint16_t vowel = word[at];
+    if (!is_vowel_character(vowel)) return 0;
+    if (at + 1u < length && word[at + 1u] == 'h') return 1;
+    if (at + 1u < length && word[at + 1u] == vowel) return 1;
+
+    /* A single consonant before the next vowel normally opens the syllable. */
+    if (at + 2u < length && is_consonant_character(word[at + 1u])
+        && is_vowel_character(word[at + 2u])) {
+        /* Common foreign-name exception used in the reference corpus. */
+        if (at == 1u && word_equals_ascii(word, length, "nokia")) return 0;
+        return 1;
+    }
+
+    /* Frequent closed-syllable words whose vowel is nevertheless long. */
+    if ((at == 1u && (word_equals_ascii(word, length, "tag")
+            || word_equals_ascii(word, length, "gut")
+            || word_equals_ascii(word, length, "weg")))
+        || (at == 3u && length >= 6u && word[0] == 's' && word[1] == 'p'
+            && word[2] == 'r' && word[3] == 'a' && word[4] == 'c' && word[5] == 'h')) {
+        return 1;
+    }
+    return 0;
+}
+
+static phoneme_id long_vowel_phoneme(uint16_t c) {
+    switch (c) {
+        case 'a': return PH_A_LONG;
+        case 'e': return PH_E_LONG;
+        case 'i': return PH_I_LONG;
+        case 'o': return PH_O_LONG;
+        case 'u': return PH_U_LONG;
+        default: return PH_SIL;
+    }
 }
 
 static int match_pair(const uint16_t *word, size_t length, size_t at, uint16_t a, uint16_t b) {
@@ -524,26 +599,56 @@ static int append_word(segment_list *list, const uint16_t *input, size_t length,
             i += 1u;
             continue;
         }
+        if (c == 'e' && i + 1u == length - 1u && word[i + 1u] == 'r') {
+            if (length == 2u && !append_segment(list, PH_E_LONG, 0.72f)) return 0;
+            if (!append_segment(list, PH_ER, 1.0f)) return 0;
+            i += 2u;
+            continue;
+        }
 
         switch (c) {
-            case 'a': if (!append_segment(list, PH_A, 1.0f)) return 0; break;
+            case 'a':
             case 'e':
-                if (!append_segment(list, (i + 1u == length || (i + 2u == length && word[i + 1u] == 'r')) ? PH_SCHWA : PH_E, 1.0f)) return 0;
+            case 'i':
+            case 'o':
+            case 'u': {
+                phoneme_id selected;
+                if (c == 'e' && (i + 1u == length
+                        || (i + 2u == length && (
+                            word[i + 1u] == 'n' || word[i + 1u] == 'l'
+                            || word[i + 1u] == 'm'
+                        )))) {
+                    selected = PH_SCHWA;
+                } else if (vowel_is_long(word, length, i)) {
+                    selected = long_vowel_phoneme(c);
+                } else {
+                    selected = c == 'a' ? PH_A : c == 'e' ? PH_E
+                        : c == 'i' ? PH_I : c == 'o' ? PH_O : PH_U;
+                }
+                if (!append_segment(list, selected, 1.0f)) return 0;
                 break;
-            case 'i': if (!append_segment(list, PH_I, 1.0f)) return 0; break;
-            case 'o': if (!append_segment(list, PH_O, 1.0f)) return 0; break;
-            case 'u': if (!append_segment(list, PH_U, 1.0f)) return 0; break;
-            case 0x00e4u: if (!append_segment(list, PH_AE, 1.0f)) return 0; break;
-            case 0x00f6u: if (!append_segment(list, PH_OE, 1.0f)) return 0; break;
-            case 0x00fcu: if (!append_segment(list, PH_UE, 1.0f)) return 0; break;
+            }
+            case 0x00e4u:
+                if (!append_segment(list, PH_AE, vowel_is_long(word, length, i) ? 1.45f : 1.0f)) return 0;
+                break;
+            case 0x00f6u:
+                if (!append_segment(list, PH_OE, vowel_is_long(word, length, i) ? 1.45f : 1.0f)) return 0;
+                break;
+            case 0x00fcu:
+                if (!append_segment(list, PH_UE, vowel_is_long(word, length, i) ? 1.45f : 1.0f)) return 0;
+                break;
             case 0x00dfu: if (!append_segment(list, PH_S, 1.05f)) return 0; break;
-            case 'b': if (!append_segment(list, i + 1u == length ? PH_P : PH_B, 1.0f)) return 0; break;
+            case 'b': if (!append_segment(list, i + 1u == length || (i + 2u == length && word[i + 1u] == c) ? PH_P : PH_B, 1.0f)) return 0; break;
             case 'c':
                 if (!append_segment(list, i + 1u < length && (word[i + 1u] == 'e' || word[i + 1u] == 'i' || word[i + 1u] == 0x00e4u) ? PH_S : PH_K, 1.0f)) return 0;
                 break;
-            case 'd': if (!append_segment(list, i + 1u == length ? PH_T : PH_D, 1.0f)) return 0; break;
+            case 'd': if (!append_segment(list, i + 1u == length || (i + 2u == length && word[i + 1u] == c) ? PH_T : PH_D, 1.0f)) return 0; break;
             case 'f': if (!append_segment(list, PH_F, 1.0f)) return 0; break;
-            case 'g': if (!append_segment(list, i + 1u == length ? PH_K : PH_G, 1.0f)) return 0; break;
+            case 'g':
+                if (!append_segment(list, i + 1u == length && i > 0u && word[i - 1u] == 'i'
+                    ? PH_CH : i + 1u == length || (i + 2u == length && word[i + 1u] == c)
+                    ? PH_K : PH_G, 1.0f)) return 0;
+                break;
             case 'h': if (!append_segment(list, PH_H, 1.0f)) return 0; break;
             case 'j': if (!append_segment(list, PH_Y, 1.0f)) return 0; break;
             case 'k': if (!append_segment(list, PH_K, 1.0f)) return 0; break;
@@ -551,7 +656,11 @@ static int append_word(segment_list *list, const uint16_t *input, size_t length,
             case 'm': if (!append_segment(list, PH_M, 1.0f)) return 0; break;
             case 'n': if (!append_segment(list, PH_N, 1.0f)) return 0; break;
             case 'p': if (!append_segment(list, PH_P, 1.0f)) return 0; break;
-            case 'r': if (!append_segment(list, PH_R, 1.0f)) return 0; break;
+            case 'r':
+                if (!append_segment(list, i > 0u && is_vowel_character(word[i - 1u])
+                    && (i + 1u == length || is_consonant_character(word[i + 1u]))
+                    ? PH_ER : PH_R, 1.0f)) return 0;
+                break;
             case 's':
                 if (!append_segment(list, i == 0u && i + 1u < length && is_vowel_character(word[i + 1u]) ? PH_Z : PH_S, 1.0f)) return 0;
                 break;
@@ -567,7 +676,7 @@ static int append_word(segment_list *list, const uint16_t *input, size_t length,
                 break;
             default: break;
         }
-        i += 1u;
+        i += i + 1u < length && word[i + 1u] == c && is_consonant_character(c) ? 2u : 1u;
     }
 
     for (i = word_start; i < list->count; ++i) {
@@ -577,7 +686,7 @@ static int append_word(segment_list *list, const uint16_t *input, size_t length,
         }
     }
     if (list->count > before) {
-        return append_segment(list, PH_SIL, 0.50f);
+        return append_segment(list, PH_SIL, 0.28f);
     }
     return 1;
 }
@@ -691,12 +800,15 @@ static int synthesize_segments(
     const classic_klatt_callbacks *callbacks,
     int question
 ) {
-    resonator f1 = {0}, f2 = {0}, f3 = {0};
+    resonator f1 = {0}, f2 = {0}, f3 = {0}, f4 = {0}, f5 = {0};
     pcm_writer writer = {0};
-    double duration_scale = rate_duration_scale(rate);
-    double base_f0 = voice == CLASSIC_KLATT_VOICE_FEMALE ? 184.0 : 108.0;
+    const voice_profile *profile = &VOICE_PROFILES[voice];
+    double duration_scale = rate_duration_scale(rate) * profile->duration_scale;
+    double base_f0 = profile->base_f0;
     double pitch_scale = pitch_frequency_scale(pitch);
     double previous_f1 = 500.0, previous_f2 = 1500.0, previous_f3 = 2500.0;
+    double highpass_state = 0.0, highpass_input = 0.0;
+    double highpass_alpha = exp(-2.0 * CK_PI * profile->highpass_hz / (double)CK_SAMPLE_RATE);
     size_t segment_index;
 
     writer.callbacks = callbacks;
@@ -707,6 +819,10 @@ static int synthesize_segments(
     for (segment_index = 0; segment_index < segments->count; ++segment_index) {
         const segment *segment = &segments->items[segment_index];
         const phoneme_spec *spec = &PHONEMES[segment->phoneme];
+        const phoneme_spec *previous_spec = segment_index > 0u
+            ? &PHONEMES[segments->items[segment_index - 1u].phoneme] : NULL;
+        const phoneme_spec *next_spec = segment_index + 1u < segments->count
+            ? &PHONEMES[segments->items[segment_index + 1u].phoneme] : NULL;
         uint32_t sample_count = (uint32_t)lrint(
             spec->duration_ms * (double)segment->duration_scale * duration_scale
             * (double)CK_SAMPLE_RATE / 1000.0
@@ -716,7 +832,7 @@ static int synthesize_segments(
 
         for (sample_index = 0; sample_index < sample_count; ++sample_index) {
             double position = (double)sample_index / (double)sample_count;
-            double transition = position < 0.34 ? position / 0.34 : 1.0;
+            double transition = position < 0.30 ? position / 0.30 : 1.0;
             double utterance_position = segments->count > 1u
                 ? ((double)segment_index + position) / (double)segments->count : position;
             double final_lift = question && utterance_position > 0.72
@@ -727,31 +843,56 @@ static int synthesize_segments(
             double source = 0.0;
             double noise = next_noise(engine);
             double output;
+            int voiced = spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED;
+            int previous_voiced = previous_spec && (
+                previous_spec->source == SOURCE_VOWEL || previous_spec->source == SOURCE_VOICED
+            );
+            int next_voiced = next_spec && (
+                next_spec->source == SOURCE_VOWEL || next_spec->source == SOURCE_VOICED
+            );
 
             if ((sample_index & 63u) == 0u && engine_cancelled(engine)) {
                 return 0;
             }
-            if (position < 0.055) amplitude_envelope = position / 0.055;
-            if (position > 0.91) amplitude_envelope *= (1.0 - position) / 0.09;
+            /* Keep adjacent voiced phonemes connected. Test 1 faded every
+             * segment independently, producing audible holes that are absent
+             * from the historical S60 reference speech. */
+            if ((!previous_spec || previous_spec->source == SOURCE_SILENCE
+                    || previous_voiced != voiced) && position < 0.035) {
+                amplitude_envelope = position / 0.035;
+            }
+            if ((!next_spec || next_spec->source == SOURCE_SILENCE
+                    || next_voiced != voiced) && position > 0.955) {
+                amplitude_envelope *= (1.0 - position) / 0.045;
+            }
             if (amplitude_envelope < 0.0) amplitude_envelope = 0.0;
 
-            resonator_set(&f1, previous_f1 + transition * ((double)spec->f1 - previous_f1), spec->b1);
-            resonator_set(&f2, previous_f2 + transition * ((double)spec->f2 - previous_f2), spec->b2);
-            resonator_set(&f3, previous_f3 + transition * ((double)spec->f3 - previous_f3), spec->b3);
+            resonator_set(&f1, profile->f1_scale * (
+                previous_f1 + transition * ((double)spec->f1 - previous_f1)
+            ), spec->b1);
+            resonator_set(&f2, profile->f2_scale * (
+                previous_f2 + transition * ((double)spec->f2 - previous_f2)
+            ), spec->b2);
+            resonator_set(&f3, profile->f3_scale * (
+                previous_f3 + transition * ((double)spec->f3 - previous_f3)
+            ), spec->b3);
+            resonator_set(&f4, profile->f4, 260.0);
+            resonator_set(&f5, profile->f5, 360.0);
 
             if (spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED) {
                 double glottal;
                 engine->phase += f0 / (double)CK_SAMPLE_RATE;
                 if (engine->phase >= 1.0) engine->phase -= floor(engine->phase);
-                if (engine->phase < 0.42) {
-                    glottal = 0.5 - 0.5 * cos(CK_PI * engine->phase / 0.42);
-                } else if (engine->phase < 0.68) {
-                    glottal = cos(0.5 * CK_PI * (engine->phase - 0.42) / 0.26);
+                if (engine->phase < 0.34) {
+                    glottal = 0.5 - 0.5 * cos(CK_PI * engine->phase / 0.34);
+                } else if (engine->phase < 0.55) {
+                    glottal = cos(0.5 * CK_PI * (engine->phase - 0.34) / 0.21);
                 } else {
                     glottal = 0.0;
                 }
-                source = (glottal - engine->previous_glottal) * 3.2;
+                source = (glottal - engine->previous_glottal) * 3.65;
                 engine->previous_glottal = glottal;
+                if (spec->source == SOURCE_VOICED) source *= 0.82;
                 source += noise * spec->noise * 0.18;
             } else if (spec->source == SOURCE_FRICATIVE) {
                 source = noise * spec->noise;
@@ -768,13 +909,33 @@ static int synthesize_segments(
 
             if (spec->source == SOURCE_SILENCE) {
                 output = 0.0;
+                highpass_state = 0.0;
+                highpass_input = 0.0;
             } else {
                 double r1 = resonator_tick(&f1, source);
                 double r2 = resonator_tick(&f2, source);
                 double r3 = resonator_tick(&f3, source);
-                output = (0.62 * r1 + 0.31 * r2 + 0.18 * r3)
-                    * (double)spec->gain * amplitude_envelope * 1.45;
-                output = tanh(output * 1.35) * 0.86;
+                double r4 = resonator_tick(&f4, source);
+                double r5 = resonator_tick(&f5, source);
+                if (voiced) {
+                    output = (0.06 * r1 + 2.30 * r2 + 1.60 * r3
+                            + 0.12 * r4 + 0.06 * r5)
+                        * (double)spec->gain * profile->voiced_gain;
+                } else {
+                    output = (0.10 * r1 + 0.22 * r2 + 0.22 * r3
+                            + 0.10 * r4 + 0.04 * r5)
+                        * (double)spec->gain * profile->noise_gain;
+                }
+                output *= amplitude_envelope * 1.48;
+                {
+                    double raw_output = output;
+                    output = highpass_alpha * (
+                        highpass_state + raw_output - highpass_input
+                    );
+                    highpass_input = raw_output;
+                    highpass_state = output;
+                }
+                output = tanh(output * 1.80) * 0.58;
             }
             if (!pcm_put(&writer, quantize_sample(output))) return 0;
         }
@@ -788,7 +949,7 @@ static int synthesize_segments(
 }
 
 const char *classic_klatt_version(void) {
-    return "0.1.0-clean-test1";
+    return "0.2.0-clean-test2";
 }
 
 classic_klatt_engine *classic_klatt_create(void) {

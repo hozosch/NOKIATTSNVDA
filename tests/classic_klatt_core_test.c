@@ -64,6 +64,19 @@ static capture render(
     return state;
 }
 
+static void assert_phonemes(
+    const uint16_t *text,
+    uint32_t units,
+    const char *expected
+) {
+    char phonemes[256];
+    uint32_t needed = classic_klatt_debug_phonemes_utf16(
+        text, units, phonemes, (uint32_t)sizeof(phonemes)
+    );
+    assert(needed == strlen(expected));
+    assert(strcmp(phonemes, expected) == 0);
+}
+
 int main(void) {
     static const uint16_t hallo[] = {'H', 'a', 'l', 'l', 'o'};
     static const uint16_t phrase[] = {
@@ -71,6 +84,10 @@ int main(void) {
         'N', 'V', 'D', 'A', '.',
     };
     static const uint16_t schule[] = {'S', 'c', 'h', 'u', 'l', 'e'};
+    static const uint16_t guten[] = {'G', 'u', 't', 'e', 'n'};
+    static const uint16_t tag[] = {'T', 'a', 'g'};
+    static const uint16_t klatt[] = {'K', 'l', 'a', 't', 't'};
+    static const uint16_t fuer[] = {'f', 0x00fcu, 'r'};
     classic_klatt_engine *engine = classic_klatt_create();
     capture male1;
     capture male2;
@@ -79,18 +96,15 @@ int main(void) {
     capture fast;
     capture cancelled = {0};
     classic_klatt_callbacks cancel_callbacks;
-    char phonemes[256];
-    uint32_t needed;
 
     assert(engine != NULL);
     assert(strstr(classic_klatt_version(), "clean") != NULL);
 
-    needed = classic_klatt_debug_phonemes_utf16(
-        schule, (uint32_t)(sizeof(schule) / sizeof(schule[0])), phonemes, sizeof(phonemes)
-    );
-    assert(needed > 0u);
-    assert(strstr(phonemes, "sh") != NULL);
-    assert(strstr(phonemes, "u") != NULL);
+    assert_phonemes(schule, (uint32_t)(sizeof(schule) / sizeof(schule[0])), "sh u: l @ _");
+    assert_phonemes(guten, (uint32_t)(sizeof(guten) / sizeof(guten[0])), "g u: t @ n _");
+    assert_phonemes(tag, (uint32_t)(sizeof(tag) / sizeof(tag[0])), "t a: k _");
+    assert_phonemes(klatt, (uint32_t)(sizeof(klatt) / sizeof(klatt[0])), "k l a t _");
+    assert_phonemes(fuer, (uint32_t)(sizeof(fuer) / sizeof(fuer[0])), "f ue 6 _");
 
     male1 = render(engine, phrase, (uint32_t)(sizeof(phrase) / sizeof(phrase[0])), 50, 50, 0, 1);
     male2 = render(engine, phrase, (uint32_t)(sizeof(phrase) / sizeof(phrase[0])), 50, 50, 0, 1);
@@ -102,7 +116,8 @@ int main(void) {
     assert(male1.callbacks > 1u);
     assert(male1.samples == male2.samples);
     assert(male1.hash == male2.hash);
-    assert(female.samples == male1.samples);
+    assert(female.samples > male1.samples);
+    assert(female.samples < male1.samples * 6u / 5u);
     assert(female.hash != male1.hash);
 
     slow = render(engine, hallo, (uint32_t)(sizeof(hallo) / sizeof(hallo[0])), 25, 50, 0, 1);

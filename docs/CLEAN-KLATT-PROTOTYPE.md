@@ -1,10 +1,10 @@
 # Independent S60 Klatt prototype
 
-`s60Klatt-0.1.0-clean-test1` is a deliberately separate NVDA add-on. Its
+`s60Klatt-0.2.0-clean-test2` is a deliberately separate NVDA add-on. Its
 package name, driver name and user-facing product name are **S60 Klatt**.
 Its explicit goal is to recreate the pronunciation behaviour, prosody and
 acoustic character of the historical Nokia S60 TTS systems through newly
-authored code and independently defined voice profiles. Those systems are
+authored code and independently measured voice profiles. Those systems are
 listening and behaviour references, not a claim of origin, endorsement or
 binary compatibility.
 
@@ -22,9 +22,12 @@ AOT source, extracted configuration blob, voice snapshot or original speech
 data. CI rejects those file types if they appear inside `addonClean` or the
 staged add-on.
 
-The prototype currently offers two independent German voices: male and
-female. They are initial generic classic-phone formant profiles, not yet a
-validated reproduction of a particular historical model.
+The prototype currently offers two independent German 5320-targeted voices:
+male and female. Public reference recordings are used for listening and broad
+measurements only. They are not copied into source constants, linked into the
+runtime or packaged with the add-on. The measurement record and reproducible
+comparison command are in
+[`CLEAN-ROOM-REFERENCE.md`](CLEAN-ROOM-REFERENCE.md).
 
 ## Implemented behaviour
 
@@ -32,21 +35,26 @@ validated reproduction of a particular historical model.
 - synchronous native C synthesis behind NVDA's worker thread;
 - cancellation between short PCM blocks;
 - NVDA rate, pitch and voice settings;
+- separate 5320-targeted male and female F0, duration, formant and spectral
+  profiles;
+- five resonators with continuous envelopes across adjacent voiced phonemes;
 - German letter spelling and uppercase acronym spelling;
-- German vowels and umlauts;
+- German short and long vowels, umlauts, final devoicing and vocalic `r`;
 - common digraphs and clusters including `sch`, `ch`, `ng`, `pf`, `sp`,
   `st`, `ei`, `au`, `eu` and `ie`;
 - digit spelling and basic sentence pauses;
 - deterministic output for repeatable regression tests.
 
-## Deliberate limitations of test 1
+## Deliberate limitations of test 2
 
-This is an audible architecture test, not yet a Nokia-model replacement.
-Stress, compound analysis, loanwords, number expansion, punctuation naming,
-coarticulation and consonant quality remain deliberately small. The first
-listening task is to determine whether the source, formant filtering and
-male/female pitch ranges are a useful foundation before the German rule set
-and model profiles are expanded.
+This is the first model-targeted acoustic iteration, not a claim of a completed
+5320 reproduction. Duration and median pitch now closely follow the selected
+reference sentence and the broad spectral distribution is substantially
+closer than test 1, but those aggregate measurements cannot establish audible
+identity. Stress, compound analysis, loanwords, full number expansion,
+punctuation naming, detailed coarticulation and consonant quality remain
+incomplete. Listening during ordinary NVDA navigation remains the decisive
+test.
 
 Pure ARM64 is compiled and checked in CI but is not packaged because current
 NVDA processes on Windows ARM load the ARM64EC DLL. The add-on packages x86,

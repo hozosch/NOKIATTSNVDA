@@ -24,7 +24,7 @@ jobs:
       - name: Test and compile-check the NVDA driver
         run: |
           python -m unittest tests.test_classic_klatt_driver
-          python -m py_compile addonClean/synthDrivers/s60Klatt.py
+          python -m py_compile addonClean/synthDrivers/s60Klatt.py tools/render_clean_klatt_wav.py
       - name: Verify the clean add-on source boundary
         shell: pwsh
         run: |
@@ -150,11 +150,11 @@ jobs:
           if ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum -gt 2MB) {
             throw 'Independent prototype package unexpectedly exceeds 2 MiB'
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.1.0-clean-test1.zip -Force
-          Move-Item build/s60Klatt-0.1.0-clean-test1.zip build/s60Klatt-0.1.0-clean-test1.nvda-addon
-          Get-Item build/s60Klatt-0.1.0-clean-test1.nvda-addon | Format-List Name,Length
+          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.2.0-clean-test2.zip -Force
+          Move-Item build/s60Klatt-0.2.0-clean-test2.zip build/s60Klatt-0.2.0-clean-test2.nvda-addon
+          Get-Item build/s60Klatt-0.2.0-clean-test2.nvda-addon | Format-List Name,Length
       - uses: actions/upload-artifact@v6
         with:
-          name: s60Klatt-0.1.0-clean-test1
-          path: build/s60Klatt-0.1.0-clean-test1.nvda-addon
+          name: s60Klatt-0.2.0-clean-test2
+          path: build/s60Klatt-0.2.0-clean-test2.nvda-addon
           if-no-files-found: error

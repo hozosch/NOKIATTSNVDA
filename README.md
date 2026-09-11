@@ -16,15 +16,20 @@ porting experiment and is not an official Nokia project.
 ## Independent S60 Klatt experiment
 
 A separate, newly written prototype now explores the long-term ROM-free
-direction under the descriptive product name **S60 Klatt**. Clean test 1 uses
+direction under the descriptive product name **S60 Klatt**. Clean test 2 uses
 its own compact C formant synthesizer and German pronunciation rules and does
 not load or package firmware, ROM pages, generated AOT, snapshots or extracted
 speech data. Its explicit goal is to recreate, through newly authored code and
-independently defined voice profiles, the pronunciation behaviour, prosody and
-acoustic character of the historical Nokia S60 TTS systems. Its initial male
-and female voices are architecture tests rather than completed reproductions
-of a historical phone model. See
-[`docs/CLEAN-KLATT-PROTOTYPE.md`](docs/CLEAN-KLATT-PROTOTYPE.md).
+independently measured voice profiles, the pronunciation behaviour, prosody
+and acoustic character of the historical Nokia S60 TTS systems.
+
+Test 2 targets the German male and female Nokia 5320 references rather than a
+generic phone voice. It adds per-voice source and formant profiles, connected
+voiced segments and German vowel-length, devoicing and vocalic-r rules. Public
+reference WAVs are used only for listening and broad measurements; their audio
+is not included in the build. See
+[`docs/CLEAN-KLATT-PROTOTYPE.md`](docs/CLEAN-KLATT-PROTOTYPE.md) and the
+[`reference measurement record`](docs/CLEAN-ROOM-REFERENCE.md).
 
 ## Project goal
 

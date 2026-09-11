@@ -1,4 +1,4 @@
-"""Independent compact formant-synthesis prototype for NVDA."""
+"""Independent historical S60 speech reconstruction for NVDA."""
 
 from __future__ import annotations
 
@@ -40,18 +40,18 @@ class _Callbacks(ctypes.Structure):
 
 _VOICES = OrderedDict((
 	(
-		"s60-de-male",
+		"5320-de-male",
 		VoiceInfo(
-			"s60-de-male",
-			"German male (historical S60 reference, prototype)",
+			"5320-de-male",
+			"5320 German male (independent reconstruction)",
 			"de_DE",
 		),
 	),
 	(
-		"s60-de-female",
+		"5320-de-female",
 		VoiceInfo(
-			"s60-de-female",
-			"German female (historical S60 reference, prototype)",
+			"5320-de-female",
+			"5320 German female (independent reconstruction)",
 			"de_DE",
 		),
 	),
@@ -60,7 +60,7 @@ _VOICES = OrderedDict((
 
 class SynthDriver(BaseSynthDriver):
 	name = "s60Klatt"
-	description = "S60 Klatt (independent historical S60 TTS recreation)"
+	description = "S60 Klatt (independent 5320 reconstruction, test 2)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),
@@ -81,7 +81,7 @@ class SynthDriver(BaseSynthDriver):
 	def __init__(self):
 		self._rate = 50
 		self._pitch = 50
-		self._voice = "s60-de-male"
+		self._voice = "5320-de-male"
 		self._arch = self._getProcessArchitecture()
 		root = Path(__file__).resolve().parent.parent
 		self._dllPath = root / "bin" / self._arch / f"classic_klatt_{self._arch}.dll"
@@ -207,7 +207,7 @@ class SynthDriver(BaseSynthDriver):
 
 	@staticmethod
 	def _voiceNumber(voiceId):
-		return 1 if voiceId == "s60-de-female" else 0
+		return 1 if voiceId == "5320-de-female" else 0
 
 	def speak(self, speechSequence):
 		runs = []
