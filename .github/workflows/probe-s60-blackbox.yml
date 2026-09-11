@@ -98,7 +98,7 @@ jobs:
           if ($remaining) {
             throw "reference PCM survived analysis: $($remaining.FullName -join ', ')"
           }
-          Get-Content build/report/s60-blackbox-5320-male.json
+          Get-Item build/report/s60-blackbox-5320-male.json | Format-List Name,Length
 
       - uses: actions/upload-artifact@v6
         with:

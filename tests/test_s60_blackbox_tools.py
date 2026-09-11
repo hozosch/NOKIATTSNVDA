@@ -18,13 +18,17 @@ import analyze_s60_blackbox as ANALYZE  # noqa: E402
 import capture_s60_blackbox as CAPTURE  # noqa: E402
 
 
-def write_test_wav(path: Path, sections: list[tuple[int, bool]]) -> None:
+def write_test_wav(
+    path: Path,
+    sections: list[tuple[int, bool]],
+    frequency: float = 200.0,
+) -> None:
     samples = []
     position = 0
     for milliseconds, voiced in sections:
         count = 16 * milliseconds
         for _ in range(count):
-            value = int(8000 * math.sin(2.0 * math.pi * 200.0 * position / 16000.0)) if voiced else 0
+            value = int(8000 * math.sin(2.0 * math.pi * frequency * position / 16000.0)) if voiced else 0
             samples.append(value)
             position += 1
     pcm = bytearray()
@@ -42,7 +46,7 @@ class BlackBoxToolsTest(unittest.TestCase):
         cases = CAPTURE.load_corpus(TOOLS / "s60_blackbox_corpus.json")
         languages = {case["language"] for case in cases}
         self.assertEqual({"de-DE", "en-GB", "fi-FI", "fr-FR", "it-IT"}, languages)
-        self.assertEqual(74, len(cases))
+        self.assertEqual(147, len(cases))
         self.assertTrue(any(case.get("compareTo") for case in cases))
 
     def test_nk_renderer_command_is_an_explicit_process_boundary(self):
@@ -75,6 +79,16 @@ class BlackBoxToolsTest(unittest.TestCase):
         self.assertEqual(1, metrics["internalSilenceCount"])
         self.assertEqual(90, metrics["internalSilenceMs"])
         self.assertEqual(40, metrics["activeStartMs"])
+
+    def test_acoustic_analysis_tracks_f0_and_spectral_peak(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tone.wav"
+            write_test_wav(path, [(400, True)], frequency=200.0)
+            metrics = ANALYZE.wav_metrics(path)
+        self.assertAlmostEqual(200.0, metrics["medianF0Hz"], delta=8.0)
+        self.assertEqual(200, metrics["spectrumPeakHz"])
+        self.assertGreater(metrics["voicedFrameRatio"], 0.9)
+        self.assertGreater(sum(value is not None for value in metrics["f0ContourHz"]), 15)
 
     def test_comparison_distinguishes_identical_and_paused_output(self):
         with tempfile.TemporaryDirectory() as directory:

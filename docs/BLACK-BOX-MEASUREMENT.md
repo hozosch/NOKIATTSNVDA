@@ -33,7 +33,7 @@ universal phonetic model. German, British English, French and Italian are
 probed separately because their historical S60 frontends use different phone
 inventories, contextual realizations and stress behavior.
 
-The first corpus contains 74 cases across those five languages. It includes:
+The corpus contains 147 cases across those five languages. It includes:
 
 - punctuation versus plain spaces, plus punctuation without surrounding space;
 - vowel inventories and length contrasts;
@@ -41,6 +41,11 @@ The first corpus contains 74 cases across those five languages. It includes:
 - weak endings, diphthongs and consonant length where applicable;
 - compounds, stress probes and a short sentence;
 - German digit behavior.
+
+The acoustic and prosody subset separates short vowel carriers, `l` in
+multiple vowel contexts, one-word contours, growing phrases and short
+sentences. These are intentionally measured per language; Finnish remains a
+control rather than a template for German, English, French or Italian.
 
 All corpus text in `tools/s60_blackbox_corpus.json` was written for this test;
 it is not extracted from firmware resources or dictionaries.
@@ -77,10 +82,13 @@ Existing output is never overwritten unless `--force` is supplied.
 ## Current analysis
 
 `tools/analyze_s60_blackbox.py` measures utterance length, active boundaries,
-internal quiet intervals, RMS, peak level and zero-crossing density. Explicit
-contrast pairs additionally report whether their PCM is identical, their
-duration and silence differences, and a normalized energy-envelope distance.
-The JSON report deliberately omits PCM hashes and sample envelopes.
+internal quiet intervals, RMS, peak level and zero-crossing density. It now
+also derives a 24-point F0 contour, F0 range and periodicity, a 100 Hz-spaced
+spectral envelope through 5 kHz, spectral tilt, coarse spectral bands and
+three regional resonance peaks. Candidate comparisons summarize the duration,
+F0-contour and spectrum errors by probe group. Explicit contrast pairs also
+report whether their PCM is identical. The JSON report deliberately omits PCM
+hashes, raw sample envelopes and all audio.
 
 This first stage is sufficient to establish behavior such as whether a comma
 or period changes the waveform or inserts a pause. It does not yet identify a
