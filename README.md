@@ -61,6 +61,14 @@ release. The fixed-sentence time-local score improves from 71.354 to 59.817
 31-case German aggregate check improves spectral and duration measures but has
 mixed F0 results, so this is still an experiment rather than a fidelity claim.
 
+Clean test 5 responds to the failed listening result rather than optimizing the
+same score again. It smooths the synthetic glottal closure and reshapes
+frication after an LPC residual check showed that test 4's voiced source was
+far too impulsive. A DECtalk-derived implementation is deliberately not used:
+the available 4.63 source dump is marked proprietary and has no open-source
+license. The test-5 candidate contains only newly authored math and no DECtalk
+code, binary, dictionary, sampled voice cycle or other data.
+
 The repository also retains the earlier emulation/native-porting work described
 below. The clean-room claim applies only to `addonClean`, `native/clean` and the
 newly written output-analysis tools; it is not a declaration that every legacy

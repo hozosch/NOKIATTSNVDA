@@ -155,11 +155,11 @@ jobs:
           if ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum -gt 2MB) {
             throw 'Independent prototype package unexpectedly exceeds 2 MiB'
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.4.0-clean-test4.zip -Force
-          Move-Item build/s60Klatt-0.4.0-clean-test4.zip build/s60Klatt-0.4.0-clean-test4.nvda-addon
-          Get-Item build/s60Klatt-0.4.0-clean-test4.nvda-addon | Format-List Name,Length
+          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.5.0-clean-test5.zip -Force
+          Move-Item build/s60Klatt-0.5.0-clean-test5.zip build/s60Klatt-0.5.0-clean-test5.nvda-addon
+          Get-Item build/s60Klatt-0.5.0-clean-test5.nvda-addon | Format-List Name,Length
       - uses: actions/upload-artifact@v6
         with:
-          name: s60Klatt-0.4.0-clean-test4
-          path: build/s60Klatt-0.4.0-clean-test4.nvda-addon
+          name: s60Klatt-0.5.0-clean-test5
+          path: build/s60Klatt-0.5.0-clean-test5.nvda-addon
           if-no-files-found: error

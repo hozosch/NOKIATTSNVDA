@@ -1,6 +1,6 @@
 # Independent S60 Klatt prototype
 
-`s60Klatt-0.4.0-clean-test4` is a deliberately separate NVDA add-on. Its
+`s60Klatt-0.5.0-clean-test5` is a deliberately separate NVDA add-on. Its
 package name, driver name and user-facing product name are **S60 Klatt**.
 Its explicit goal is to recreate the pronunciation behaviour, prosody and
 acoustic character of the historical Nokia S60 TTS systems through newly
@@ -52,6 +52,36 @@ record and reproducible local comparison command are in
   `st`, `ei`, `au`, `eu` and `ie`;
 - digit spelling and punctuation-neutral word separation;
 - deterministic output for repeatable regression tests.
+
+## Test 5 source-character experiment
+
+Listening showed that test 4's lower feature score did not correspond to a
+recognizable historical voice: its voiced excitation was too sharp and its
+unvoiced consonants sounded like broad, steady noise. Test 5 therefore changes
+the synthesis mechanism rather than refitting the same whole-utterance score.
+It blends the abrupt glottal return with a continuously closing synthetic flow
+pulse, applies a small one-pole source tilt, narrows only unvoiced formant
+bandwidths and makes deterministic frication more pulse-like.
+
+An LPC residual diagnostic on the fixed German sentence changes median source
+kurtosis from about 88 in test 4 to about 35, versus about 39 in the authorized
+reference. Median residual crest factor changes from about 13.5 to 10.4,
+versus about 9.8 in the reference. Median unvoiced-frame level moves from about
+-24.8 dB relative to the utterance maximum to about -20.0 dB, matching the
+reference's approximately -20.0 dB while using less broadband excitation.
+
+The existing local feature score becomes worse (59.817 to about 61.8), even
+though F0 error and regional resonance deltas improve. This is intentionally a
+listening candidate, not a numeric fidelity claim; test 4 demonstrated that
+the old aggregate score underweights the voice-source character.
+
+DECtalk was considered because its formant-synthesis timbre is perceptually
+relevant. The publicly visible DECtalk 4.63 source repository has no open-source
+license, and its vocal-tract source labels itself confidential and proprietary,
+so none of that code or its data is used here. A generic cascade path was also
+tested locally but rejected because making it audible increased the measured
+distance. Test 5 remains newly authored source/filter code under the existing
+clean boundary.
 
 ## Test 4 measurement result and limitations
 

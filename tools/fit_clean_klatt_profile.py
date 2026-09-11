@@ -72,8 +72,10 @@ PARAMETERS = {
         Parameter("CK_MALE_F5", 3887.54132219, 3700.0, 5600.0),
         Parameter("CK_MALE_HIGHPASS_HZ", 117.194188306, 20.0, 520.0),
         Parameter("CK_TRANSITION_FRACTION", 0.15869866, 0.08, 0.52),
-        Parameter("CK_GLOTTAL_OPEN_END", 0.313795581, 0.20, 0.48),
-        Parameter("CK_GLOTTAL_CLOSE_END", 0.454459372, 0.38, 0.82),
+        Parameter("CK_GLOTTAL_OPEN_END", 0.40, 0.20, 0.48),
+        Parameter("CK_GLOTTAL_CLOSE_END", 0.50, 0.38, 0.82),
+        Parameter("CK_SMOOTH_CLOSURE_BLEND", 0.50, 0.0, 1.0),
+        Parameter("CK_SOURCE_TILT", 0.25, 0.0, 0.75),
         Parameter("CK_GLOTTAL_SOURCE_GAIN", 2.114334083, 2.0, 5.2),
         Parameter("CK_MALE_VOICED_GAIN", 1.865120855, 1.30, 3.60),
         Parameter("CK_MALE_NOISE_GAIN", 0.404999301, 0.18, 0.90),
@@ -93,6 +95,8 @@ PARAMETERS = {
         Parameter("CK_NOISE_R4_GAIN", 0.110203523, 0.02, 0.60),
         Parameter("CK_NOISE_R5_GAIN", 0.050347456, 0.01, 0.40),
         Parameter("CK_STOP_RELEASE_START", 0.48, 0.15, 0.72),
+        Parameter("CK_FRICATION_BANDWIDTH_SCALE", 0.40, 0.15, 1.0),
+        Parameter("CK_IMPULSIVE_NOISE_BLEND", 0.40, 0.0, 1.0),
     )
 }
 
@@ -120,6 +124,7 @@ STAGES = (
         "source-and-vowel-balance",
         (
             "CK_GLOTTAL_OPEN_END", "CK_GLOTTAL_CLOSE_END",
+            "CK_SMOOTH_CLOSURE_BLEND", "CK_SOURCE_TILT",
             "CK_GLOTTAL_SOURCE_GAIN", "CK_MALE_VOICED_GAIN",
             "CK_VOWEL_R1_GAIN", "CK_VOWEL_R2_GAIN", "CK_VOWEL_R3_GAIN",
             "CK_VOWEL_R4_GAIN", "CK_VOWEL_R5_GAIN",
@@ -134,6 +139,7 @@ STAGES = (
             "CK_SONORANT_R5_GAIN", "CK_NOISE_R1_GAIN",
             "CK_NOISE_R2_GAIN", "CK_NOISE_R3_GAIN", "CK_NOISE_R4_GAIN",
             "CK_NOISE_R5_GAIN", "CK_STOP_RELEASE_START",
+            "CK_FRICATION_BANDWIDTH_SCALE", "CK_IMPULSIVE_NOISE_BLEND",
         ),
     ),
 )

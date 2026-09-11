@@ -99,10 +99,10 @@
 #define CK_FINAL_FALL 0.24
 #endif
 #ifndef CK_GLOTTAL_OPEN_END
-#define CK_GLOTTAL_OPEN_END 0.313795581
+#define CK_GLOTTAL_OPEN_END 0.40
 #endif
 #ifndef CK_GLOTTAL_CLOSE_END
-#define CK_GLOTTAL_CLOSE_END 0.454459372
+#define CK_GLOTTAL_CLOSE_END 0.50
 #endif
 #ifndef CK_GLOTTAL_SOURCE_GAIN
 #define CK_GLOTTAL_SOURCE_GAIN 2.114334083
@@ -154,6 +154,18 @@
 #endif
 #ifndef CK_STOP_RELEASE_START
 #define CK_STOP_RELEASE_START 0.48
+#endif
+#ifndef CK_FRICATION_BANDWIDTH_SCALE
+#define CK_FRICATION_BANDWIDTH_SCALE 0.40
+#endif
+#ifndef CK_IMPULSIVE_NOISE_BLEND
+#define CK_IMPULSIVE_NOISE_BLEND 0.40
+#endif
+#ifndef CK_SMOOTH_CLOSURE_BLEND
+#define CK_SMOOTH_CLOSURE_BLEND 0.50
+#endif
+#ifndef CK_SOURCE_TILT
+#define CK_SOURCE_TILT 0.25
 #endif
 
 typedef enum phoneme_id {
@@ -265,6 +277,7 @@ struct classic_klatt_engine {
     uint32_t noise_state;
     double phase;
     double previous_glottal;
+    double source_tilt_state;
 };
 
 static const phoneme_spec PHONEMES[] = {
@@ -910,6 +923,7 @@ static int synthesize_segments(
     engine->noise_state = 0x434b4c54u;
     engine->phase = 0.0;
     engine->previous_glottal = 0.0;
+    engine->source_tilt_state = 0.0;
 
     for (segment_index = 0; segment_index < segments->count; ++segment_index) {
         if (segments->items[segment_index].phoneme == PH_SIL) word_count += 1u;
@@ -970,6 +984,10 @@ static int synthesize_segments(
             double amplitude_envelope = 1.0;
             double source = 0.0;
             double noise = next_noise(engine);
+            double impulsive_noise = noise * noise * noise * noise * noise * sqrt(11.0);
+            double frication_noise =
+                (1.0 - CK_IMPULSIVE_NOISE_BLEND) * noise
+                + CK_IMPULSIVE_NOISE_BLEND * impulsive_noise;
             double output;
             int voiced = spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED;
             int previous_voiced = previous_spec && (
@@ -997,16 +1015,15 @@ static int synthesize_segments(
 
             resonator_set(&f1, profile->f1_scale * (
                 previous_f1 + transition * ((double)spec->f1 - previous_f1)
-            ), spec->b1);
+            ), spec->b1 * (voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
             resonator_set(&f2, profile->f2_scale * (
                 previous_f2 + transition * ((double)spec->f2 - previous_f2)
-            ), spec->b2);
+            ), spec->b2 * (voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
             resonator_set(&f3, profile->f3_scale * (
                 previous_f3 + transition * ((double)spec->f3 - previous_f3)
-            ), spec->b3);
+            ), spec->b3 * (voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
             resonator_set(&f4, profile->f4, 260.0);
             resonator_set(&f5, profile->f5, 360.0);
-
             if (spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED) {
                 double glottal;
                 engine->phase += f0 / (double)CK_SAMPLE_RATE;
@@ -1016,18 +1033,25 @@ static int synthesize_segments(
                         CK_PI * engine->phase / CK_GLOTTAL_OPEN_END
                     );
                 } else if (engine->phase < CK_GLOTTAL_CLOSE_END) {
-                    glottal = cos(0.5 * CK_PI
-                        * (engine->phase - CK_GLOTTAL_OPEN_END)
-                        / (CK_GLOTTAL_CLOSE_END - CK_GLOTTAL_OPEN_END));
+                    double close_position =
+                        (engine->phase - CK_GLOTTAL_OPEN_END)
+                        / (CK_GLOTTAL_CLOSE_END - CK_GLOTTAL_OPEN_END);
+                    double abrupt_close = cos(0.5 * CK_PI * close_position);
+                    double smooth_close = 0.5 + 0.5 * cos(CK_PI * close_position);
+                    glottal = (1.0 - CK_SMOOTH_CLOSURE_BLEND) * abrupt_close
+                        + CK_SMOOTH_CLOSURE_BLEND * smooth_close;
                 } else {
                     glottal = 0.0;
                 }
                 source = (glottal - engine->previous_glottal) * CK_GLOTTAL_SOURCE_GAIN;
                 engine->previous_glottal = glottal;
+                engine->source_tilt_state = (1.0 - CK_SOURCE_TILT) * source
+                    + CK_SOURCE_TILT * engine->source_tilt_state;
+                source = engine->source_tilt_state;
                 if (spec->source == SOURCE_VOICED) source *= 0.82;
                 source += noise * spec->noise * 0.18;
             } else if (spec->source == SOURCE_FRICATIVE) {
-                source = noise * spec->noise;
+                source = frication_noise * spec->noise;
             } else if (spec->source == SOURCE_STOP) {
                 if (position < CK_STOP_RELEASE_START) {
                     source = spec->noise < 0.8f ? 0.04 * sin(2.0 * CK_PI * engine->phase) : 0.0;
@@ -1036,7 +1060,7 @@ static int synthesize_segments(
                 } else {
                     double burst = (position - CK_STOP_RELEASE_START)
                         / (1.0 - CK_STOP_RELEASE_START);
-                    source = noise * spec->noise * exp(-5.0 * burst);
+                    source = frication_noise * spec->noise * exp(-5.0 * burst);
                 }
             }
 
@@ -1103,7 +1127,7 @@ static int synthesize_segments(
 }
 
 const char *classic_klatt_version(void) {
-    return "0.4.0-clean-test4";
+    return "0.5.0-clean-test5";
 }
 
 classic_klatt_engine *classic_klatt_create(void) {
