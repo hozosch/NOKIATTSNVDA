@@ -13,6 +13,16 @@ can be driven by NVDA through a small Symbian compatibility harness. This
 repository continues that work. It is an independent preservation and
 porting experiment and is not an official Nokia project.
 
+## Independent Classic Klatt experiment
+
+A separate, newly written prototype now explores the long-term ROM-free
+direction under the neutral product name **Classic Klatt**. Clean test 1 uses
+its own compact C formant synthesizer and German pronunciation rules and does
+not load or package firmware, ROM pages, generated AOT, snapshots or extracted
+speech data. Its initial male and female voices are architecture tests rather
+than completed reproductions of a historical phone model. See
+[`docs/CLEAN-KLATT-PROTOTYPE.md`](docs/CLEAN-KLATT-PROTOTYPE.md).
+
 ## Project goal
 
 The goal is not to ship a complete phone emulator. The intended result is a
