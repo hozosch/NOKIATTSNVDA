@@ -23,8 +23,12 @@ jobs:
           /tmp/classic_klatt_core_test
       - name: Test and compile-check the NVDA driver
         run: |
-          python -m unittest tests.test_classic_klatt_driver
-          python -m py_compile addonClean/synthDrivers/s60Klatt.py tools/render_clean_klatt_wav.py
+          python -m unittest tests.test_classic_klatt_driver tests.test_s60_blackbox_tools
+          python -m py_compile \
+            addonClean/synthDrivers/s60Klatt.py \
+            tools/render_clean_klatt_wav.py \
+            tools/capture_s60_blackbox.py \
+            tools/analyze_s60_blackbox.py
       - name: Verify the clean add-on source boundary
         shell: pwsh
         run: |

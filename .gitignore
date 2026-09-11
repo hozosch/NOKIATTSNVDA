@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+
+# Local, transient output from the historical-engine black-box probes.
+# Reference PCM must never become repository or add-on content.
+reference-output/

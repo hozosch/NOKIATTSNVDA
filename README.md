@@ -31,6 +31,12 @@ is not included in the build. See
 [`docs/CLEAN-KLATT-PROTOTYPE.md`](docs/CLEAN-KLATT-PROTOTYPE.md) and the
 [`reference measurement record`](docs/CLEAN-ROOM-REFERENCE.md).
 
+Because test 2 did not produce a recognizable historical voice, test 3 starts
+with a language-separated, output-only measurement harness instead of further
+global spectral tuning. The historical renderer is invoked only as a separate
+text-to-WAV process; captured PCM is never committed or packaged. See
+[`docs/BLACK-BOX-MEASUREMENT.md`](docs/BLACK-BOX-MEASUREMENT.md).
+
 ## Project goal
 
 The goal is not to ship a complete phone emulator. The intended result is a

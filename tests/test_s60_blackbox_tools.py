@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Regression tests for the output-only S60 measurement tools."""
+from __future__ import annotations
+
+import math
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+import wave
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / "tools"
+sys.path.insert(0, str(TOOLS))
+
+import analyze_s60_blackbox as ANALYZE  # noqa: E402
+import capture_s60_blackbox as CAPTURE  # noqa: E402
+
+
+def write_test_wav(path: Path, sections: list[tuple[int, bool]]) -> None:
+    samples = []
+    position = 0
+    for milliseconds, voiced in sections:
+        count = 16 * milliseconds
+        for _ in range(count):
+            value = int(8000 * math.sin(2.0 * math.pi * 200.0 * position / 16000.0)) if voiced else 0
+            samples.append(value)
+            position += 1
+    pcm = bytearray()
+    for value in samples:
+        pcm.extend(int(value).to_bytes(2, "little", signed=True))
+    with wave.open(str(path), "wb") as target:
+        target.setnchannels(1)
+        target.setsampwidth(2)
+        target.setframerate(16000)
+        target.writeframes(pcm)
+
+
+class BlackBoxToolsTest(unittest.TestCase):
+    def test_repository_corpus_is_valid_and_language_separated(self):
+        cases = CAPTURE.load_corpus(TOOLS / "s60_blackbox_corpus.json")
+        languages = {case["language"] for case in cases}
+        self.assertEqual({"de-DE", "en-GB", "fi-FI", "fr-FR", "it-IT"}, languages)
+        self.assertGreaterEqual(len(cases), 60)
+        self.assertTrue(any(case.get("compareTo") for case in cases))
+
+    def test_nk_renderer_command_is_an_explicit_process_boundary(self):
+        case = {
+            "languageId": 3,
+            "text": "Anna, Maria",
+        }
+        command = CAPTURE.nk_render_command(
+            Path("nk_render.exe"),
+            Path("SYM.ROM"),
+            Path("files"),
+            case,
+            "female",
+            Path("out.wav"),
+        )
+        self.assertEqual(
+            [
+                "nk_render.exe", "SYM.ROM", "files", "3",
+                "DefaultFemale", "out.wav", "Anna, Maria",
+            ],
+            command,
+        )
+
+    def test_timing_analysis_detects_only_internal_silence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "probe.wav"
+            write_test_wav(path, [(40, False), (100, True), (90, False), (100, True), (50, False)])
+            metrics = ANALYZE.wav_metrics(path)
+        self.assertEqual(380.0, metrics["durationMs"])
+        self.assertEqual(1, metrics["internalSilenceCount"])
+        self.assertEqual(90, metrics["internalSilenceMs"])
+        self.assertEqual(40, metrics["activeStartMs"])
+
+    def test_comparison_distinguishes_identical_and_paused_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            continuous = root / "continuous.wav"
+            copy = root / "copy.wav"
+            paused = root / "paused.wav"
+            write_test_wav(continuous, [(200, True)])
+            write_test_wav(copy, [(200, True)])
+            write_test_wav(paused, [(100, True), (80, False), (100, True)])
+            base_metrics = ANALYZE.wav_metrics(continuous)
+            same = ANALYZE.compare_metrics(base_metrics, ANALYZE.wav_metrics(copy))
+            different = ANALYZE.compare_metrics(base_metrics, ANALYZE.wav_metrics(paused))
+        self.assertTrue(same["pcmIdentical"])
+        self.assertEqual(0.0, same["durationDeltaMs"])
+        self.assertFalse(different["pcmIdentical"])
+        self.assertEqual(80.0, different["durationDeltaMs"])
+        self.assertGreater(different["energyEnvelopeDistance"], 0.05)
+
+
+if __name__ == "__main__":
+    unittest.main()
