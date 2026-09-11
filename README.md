@@ -19,8 +19,11 @@ A separate, newly written prototype now explores the long-term ROM-free
 direction under the neutral product name **Classic Klatt**. Clean test 1 uses
 its own compact C formant synthesizer and German pronunciation rules and does
 not load or package firmware, ROM pages, generated AOT, snapshots or extracted
-speech data. Its initial male and female voices are architecture tests rather
-than completed reproductions of a historical phone model. See
+speech data. Its explicit goal is to recreate, through newly authored code and
+independently defined voice profiles, the pronunciation behaviour, prosody and
+acoustic character of the historical Nokia S60 TTS systems. Its initial male
+and female voices are architecture tests rather than completed reproductions
+of a historical phone model. See
 [`docs/CLEAN-KLATT-PROTOTYPE.md`](docs/CLEAN-KLATT-PROTOTYPE.md).
 
 ## Project goal

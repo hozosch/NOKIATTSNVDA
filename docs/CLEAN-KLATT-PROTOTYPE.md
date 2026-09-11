@@ -2,8 +2,11 @@
 
 `classicKlatt-0.1.0-clean-test1` is a deliberately separate NVDA add-on. Its
 package name, driver name and user-facing product name are **Classic Klatt**.
-Historical Nokia S60 speech is a listening and behaviour reference, not a
-claim of origin, endorsement or binary compatibility.
+Its explicit goal is to recreate the pronunciation behaviour, prosody and
+acoustic character of the historical Nokia S60 TTS systems through newly
+authored code and independently defined voice profiles. Those systems are
+listening and behaviour references, not a claim of origin, endorsement or
+binary compatibility.
 
 ## Source boundary
 
