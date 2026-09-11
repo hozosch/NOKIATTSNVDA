@@ -26,6 +26,14 @@ LOCAL_SPECTRUM_HZ = (
     100, 150, 200, 250, 300, 400, 500, 650, 800,
     1000, 1250, 1500, 1800, 2200, 2700, 3300, 4000, 4800,
 )
+CEPSTRAL_SHAPE_COEFFICIENTS = 8
+PHONE_FOCUS_GROUPS = {
+    "acoustic-vowel",
+    "acoustic-liquid",
+    "acoustic-stop",
+    "acoustic-fricative",
+    "acoustic-sonorant",
+}
 
 
 def read_pcm(path: Path) -> tuple[int, list[int], str]:
@@ -139,6 +147,44 @@ def _regional_peaks(spectrum: list[float]) -> list[int | None]:
     return peaks
 
 
+def _cepstral_shape(spectrum: list[float]) -> list[float]:
+    """Compact DCT of a normalized log spectrum.
+
+    The zero-order coefficient is deliberately omitted: it mostly describes
+    level, whereas the remaining coefficients describe the spectral envelope
+    that carries vowel identity and voice timbre.
+    """
+    if not spectrum:
+        return [0.0] * CEPSTRAL_SHAPE_COEFFICIENTS
+    centre = sum(spectrum) / len(spectrum)
+    values = [value - centre for value in spectrum]
+    scale = math.sqrt(2.0 / len(values))
+    return [
+        scale * sum(
+            value * math.cos(math.pi * coefficient * (index + 0.5) / len(values))
+            for index, value in enumerate(values)
+        )
+        for coefficient in range(1, CEPSTRAL_SHAPE_COEFFICIENTS + 1)
+    ]
+
+
+def _temporal_source_shape(frame: list[int]) -> tuple[float, float]:
+    """Return level-independent pulse crest and first-difference energy."""
+    if not frame:
+        return 0.0, 0.0
+    mean = sum(frame) / len(frame)
+    centred = [sample - mean for sample in frame]
+    rms = math.sqrt(sum(sample * sample for sample in centred) / len(centred))
+    if rms < 1e-9:
+        return 0.0, 0.0
+    crest = max(abs(sample) for sample in centred) / rms
+    differences = [right - left for left, right in zip(centred, centred[1:])]
+    derivative_rms = math.sqrt(
+        sum(value * value for value in differences) / max(1, len(differences))
+    )
+    return crest, derivative_rms / rms
+
+
 def local_frame_features(samples: list[int], rate: int) -> list[dict]:
     """Return transient frame features used only while comparing two WAVs.
 
@@ -173,6 +219,7 @@ def local_frame_features(samples: list[int], rate: int) -> list[dict]:
         rms = rms_values[index]
         active = rms >= active_threshold
         spectrum, high_band = _frame_spectrum(frame, rate)
+        crest, derivative_ratio = _temporal_source_shape(frame)
         frequency, periodicity = _pitch_for_frame(frame, rate) if active else (None, 0.0)
         crossings = sum(
             1 for left, right in zip(frame, frame[1:])
@@ -190,6 +237,9 @@ def local_frame_features(samples: list[int], rate: int) -> list[dict]:
             "f0Hz": frequency,
             "periodicity": periodicity,
             "spectrumDb": spectrum,
+            "cepstralShape": _cepstral_shape(spectrum),
+            "crestFactor": crest,
+            "derivativeRatio": derivative_ratio,
             "highBandDb": high_band,
             "regionalPeaksHz": _regional_peaks(spectrum),
             "spectralFluxDb": flux or 0.0,
@@ -206,6 +256,12 @@ def _frame_cost(left: dict, right: dict) -> float:
     spectrum = _mean([
         abs(a - b) for a, b in zip(left["spectrumDb"], right["spectrumDb"])
     ]) or 0.0
+    cepstral = math.sqrt(_mean([
+        (a - b) ** 2
+        for a, b in zip(left["cepstralShape"], right["cepstralShape"])
+    ]) or 0.0)
+    crest = abs(left["crestFactor"] - right["crestFactor"])
+    derivative = abs(left["derivativeRatio"] - right["derivativeRatio"])
     periodicity = abs(left["periodicity"] - right["periodicity"])
     zcr = abs(left["zeroCrossingRate"] - right["zeroCrossingRate"])
     if left["f0Hz"] is not None and right["f0Hz"] is not None:
@@ -215,13 +271,16 @@ def _frame_cost(left: dict, right: dict) -> float:
         f0 = 0.0
         voicing_mismatch = 1.0 if (left["f0Hz"] is None) != (right["f0Hz"] is None) else 0.0
     return (
-        0.46 * min(2.0, spectrum / 12.0)
+        0.32 * min(2.0, spectrum / 12.0)
+        + 0.18 * min(2.0, cepstral / 14.0)
         + 0.14 * energy
         + 0.10 * periodicity
         + 0.08 * min(2.0, zcr * 8.0)
         + 0.10 * f0
         + 0.07 * voicing_mismatch
-        + 0.05 * activity_mismatch
+        + 0.04 * min(2.0, crest / 2.5)
+        + 0.03 * min(2.0, derivative / 1.0)
+        + 0.04 * activity_mismatch
     )
 
 
@@ -278,12 +337,15 @@ def compare_local_features(left: list[dict], right: list[dict]) -> dict:
             "alignedFrameCount": 0,
             "localFeatureScore": None,
             "frameSpectrumDistanceDb": None,
+            "cepstralShapeDistance": None,
             "transitionSpectrumDistanceDb": None,
             "f0ContourRmseCents": None,
             "voicingMismatchRate": None,
             "periodicityDistance": None,
             "unvoicedHighBandDistanceDb": None,
             "spectralFluxDistanceDb": None,
+            "crestFactorDistance": None,
+            "derivativeRatioDistance": None,
             "timeWarpRatio": None,
             "regionalPeakMeanAbsoluteDeltasHz": [None, None, None],
         }
@@ -294,6 +356,13 @@ def compare_local_features(left: list[dict], right: list[dict]) -> dict:
     ]
     spectrum_distances = [
         _mean([abs(a - b) for a, b in zip(a_frame["spectrumDb"], b_frame["spectrumDb"])]) or 0.0
+        for a_frame, b_frame in active_pairs
+    ]
+    cepstral_distances = [
+        math.sqrt(_mean([
+            (a - b) ** 2
+            for a, b in zip(a_frame["cepstralShape"], b_frame["cepstralShape"])
+        ]) or 0.0)
         for a_frame, b_frame in active_pairs
     ]
     f0_cents = [
@@ -336,6 +405,7 @@ def compare_local_features(left: list[dict], right: list[dict]) -> dict:
                 regional_deltas[region].append(abs(b_peak - a_peak))
 
     spectrum = _mean(spectrum_distances)
+    cepstral = _mean(cepstral_distances)
     transition = _mean(transition_distances)
     f0_rmse = math.sqrt(_mean([value * value for value in f0_cents]) or 0.0) if f0_cents else None
     voicing = _mean([float(value) for value in voicing_mismatches])
@@ -350,6 +420,15 @@ def compare_local_features(left: list[dict], right: list[dict]) -> dict:
     flux = _mean([
         abs(a_frame["spectralFluxDb"] - b_frame["spectralFluxDb"])
         for a_frame, b_frame in unvoiced_pairs
+    ])
+    crest = _mean([
+        abs(a_frame["crestFactor"] - b_frame["crestFactor"])
+        for a_frame, b_frame in active_pairs
+        if a_frame["f0Hz"] is not None and b_frame["f0Hz"] is not None
+    ])
+    derivative = _mean([
+        abs(a_frame["derivativeRatio"] - b_frame["derivativeRatio"])
+        for a_frame, b_frame in active_pairs
     ])
     left_has_unvoiced = any(frame["active"] and frame["f0Hz"] is None for frame in left)
     right_has_unvoiced = any(frame["active"] and frame["f0Hz"] is None for frame in right)
@@ -368,30 +447,152 @@ def compare_local_features(left: list[dict], right: list[dict]) -> dict:
     # This score is a release-ranking aid, not a claim about perceptual
     # equivalence.  A listening test remains mandatory for a final candidate.
     score = 100.0 * (
-        0.35 * min(2.0, (spectrum or 0.0) / 12.0)
-        + 0.20 * min(2.0, (transition or 0.0) / 10.0)
-        + 0.12 * min(2.0, (f0_rmse or 0.0) / 400.0)
-        + 0.10 * (voicing or 0.0)
-        + 0.07 * min(2.0, (periodicity or 0.0) / 0.5)
-        + 0.06 * min(2.0, (high_band or 0.0) / 12.0)
-        + 0.05 * min(2.0, (flux or 0.0) / 10.0)
-        + 0.05 * min(2.0, warp / 0.5)
+        0.25 * min(2.0, (spectrum or 0.0) / 12.0)
+        + 0.18 * min(2.0, (cepstral or 0.0) / 14.0)
+        + 0.14 * min(2.0, (transition or 0.0) / 10.0)
+        + 0.10 * min(2.0, (f0_rmse or 0.0) / 400.0)
+        + 0.08 * (voicing or 0.0)
+        + 0.06 * min(2.0, (periodicity or 0.0) / 0.5)
+        + 0.05 * min(2.0, (high_band or 0.0) / 12.0)
+        + 0.04 * min(2.0, (flux or 0.0) / 10.0)
+        + 0.04 * min(2.0, warp / 0.5)
+        + 0.04 * min(2.0, (crest or 0.0) / 2.5)
+        + 0.02 * min(2.0, (derivative or 0.0) / 1.0)
     )
     return {
         "alignedFrameCount": len(path),
         "localFeatureScore": round(score, 3),
         "frameSpectrumDistanceDb": round(spectrum, 3) if spectrum is not None else None,
+        "cepstralShapeDistance": round(cepstral, 3) if cepstral is not None else None,
         "transitionSpectrumDistanceDb": round(transition, 3) if transition is not None else None,
         "f0ContourRmseCents": round(f0_rmse, 3) if f0_rmse is not None else None,
         "voicingMismatchRate": round(voicing, 5) if voicing is not None else None,
         "periodicityDistance": round(periodicity, 5) if periodicity is not None else None,
         "unvoicedHighBandDistanceDb": round(high_band, 3) if high_band is not None else None,
         "spectralFluxDistanceDb": round(flux, 3) if flux is not None else None,
+        "crestFactorDistance": round(crest, 5) if crest is not None else None,
+        "derivativeRatioDistance": round(derivative, 5) if derivative is not None else None,
         "timeWarpRatio": round(warp, 5),
         "regionalPeakMeanAbsoluteDeltasHz": [
             round(value, 3) if value is not None else None
             for value in (_mean(group) for group in regional_deltas)
         ],
+    }
+
+
+def phone_focus_features(frames: list[dict], group: str) -> list[dict]:
+    """Select the phone-bearing portion of a controlled acoustic probe.
+
+    Stop, fricative and sonorant probes use a VCV carrier, so their centre is
+    the informative region.  Vowel probes retain periodic frames throughout
+    their repeated carrier.  This intentionally relies only on acoustic output
+    and corpus metadata, never on a reference renderer's internal phone stream.
+    """
+    if group not in PHONE_FOCUS_GROUPS or not frames:
+        return []
+    active_indexes = [index for index, frame in enumerate(frames) if frame["active"]]
+    if not active_indexes:
+        return []
+    first, last = active_indexes[0], active_indexes[-1]
+    span = last - first + 1
+
+    if group == "acoustic-vowel":
+        periodic = [
+            frame for frame in frames[first:last + 1]
+            if frame["active"] and frame["f0Hz"] is not None and frame["periodicity"] >= 0.45
+        ]
+        return periodic or frames[first:last + 1]
+
+    margin = max(1, int(span * (0.12 if group == "acoustic-liquid" else 0.20)))
+    focused = frames[first + margin:last - margin + 1]
+    if group in {"acoustic-liquid", "acoustic-sonorant"}:
+        periodic = [
+            frame for frame in focused
+            if frame["active"] and frame["f0Hz"] is not None
+        ]
+        return periodic or focused
+    return focused
+
+
+def _source_mix(frames: list[dict]) -> list[float]:
+    if not frames:
+        return [0.0, 0.0, 0.0]
+    counts = [0, 0, 0]
+    for frame in frames:
+        if not frame["active"]:
+            counts[0] += 1
+        elif frame["f0Hz"] is not None:
+            counts[1] += 1
+        else:
+            counts[2] += 1
+    return [count / len(frames) for count in counts]
+
+
+def phone_signature(frames: list[dict], group: str) -> dict | None:
+    """Return a compact, output-derived target for one controlled phone probe."""
+    focused = phone_focus_features(frames, group)
+    if not focused:
+        return None
+    active = [frame for frame in focused if frame["active"]]
+    voiced = [frame for frame in active if frame["f0Hz"] is not None]
+
+    def mean_vector(key: str, width: int) -> list[float]:
+        rows = [frame[key] for frame in active]
+        if not rows:
+            return [0.0] * width
+        return [
+            round(sum(row[index] for row in rows) / len(rows), 5)
+            for index in range(width)
+        ]
+
+    return {
+        "focusDurationMs": len(focused) * LOCAL_HOP_MS,
+        "sourceMix": [round(value, 5) for value in _source_mix(focused)],
+        "medianF0Hz": (
+            round(percentile([frame["f0Hz"] for frame in voiced], 0.5), 3)
+            if voiced else None
+        ),
+        "meanPeriodicity": round(_mean([frame["periodicity"] for frame in active]) or 0.0, 5),
+        "meanSpectrumDb": mean_vector("spectrumDb", len(LOCAL_SPECTRUM_HZ)),
+        "meanCepstralShape": mean_vector(
+            "cepstralShape", CEPSTRAL_SHAPE_COEFFICIENTS
+        ),
+        "meanCrestFactor": round(
+            _mean([frame["crestFactor"] for frame in voiced]) or 0.0, 5
+        ),
+        "meanDerivativeRatio": round(
+            _mean([frame["derivativeRatio"] for frame in active]) or 0.0, 5
+        ),
+    }
+
+
+def compare_phone_probe(left: list[dict], right: list[dict], group: str) -> dict:
+    left_focus = phone_focus_features(left, group)
+    right_focus = phone_focus_features(right, group)
+    if not left_focus or not right_focus:
+        return {
+            "phoneFeatureScore": None,
+            "phoneFocusFrames": [len(left_focus), len(right_focus)],
+            "phoneDurationDeltaMs": None,
+            "phoneSourceMixDistance": None,
+            "phoneCepstralShapeDistance": None,
+            "phoneFrameSpectrumDistanceDb": None,
+            "phoneCrestFactorDistance": None,
+        }
+    comparison = compare_local_features(left_focus, right_focus)
+    left_mix = _source_mix(left_focus)
+    right_mix = _source_mix(right_focus)
+    source_distance = 0.5 * sum(abs(a - b) for a, b in zip(left_mix, right_mix))
+    base_score = comparison["localFeatureScore"]
+    score = None if base_score is None else base_score + 35.0 * source_distance
+    return {
+        "phoneFeatureScore": round(score, 3) if score is not None else None,
+        "phoneFocusFrames": [len(left_focus), len(right_focus)],
+        "phoneDurationDeltaMs": (len(right_focus) - len(left_focus)) * LOCAL_HOP_MS,
+        "phoneSourceMixDistance": round(source_distance, 5),
+        "phoneCepstralShapeDistance": comparison["cepstralShapeDistance"],
+        "phoneFrameSpectrumDistanceDb": comparison["frameSpectrumDistanceDb"],
+        "phoneCrestFactorDistance": comparison["crestFactorDistance"],
     }
 
 
@@ -678,6 +879,11 @@ def analyze_capture(directory: Path) -> tuple[dict, dict[str, dict]]:
         }
         if case.get("compareTo"):
             row["compareTo"] = case["compareTo"]
+        if case.get("phoneTarget"):
+            row["phoneTarget"] = case["phoneTarget"]
+            row["phoneSignature"] = phone_signature(
+                metrics["_localFrames"], case["group"]
+            )
         row["metrics"] = public_metrics
         rows.append(row)
         by_id[case["id"]] = {"case": case, "metrics": metrics}
@@ -711,11 +917,16 @@ def summarize_comparisons(rows: list[dict]) -> list[dict]:
             "meanSpectrumDistanceDb": mean_value("spectrumDistanceDb"),
             "meanLocalFeatureScore": mean_value("localFeatureScore"),
             "meanFrameSpectrumDistanceDb": mean_value("frameSpectrumDistanceDb"),
+            "meanCepstralShapeDistance": mean_value("cepstralShapeDistance"),
             "meanTransitionSpectrumDistanceDb": mean_value("transitionSpectrumDistanceDb"),
             "meanF0ContourRmseCents": mean_value("f0ContourRmseCents"),
             "meanVoicingMismatchRate": mean_value("voicingMismatchRate"),
             "meanUnvoicedHighBandDistanceDb": mean_value("unvoicedHighBandDistanceDb"),
+            "meanCrestFactorDistance": mean_value("crestFactorDistance"),
             "meanTimeWarpRatio": mean_value("timeWarpRatio"),
+            "meanPhoneFeatureScore": mean_value("phoneFeatureScore"),
+            "meanPhoneSourceMixDistance": mean_value("phoneSourceMixDistance"),
+            "meanPhoneCepstralShapeDistance": mean_value("phoneCepstralShapeDistance"),
         })
     return summaries
 
@@ -723,6 +934,7 @@ def summarize_comparisons(rows: list[dict]) -> list[dict]:
 def candidate_decision(
     rows: list[dict],
     baseline_score: float | None = None,
+    baseline_phone_score: float | None = None,
     minimum_improvement_percent: float = 15.0,
 ) -> dict:
     """Build a conservative non-punctuation release gate.
@@ -735,11 +947,24 @@ def candidate_decision(
         if not row["group"].startswith("punctuation")
         and row.get("localFeatureScore") is not None
     ]
-    score = _mean([row["localFeatureScore"] for row in focus_rows])
+    overall_score = _mean([row["localFeatureScore"] for row in focus_rows])
+    phone_scores = [
+        row["phoneFeatureScore"] for row in focus_rows
+        if row.get("phoneFeatureScore") is not None
+    ]
+    phone_score = _mean(phone_scores)
+    score = (
+        0.35 * overall_score + 0.65 * phone_score
+        if overall_score is not None and phone_score is not None
+        else overall_score
+    )
     decision = {
-        "scope": "non-punctuation acoustic, pronunciation and prosody probes",
+        "scope": "phone-weighted non-punctuation acoustic, pronunciation and prosody probes",
         "cases": len(focus_rows),
         "score": round(score, 3) if score is not None else None,
+        "overallScore": round(overall_score, 3) if overall_score is not None else None,
+        "phoneCases": len(phone_scores),
+        "phoneScore": round(phone_score, 3) if phone_score is not None else None,
         "lowerIsBetter": True,
         "minimumImprovementPercent": minimum_improvement_percent,
         "listeningValidationRequired": True,
@@ -748,10 +973,25 @@ def candidate_decision(
     if score is None or baseline_score is None:
         return decision
     improvement = 100.0 * (baseline_score - score) / max(abs(baseline_score), 1e-9)
+    phone_improvement = None
+    if phone_score is not None and baseline_phone_score is not None:
+        phone_improvement = (
+            100.0 * (baseline_phone_score - phone_score)
+            / max(abs(baseline_phone_score), 1e-9)
+        )
+    eligible = improvement >= minimum_improvement_percent
+    if phone_improvement is not None:
+        eligible = eligible and phone_improvement >= minimum_improvement_percent
     decision.update({
         "baselineScore": round(baseline_score, 3),
         "improvementPercent": round(improvement, 3),
-        "status": "eligible-for-listening" if improvement >= minimum_improvement_percent else "rejected-small-improvement",
+        "baselinePhoneScore": (
+            round(baseline_phone_score, 3) if baseline_phone_score is not None else None
+        ),
+        "phoneImprovementPercent": (
+            round(phone_improvement, 3) if phone_improvement is not None else None
+        ),
+        "status": "eligible-for-listening" if eligible else "rejected-small-improvement",
     })
     return decision
 
@@ -767,7 +1007,12 @@ def main() -> int:
     args = parser.parse_args()
 
     oracle_public, oracle = analyze_capture(args.oracle_dir)
-    report = {"schema": 1, "oracle": oracle_public, "behaviorComparisons": []}
+    report = {
+        "schema": 1,
+        "metricVersion": 2,
+        "oracle": oracle_public,
+        "behaviorComparisons": [],
+    }
 
     for identifier, item in sorted(oracle.items()):
         compare_to = item["case"].get("compareTo")
@@ -786,27 +1031,47 @@ def main() -> int:
         candidate_public, candidate = analyze_capture(args.candidate_dir)
         comparisons = []
         for identifier in sorted(set(oracle) & set(candidate)):
+            group = oracle[identifier]["case"]["group"]
             comparison = compare_metrics(
                 oracle[identifier]["metrics"], candidate[identifier]["metrics"]
             )
+            if group in PHONE_FOCUS_GROUPS:
+                comparison.update(compare_phone_probe(
+                    oracle[identifier]["metrics"]["_localFrames"],
+                    candidate[identifier]["metrics"]["_localFrames"],
+                    group,
+                ))
             comparison.update({
                 "id": identifier,
                 "language": oracle[identifier]["case"]["language"],
-                "group": oracle[identifier]["case"]["group"],
+                "group": group,
             })
             comparisons.append(comparison)
         report["candidate"] = candidate_public
         report["candidateComparisons"] = comparisons
         report["candidateSummary"] = summarize_comparisons(comparisons)
         baseline_score = None
+        baseline_phone_score = None
         if args.baseline_report:
             baseline = json.loads(args.baseline_report.read_text(encoding="utf-8"))
+            if baseline.get("metricVersion") != report["metricVersion"]:
+                parser.error(
+                    "baseline report uses an incompatible acoustic metric version; "
+                    "regenerate it with the current analyzer"
+                )
             baseline_score = baseline.get("candidateDecision", {}).get("score")
+            baseline_phone_score = baseline.get("candidateDecision", {}).get("phoneScore")
             if not isinstance(baseline_score, (int, float)):
                 parser.error("baseline report has no numeric candidateDecision.score")
+            has_phone_cases = any(
+                row.get("phoneFeatureScore") is not None for row in comparisons
+            )
+            if has_phone_cases and not isinstance(baseline_phone_score, (int, float)):
+                parser.error("baseline report has no numeric candidateDecision.phoneScore")
         report["candidateDecision"] = candidate_decision(
             comparisons,
             baseline_score=baseline_score,
+            baseline_phone_score=baseline_phone_score,
             minimum_improvement_percent=args.minimum_improvement_percent,
         )
 
@@ -845,8 +1110,8 @@ def main() -> int:
             )
         decision = report["candidateDecision"]
         print(
-            f"Non-punctuation release gate: {decision['status']}; "
-            f"score {decision['score']}"
+            f"Phone-weighted release gate: {decision['status']}; "
+            f"score {decision['score']}; phone score {decision['phoneScore']}"
         )
     print(f"wrote aggregate report {args.output}")
     if args.enforce_gate and report.get("candidateDecision", {}).get("status") != "eligible-for-listening":

@@ -1,6 +1,6 @@
 # Independent S60 Klatt prototype
 
-`s60Klatt-0.5.0-clean-test5` is a deliberately separate NVDA add-on. Its
+`s60Klatt-0.6.0-clean-test6` is a deliberately separate NVDA add-on. Its
 package name, driver name and user-facing product name are **S60 Klatt**.
 Its explicit goal is to recreate the pronunciation behaviour, prosody and
 acoustic character of the historical Nokia S60 TTS systems through newly
@@ -24,10 +24,11 @@ staged add-on.
 
 The prototype currently offers two independent German 5320-targeted voices:
 male and female. Output from a separately and lawfully operated reference may
-be used for local black-box measurements only. It is not copied into source
-constants, linked into the runtime or packaged with the add-on. Public CI does
-not fetch a historical renderer, firmware or reference audio. The measurement
-record and reproducible local comparison command are in
+be used for local black-box measurements. Reference PCM is not copied into the
+source, linked into the runtime or packaged with the add-on; compact aggregate
+measurements guide the fit of newly authored synthesis parameters. Public CI
+does not fetch a historical renderer, firmware or reference audio. The
+measurement record and reproducible local comparison command are in
 [`CLEAN-ROOM-REFERENCE.md`](CLEAN-ROOM-REFERENCE.md).
 
 ## Implemented behaviour
@@ -52,6 +53,28 @@ record and reproducible local comparison command are in
   `st`, `ei`, `au`, `eu` and `ie`;
 - digit spelling and punctuation-neutral word separation;
 - deterministic output for repeatable regression tests.
+
+## Test 6 phone-profile candidate
+
+Test 5 failed listening despite looking plausible in a small set of aggregate
+measures. Test 6 therefore uses 28 controlled German vowel, stop, fricative,
+sonorant and liquid probes. Output-only analysis records an 18-point spectrum,
+an eight-coefficient cepstral envelope, source mixture, periodicity, pulse
+shape, F0 and focused duration for each probe. The retained targets contain no
+PCM, firmware data or reference runtime state.
+
+The phone profile exposed structural errors that global filtering could not
+repair. Voiced stops now have a periodic closure continuous with adjacent
+vowels and a separately filtered release; intervocalic `s` now maps to the
+voiced phone. Resonance, excitation and source-balance constants were then
+searched across all controlled probes. The independent core remains the same
+small streaming C implementation and retains immediate speech onset.
+
+On the separate 59-case German check, the phone-weighted score falls from
+70.795 in test 5 to 59.704 in test 6, a 15.7% improvement. The isolated-phone
+score falls from 70.371 to 57.239, an 18.7% improvement. Both exceed the
+predeclared 15% gate, so test 6 is eligible for listening. The score is a
+ranking aid, not evidence that the voice is perceptually identical.
 
 ## Test 5 source-character experiment
 

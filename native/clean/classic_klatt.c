@@ -36,136 +36,139 @@
  * used for an experimental candidate.
  */
 #ifndef CK_MALE_BASE_F0
-#define CK_MALE_BASE_F0 104.20237377
+#define CK_MALE_BASE_F0 97.5918091
 #endif
 #ifndef CK_MALE_DURATION_SCALE
-#define CK_MALE_DURATION_SCALE 1.062711047
+#define CK_MALE_DURATION_SCALE 1.05664782
 #endif
 #ifndef CK_MALE_F1_SCALE
-#define CK_MALE_F1_SCALE 1.286131101
+#define CK_MALE_F1_SCALE 1.08188636
 #endif
 #ifndef CK_MALE_F2_SCALE
-#define CK_MALE_F2_SCALE 0.907313863
+#define CK_MALE_F2_SCALE 1.12919267
 #endif
 #ifndef CK_MALE_F3_SCALE
-#define CK_MALE_F3_SCALE 0.82995155
+#define CK_MALE_F3_SCALE 1.03844375
 #endif
 #ifndef CK_MALE_VOICED_GAIN
-#define CK_MALE_VOICED_GAIN 1.865120855
+#define CK_MALE_VOICED_GAIN 1.30658458
 #endif
 #ifndef CK_MALE_NOISE_GAIN
-#define CK_MALE_NOISE_GAIN 0.404999301
+#define CK_MALE_NOISE_GAIN 0.517838913
 #endif
 #ifndef CK_MALE_F4
-#define CK_MALE_F4 3236.598473193
+#define CK_MALE_F4 3147.55531
 #endif
 #ifndef CK_MALE_F5
-#define CK_MALE_F5 3887.54132219
+#define CK_MALE_F5 4013.26247
 #endif
 #ifndef CK_MALE_HIGHPASS_HZ
-#define CK_MALE_HIGHPASS_HZ 117.194188306
+#define CK_MALE_HIGHPASS_HZ 20.0
 #endif
 #ifndef CK_TRANSITION_FRACTION
-#define CK_TRANSITION_FRACTION 0.15869866
+#define CK_TRANSITION_FRACTION 0.256351241
 #endif
 #ifndef CK_PHRASE_BOOST
-#define CK_PHRASE_BOOST 0.23
+#define CK_PHRASE_BOOST 0.14405538
 #endif
 #ifndef CK_ACCENT_BOOST
-#define CK_ACCENT_BOOST 0.10
+#define CK_ACCENT_BOOST 0.047273345
 #endif
 #ifndef CK_WORD_SLOPE
-#define CK_WORD_SLOPE 0.28
+#define CK_WORD_SLOPE 0.104450812
 #endif
 #ifndef CK_UTTERANCE_SLOPE
-#define CK_UTTERANCE_SLOPE 0.12
+#define CK_UTTERANCE_SLOPE 0.153787217
 #endif
 #ifndef CK_USE_PLATEAU_INTONATION
 #define CK_USE_PLATEAU_INTONATION 1
 #endif
 #ifndef CK_PHRASE_PLATEAU
-#define CK_PHRASE_PLATEAU 1.14
+#define CK_PHRASE_PLATEAU 1.12786119
 #endif
 #ifndef CK_PLATEAU_ACCENT_BOOST
-#define CK_PLATEAU_ACCENT_BOOST 0.035
+#define CK_PLATEAU_ACCENT_BOOST 0.06676323
 #endif
 #ifndef CK_EARLY_PHRASE_SLOPE
-#define CK_EARLY_PHRASE_SLOPE 0.0292
+#define CK_EARLY_PHRASE_SLOPE 0.079164657
 #endif
 #ifndef CK_FINAL_FALL_START
-#define CK_FINAL_FALL_START 0.852
+#define CK_FINAL_FALL_START 0.86521216
 #endif
 #ifndef CK_FINAL_FALL
-#define CK_FINAL_FALL 0.24
+#define CK_FINAL_FALL 0.160639591
 #endif
 #ifndef CK_GLOTTAL_OPEN_END
-#define CK_GLOTTAL_OPEN_END 0.40
+#define CK_GLOTTAL_OPEN_END 0.474641603
 #endif
 #ifndef CK_GLOTTAL_CLOSE_END
-#define CK_GLOTTAL_CLOSE_END 0.50
+#define CK_GLOTTAL_CLOSE_END 0.587551227
 #endif
 #ifndef CK_GLOTTAL_SOURCE_GAIN
-#define CK_GLOTTAL_SOURCE_GAIN 2.114334083
+#define CK_GLOTTAL_SOURCE_GAIN 2.99786494
 #endif
 #ifndef CK_VOWEL_R1_GAIN
-#define CK_VOWEL_R1_GAIN 0.430314685
+#define CK_VOWEL_R1_GAIN 0.322358289
 #endif
 #ifndef CK_VOWEL_R2_GAIN
-#define CK_VOWEL_R2_GAIN 3.542284009
+#define CK_VOWEL_R2_GAIN 2.13583081
 #endif
 #ifndef CK_VOWEL_R3_GAIN
-#define CK_VOWEL_R3_GAIN 2.491973693
+#define CK_VOWEL_R3_GAIN 1.35040103
 #endif
 #ifndef CK_VOWEL_R4_GAIN
-#define CK_VOWEL_R4_GAIN 0.639462027
+#define CK_VOWEL_R4_GAIN 0.913315824
 #endif
 #ifndef CK_VOWEL_R5_GAIN
-#define CK_VOWEL_R5_GAIN 0.051814576
+#define CK_VOWEL_R5_GAIN 0.145375468
 #endif
 #ifndef CK_SONORANT_R1_GAIN
-#define CK_SONORANT_R1_GAIN 0.214416151
+#define CK_SONORANT_R1_GAIN 0.402427918
 #endif
 #ifndef CK_SONORANT_R2_GAIN
-#define CK_SONORANT_R2_GAIN 1.476630345
+#define CK_SONORANT_R2_GAIN 2.26586229
 #endif
 #ifndef CK_SONORANT_R3_GAIN
-#define CK_SONORANT_R3_GAIN 1.699269913
+#define CK_SONORANT_R3_GAIN 2.19506716
 #endif
 #ifndef CK_SONORANT_R4_GAIN
-#define CK_SONORANT_R4_GAIN 0.085299204
+#define CK_SONORANT_R4_GAIN 0.6603285
 #endif
 #ifndef CK_SONORANT_R5_GAIN
-#define CK_SONORANT_R5_GAIN 0.202283292
+#define CK_SONORANT_R5_GAIN 0.118445332
 #endif
 #ifndef CK_NOISE_R1_GAIN
-#define CK_NOISE_R1_GAIN 0.120626292
+#define CK_NOISE_R1_GAIN 0.318809823
 #endif
 #ifndef CK_NOISE_R2_GAIN
-#define CK_NOISE_R2_GAIN 0.191621891
+#define CK_NOISE_R2_GAIN 0.559967656
 #endif
 #ifndef CK_NOISE_R3_GAIN
-#define CK_NOISE_R3_GAIN 0.225510298
+#define CK_NOISE_R3_GAIN 0.120259968
 #endif
 #ifndef CK_NOISE_R4_GAIN
-#define CK_NOISE_R4_GAIN 0.110203523
+#define CK_NOISE_R4_GAIN 0.412081087
 #endif
 #ifndef CK_NOISE_R5_GAIN
-#define CK_NOISE_R5_GAIN 0.050347456
+#define CK_NOISE_R5_GAIN 0.084522225
 #endif
 #ifndef CK_STOP_RELEASE_START
-#define CK_STOP_RELEASE_START 0.48
+#define CK_STOP_RELEASE_START 0.527823021
 #endif
 #ifndef CK_FRICATION_BANDWIDTH_SCALE
-#define CK_FRICATION_BANDWIDTH_SCALE 0.40
+#define CK_FRICATION_BANDWIDTH_SCALE 0.324946285
 #endif
 #ifndef CK_IMPULSIVE_NOISE_BLEND
-#define CK_IMPULSIVE_NOISE_BLEND 0.40
+#define CK_IMPULSIVE_NOISE_BLEND 0.409715241
 #endif
 #ifndef CK_SMOOTH_CLOSURE_BLEND
-#define CK_SMOOTH_CLOSURE_BLEND 0.50
+#define CK_SMOOTH_CLOSURE_BLEND 0.244697096
 #endif
 #ifndef CK_SOURCE_TILT
-#define CK_SOURCE_TILT 0.25
+#define CK_SOURCE_TILT 0.060060515
+#endif
+#ifndef CK_VOICED_STOP_GAIN
+#define CK_VOICED_STOP_GAIN 0.312352975
 #endif
 
 typedef enum phoneme_id {
@@ -793,7 +796,13 @@ static int append_word(segment_list *list, const uint16_t *input, size_t length,
                     ? PH_ER : PH_R, 1.0f)) return 0;
                 break;
             case 's':
-                if (!append_segment(list, i == 0u && i + 1u < length && is_vowel_character(word[i + 1u]) ? PH_Z : PH_S, 1.0f)) return 0;
+                if (!append_segment(list,
+                    ((i == 0u && i + 1u < length && is_vowel_character(word[i + 1u]))
+                        || (i > 0u && i + 1u < length
+                            && is_vowel_character(word[i - 1u])
+                            && is_vowel_character(word[i + 1u])))
+                        ? PH_Z : PH_S,
+                    1.0f)) return 0;
                 break;
             case 't': if (!append_segment(list, PH_T, 1.0f)) return 0; break;
             case 'v': if (!append_segment(list, PH_F, 1.0f)) return 0; break;
@@ -864,6 +873,40 @@ static double resonator_tick(resonator *filter, double input) {
 static double next_noise(classic_klatt_engine *engine) {
     engine->noise_state = engine->noise_state * 1664525u + 1013904223u;
     return ((double)((engine->noise_state >> 8u) & 0x00ffffffu) / 8388607.5) - 1.0;
+}
+
+static int source_is_periodic(const phoneme_spec *spec) {
+    return spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED
+        || (spec->source == SOURCE_STOP && spec->noise < 0.8f);
+}
+
+static double glottal_source_tick(classic_klatt_engine *engine, double f0) {
+    double glottal;
+    engine->phase += f0 / (double)CK_SAMPLE_RATE;
+    if (engine->phase >= 1.0) engine->phase -= floor(engine->phase);
+    if (engine->phase < CK_GLOTTAL_OPEN_END) {
+        glottal = 0.5 - 0.5 * cos(
+            CK_PI * engine->phase / CK_GLOTTAL_OPEN_END
+        );
+    } else if (engine->phase < CK_GLOTTAL_CLOSE_END) {
+        double close_position =
+            (engine->phase - CK_GLOTTAL_OPEN_END)
+            / (CK_GLOTTAL_CLOSE_END - CK_GLOTTAL_OPEN_END);
+        double abrupt_close = cos(0.5 * CK_PI * close_position);
+        double smooth_close = 0.5 + 0.5 * cos(CK_PI * close_position);
+        glottal = (1.0 - CK_SMOOTH_CLOSURE_BLEND) * abrupt_close
+            + CK_SMOOTH_CLOSURE_BLEND * smooth_close;
+    } else {
+        glottal = 0.0;
+    }
+    {
+        double source =
+            (glottal - engine->previous_glottal) * CK_GLOTTAL_SOURCE_GAIN;
+        engine->previous_glottal = glottal;
+        engine->source_tilt_state = (1.0 - CK_SOURCE_TILT) * source
+            + CK_SOURCE_TILT * engine->source_tilt_state;
+        return engine->source_tilt_state;
+    }
 }
 
 static int pcm_flush(pcm_writer *writer) {
@@ -989,13 +1032,12 @@ static int synthesize_segments(
                 (1.0 - CK_IMPULSIVE_NOISE_BLEND) * noise
                 + CK_IMPULSIVE_NOISE_BLEND * impulsive_noise;
             double output;
-            int voiced = spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED;
-            int previous_voiced = previous_spec && (
-                previous_spec->source == SOURCE_VOWEL || previous_spec->source == SOURCE_VOICED
+            int voiced = source_is_periodic(spec);
+            int sample_voiced = voiced && !(
+                spec->source == SOURCE_STOP && position >= CK_STOP_RELEASE_START
             );
-            int next_voiced = next_spec && (
-                next_spec->source == SOURCE_VOWEL || next_spec->source == SOURCE_VOICED
-            );
+            int previous_voiced = previous_spec && source_is_periodic(previous_spec);
+            int next_voiced = next_spec && source_is_periodic(next_spec);
 
             if ((sample_index & 63u) == 0u && engine_cancelled(engine)) {
                 return 0;
@@ -1015,52 +1057,31 @@ static int synthesize_segments(
 
             resonator_set(&f1, profile->f1_scale * (
                 previous_f1 + transition * ((double)spec->f1 - previous_f1)
-            ), spec->b1 * (voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
+            ), spec->b1 * (sample_voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
             resonator_set(&f2, profile->f2_scale * (
                 previous_f2 + transition * ((double)spec->f2 - previous_f2)
-            ), spec->b2 * (voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
+            ), spec->b2 * (sample_voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
             resonator_set(&f3, profile->f3_scale * (
                 previous_f3 + transition * ((double)spec->f3 - previous_f3)
-            ), spec->b3 * (voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
+            ), spec->b3 * (sample_voiced ? 1.0 : CK_FRICATION_BANDWIDTH_SCALE));
             resonator_set(&f4, profile->f4, 260.0);
             resonator_set(&f5, profile->f5, 360.0);
             if (spec->source == SOURCE_VOWEL || spec->source == SOURCE_VOICED) {
-                double glottal;
-                engine->phase += f0 / (double)CK_SAMPLE_RATE;
-                if (engine->phase >= 1.0) engine->phase -= floor(engine->phase);
-                if (engine->phase < CK_GLOTTAL_OPEN_END) {
-                    glottal = 0.5 - 0.5 * cos(
-                        CK_PI * engine->phase / CK_GLOTTAL_OPEN_END
-                    );
-                } else if (engine->phase < CK_GLOTTAL_CLOSE_END) {
-                    double close_position =
-                        (engine->phase - CK_GLOTTAL_OPEN_END)
-                        / (CK_GLOTTAL_CLOSE_END - CK_GLOTTAL_OPEN_END);
-                    double abrupt_close = cos(0.5 * CK_PI * close_position);
-                    double smooth_close = 0.5 + 0.5 * cos(CK_PI * close_position);
-                    glottal = (1.0 - CK_SMOOTH_CLOSURE_BLEND) * abrupt_close
-                        + CK_SMOOTH_CLOSURE_BLEND * smooth_close;
-                } else {
-                    glottal = 0.0;
-                }
-                source = (glottal - engine->previous_glottal) * CK_GLOTTAL_SOURCE_GAIN;
-                engine->previous_glottal = glottal;
-                engine->source_tilt_state = (1.0 - CK_SOURCE_TILT) * source
-                    + CK_SOURCE_TILT * engine->source_tilt_state;
-                source = engine->source_tilt_state;
+                source = glottal_source_tick(engine, f0);
                 if (spec->source == SOURCE_VOICED) source *= 0.82;
                 source += noise * spec->noise * 0.18;
             } else if (spec->source == SOURCE_FRICATIVE) {
                 source = frication_noise * spec->noise;
             } else if (spec->source == SOURCE_STOP) {
                 if (position < CK_STOP_RELEASE_START) {
-                    source = spec->noise < 0.8f ? 0.04 * sin(2.0 * CK_PI * engine->phase) : 0.0;
-                    engine->phase += f0 / (double)CK_SAMPLE_RATE;
-                    if (engine->phase >= 1.0) engine->phase -= 1.0;
+                    source = voiced
+                        ? glottal_source_tick(engine, f0) * CK_VOICED_STOP_GAIN
+                        : 0.0;
                 } else {
                     double burst = (position - CK_STOP_RELEASE_START)
                         / (1.0 - CK_STOP_RELEASE_START);
                     source = frication_noise * spec->noise * exp(-5.0 * burst);
+                    engine->previous_glottal = 0.0;
                 }
             }
 
@@ -1074,7 +1095,7 @@ static int synthesize_segments(
                 double r3 = resonator_tick(&f3, source);
                 double r4 = resonator_tick(&f4, source);
                 double r5 = resonator_tick(&f5, source);
-                if (voiced) {
+                if (sample_voiced) {
                     /* Carrier probes require more first- and upper-formant
                      * energy for vowels than for sonorant consonants. */
                     if (spec->source == SOURCE_VOWEL) {
@@ -1127,7 +1148,7 @@ static int synthesize_segments(
 }
 
 const char *classic_klatt_version(void) {
-    return "0.5.0-clean-test5";
+    return "0.6.0-clean-test6";
 }
 
 classic_klatt_engine *classic_klatt_create(void) {

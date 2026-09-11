@@ -94,6 +94,7 @@ int main(void) {
     static const uint16_t tag[] = {'T', 'a', 'g'};
     static const uint16_t klatt[] = {'K', 'l', 'a', 't', 't'};
     static const uint16_t fuer[] = {'f', 0x00fcu, 'r'};
+    static const uint16_t asa[] = {'A', 's', 'a'};
     static const uint16_t anna_space[] = {'A', 'n', 'n', 'a', ' ', 'M', 'a', 'r', 'i', 'a'};
     static const uint16_t anna_comma[] = {'A', 'n', 'n', 'a', ',', ' ', 'M', 'a', 'r', 'i', 'a'};
     static const uint16_t anna_period[] = {'A', 'n', 'n', 'a', '.', ' ', 'M', 'a', 'r', 'i', 'a'};
@@ -117,6 +118,7 @@ int main(void) {
     assert_phonemes(tag, (uint32_t)(sizeof(tag) / sizeof(tag[0])), "t a: k _");
     assert_phonemes(klatt, (uint32_t)(sizeof(klatt) / sizeof(klatt[0])), "k l a t _");
     assert_phonemes(fuer, (uint32_t)(sizeof(fuer) / sizeof(fuer[0])), "f ue 6 _");
+    assert_phonemes(asa, (uint32_t)(sizeof(asa) / sizeof(asa[0])), "a: z a _");
 
     punctuation_space = render(
         engine, anna_space, (uint32_t)(sizeof(anna_space) / sizeof(anna_space[0])),

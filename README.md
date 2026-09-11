@@ -69,6 +69,21 @@ the available 4.63 source dump is marked proprietary and has no open-source
 license. The test-5 candidate contains only newly authored math and no DECtalk
 code, binary, dictionary, sampled voice cycle or other data.
 
+Listening found test 5 no closer to the historical voice, so test 6 was not
+made by another fixed-sentence filter fit. Measurement version 2 instead
+weights 28 controlled German phone probes and records compact
+spectral-envelope, excitation-shape and source-mix signatures. Those
+measurements exposed two structural errors: voiced stops used the unvoiced
+filter path, and intervocalic `s` remained voiceless.
+
+Clean test 6 gives `b`, `d` and `g` a periodic closure followed by a separately
+filtered release, corrects intervocalic `s`, and fits the small core against
+all 28 phone probes. Across the full 59-case German check, its phone-weighted
+score falls from 70.795 to 59.704 (15.7%) and its isolated-phone score from
+70.371 to 57.239 (18.7%). Both clear the predeclared 15% listening gate. This
+does not claim perceptual identity; it makes test 6 the first candidate whose
+improvement survives both the phone fit and the broader corpus.
+
 The repository also retains the earlier emulation/native-porting work described
 below. The clean-room claim applies only to `addonClean`, `native/clean` and the
 newly written output-analysis tools; it is not a declaration that every legacy

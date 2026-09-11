@@ -76,14 +76,58 @@ python tools/run_s60_blackbox_local.py \
   --data-tree C:\path\to\5320\files \
   --candidate-dll C:\path\to\classic_klatt_x64.dll \
   --output s60-blackbox-5320-male.json \
+  --phone-profile-output s60-phones-5320-de-male.json \
+  --confirm-authorized-reference
+```
+
+On Linux, an already installed Python reference package can be kept behind the
+same process boundary with the small adapter below. It contains and copies no
+reference implementation; the named directory and its Unicorn dependency stay
+outside the independent project:
+
+```console
+export S60_REFERENCE_DRIVER_DIR=/path/to/installed/addon/synthDrivers
+python tools/run_s60_blackbox_local.py \
+  --reference-renderer tools/render_authorized_s60_reference.py \
+  --rom /path/to/5320/SYM.ROM \
+  --data-tree /path/to/5320/files \
+  --candidate-dll ./libclassic_klatt.so \
+  --output s60-blackbox-5320-male.json \
+  --phone-profile-output s60-phones-5320-de-male.json \
   --confirm-authorized-reference
 ```
 
 `--language de-DE` is the default. A previous aggregate report becomes a
 release baseline with `--baseline-report old-report.json --enforce-gate`.
-Candidates improving the non-punctuation score by less than 15 percent are
-rejected before listening. Clearing the gate only makes a build eligible for a
-short listening check; it does not establish perceptual identity.
+The optional phone profile contains only aggregate output-derived measurements
+for the 28 labelled German vowel, stop, fricative, sonorant and liquid probes.
+It stores no PCM or internal reference state and is intended as the target for
+a later independently authored data-driven renderer.
+
+On Linux, an already installed and authorized Python reference package can be
+placed behind the same separate-process interface without copying it into this
+repository. Set `S60_REFERENCE_DRIVER_DIR` to the directory containing its
+`_nokia` package, then supply `tools/render_authorized_s60_reference.py` as the
+reference renderer. The helper contains no emulator, ROM or speech data.
+
+Once the aggregate profile exists, fitting no longer invokes the historical
+renderer or needs its WAV output:
+
+```console
+python tools/fit_clean_klatt_phone_profile.py \
+  s60-phones-5320-de-male.json \
+  --output clean-klatt-phone-fit.json
+```
+
+Each trial compiles only the independent core and renders the 28 self-authored
+probe strings. Stored spectrum, cepstrum, source-mixture, periodicity, pulse
+shape, F0 and duration targets rank candidates before the full release gate.
+
+Candidates improving the phone-weighted non-punctuation score by less than 15
+percent are rejected before listening. Even when the combined score improves,
+the gate remains closed unless the isolated-phone score improves by the same
+threshold. Clearing the gate only makes a build eligible for a short listening
+check; it does not establish perceptual identity.
 
 For a single already captured and authorized output-only WAV, the independent
 core can be searched without invoking any historical runtime:
@@ -121,7 +165,16 @@ measurement artifact, not reproduced by the independent runtime. Preserving
 immediate first audio for screen-reader use takes priority over matching file
 boundaries that do not change phonemes, spectral character or intonation.
 
+Metric version 2 also derives an eight-coefficient cepstral description of the
+spectral envelope plus crest factor and first-difference energy for the source
+pulse. Controlled phone probes are compared in their phone-bearing window,
+with a separate penalty for confusing quiet, periodic and aperiodic source
+mixtures. These measures address the failure mode where whole-word duration,
+pitch and energy looked closer while the perceived phones and timbre did not.
+
 The objective gate excludes punctuation because matching it can conceal badly
 wrong phones. It is designed to spare the listener from small, unpromising
-iterations. Separate language frontends must still be fitted against controlled
-contrasts rather than against rules for linguistically ideal pronunciation.
+iterations. Reports made with earlier metric versions cannot be used as a
+baseline; both baseline and candidate must be regenerated. Separate language
+frontends must still be fitted against controlled contrasts rather than against
+rules for linguistically ideal pronunciation.

@@ -29,6 +29,10 @@ jobs:
             tools/render_clean_klatt_wav.py \
             tools/capture_s60_blackbox.py \
             tools/analyze_s60_blackbox.py \
+            tools/export_s60_phone_profile.py \
+            tools/fit_clean_klatt_profile.py \
+            tools/fit_clean_klatt_phone_profile.py \
+            tools/render_authorized_s60_reference.py \
             tools/run_s60_blackbox_local.py
       - name: Verify the clean add-on source boundary
         shell: pwsh
@@ -155,11 +159,11 @@ jobs:
           if ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum -gt 2MB) {
             throw 'Independent prototype package unexpectedly exceeds 2 MiB'
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.5.0-clean-test5.zip -Force
-          Move-Item build/s60Klatt-0.5.0-clean-test5.zip build/s60Klatt-0.5.0-clean-test5.nvda-addon
-          Get-Item build/s60Klatt-0.5.0-clean-test5.nvda-addon | Format-List Name,Length
+          Compress-Archive -Path "$stage/*" -DestinationPath build/s60Klatt-0.6.0-clean-test6.zip -Force
+          Move-Item build/s60Klatt-0.6.0-clean-test6.zip build/s60Klatt-0.6.0-clean-test6.nvda-addon
+          Get-Item build/s60Klatt-0.6.0-clean-test6.nvda-addon | Format-List Name,Length
       - uses: actions/upload-artifact@v6
         with:
-          name: s60Klatt-0.5.0-clean-test5
-          path: build/s60Klatt-0.5.0-clean-test5.nvda-addon
+          name: s60Klatt-0.6.0-clean-test6
+          path: build/s60Klatt-0.6.0-clean-test6.nvda-addon
           if-no-files-found: error

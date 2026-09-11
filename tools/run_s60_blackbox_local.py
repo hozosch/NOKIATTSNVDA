@@ -12,6 +12,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = ROOT / "tools" / "capture_s60_blackbox.py"
 ANALYZE = ROOT / "tools" / "analyze_s60_blackbox.py"
+EXPORT_PHONE_PROFILE = ROOT / "tools" / "export_s60_phone_profile.py"
 DEFAULT_CORPUS = ROOT / "tools" / "s60_blackbox_corpus.json"
 
 
@@ -35,6 +36,12 @@ def main() -> int:
     parser.add_argument("--voice", choices=("male", "female"), default="male")
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--phone-profile-output",
+        type=Path,
+        help="also retain compact per-phone acoustic targets from the aggregate report",
+    )
+    parser.add_argument("--phone-profile-language", default="de-DE")
     parser.add_argument("--baseline-report", type=Path)
     parser.add_argument("--minimum-improvement-percent", type=float, default=15.0)
     parser.add_argument("--enforce-gate", action="store_true")
@@ -106,8 +113,21 @@ def main() -> int:
             command.append("--enforce-gate")
         run(command)
 
+        if args.phone_profile_output:
+            run([
+                sys.executable,
+                str(EXPORT_PHONE_PROFILE),
+                str(args.output.resolve()),
+                "--language",
+                args.phone_profile_language,
+                "--output",
+                str(args.phone_profile_output.resolve()),
+            ])
+
     print("transient reference and candidate PCM erased")
     print(f"retained aggregate report only: {args.output.resolve()}")
+    if args.phone_profile_output:
+        print(f"retained aggregate phone profile: {args.phone_profile_output.resolve()}")
     return 0
 
 

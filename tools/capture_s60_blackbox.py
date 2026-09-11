@@ -43,6 +43,13 @@ def load_corpus(path: Path) -> list[dict]:
             raise ValueError(f"empty case text: {identifier}")
         if not isinstance(case["languageId"], int):
             raise ValueError(f"invalid language id: {identifier}")
+        phone_target = case.get("phoneTarget")
+        if phone_target is not None and (
+            not isinstance(phone_target, str)
+            or not phone_target
+            or not phone_target.replace("_", "").isalnum()
+        ):
+            raise ValueError(f"invalid phone target: {identifier}")
     for case in cases:
         comparison = case.get("compareTo")
         if comparison and comparison not in identifiers:
@@ -134,6 +141,8 @@ def capture_case(
     }
     if case.get("compareTo"):
         row["compareTo"] = case["compareTo"]
+    if case.get("phoneTarget"):
+        row["phoneTarget"] = case["phoneTarget"]
     row.update(wav_details(output))
     return row
 
