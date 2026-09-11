@@ -42,12 +42,14 @@ PCM-identical to whitespace alone in all five measured 5320 languages. The
 pauses and question contour while retaining the still-unmatched test 2
 acoustic core for further measurement.
 
-The next probe targets the fundamental mismatch reported in listening tests:
-intonation and acoustic character. It measures time-local F0 contours,
-periodicity, spectral tilt and regional resonance peaks on isolated vowel and
-`l` contexts, growing phrases and short sentences. Each historical language
-is measured independently; the current candidate is compared only with the
-German 5320 reference.
+Probe 2 targets the fundamental mismatch reported in listening tests:
+intonation and acoustic character. Its word-level German contour was fitted
+against time-local F0 measurements from isolated vowels, `l` contexts, growing
+phrases and short sentences. Vowels receive a separately measured parallel
+filter balance. No reference start padding was copied into the candidate, so
+speech still begins immediately. Each historical language is measured
+independently; the current candidate is compared only with the German 5320
+reference.
 
 ## Project goal
 

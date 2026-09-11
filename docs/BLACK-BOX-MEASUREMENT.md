@@ -90,6 +90,11 @@ F0-contour and spectrum errors by probe group. Explicit contrast pairs also
 report whether their PCM is identical. The JSON report deliberately omits PCM
 hashes, raw sample envelopes and all audio.
 
+The reference renderer's roughly 60–80 ms output padding is recorded as a
+measurement artifact, not reproduced by the independent runtime. Preserving
+immediate first audio for screen-reader use takes priority over matching file
+boundaries that do not change phonemes, spectral character or intonation.
+
 This first stage is sufficient to establish behavior such as whether a comma
 or period changes the waveform or inserts a pause. It does not yet identify a
 phone sequence. Subsequent stages will add time-local formant, excitation and

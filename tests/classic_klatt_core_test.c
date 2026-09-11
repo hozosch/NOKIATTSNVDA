@@ -14,6 +14,8 @@ typedef struct capture {
     uint32_t hash;
     uint32_t peak;
     uint64_t clipped;
+    uint64_t leading_zero_samples;
+    int saw_nonzero;
     int cancel_after_first;
 } capture;
 
@@ -28,6 +30,10 @@ static void capture_pcm(void *user, const int16_t *samples, uint32_t count, uint
         uint16_t bits = (uint16_t)samples[i];
         uint32_t magnitude = samples[i] < 0
             ? (uint32_t)(-(int32_t)samples[i]) : (uint32_t)samples[i];
+        if (!state->saw_nonzero) {
+            if (samples[i] == 0) state->leading_zero_samples += 1u;
+            else state->saw_nonzero = 1;
+        }
         if (samples[i] != 0) state->nonzero += 1u;
         if (magnitude > state->peak) state->peak = magnitude;
         if (magnitude >= 32000u) state->clipped += 1u;
@@ -142,6 +148,7 @@ int main(void) {
     assert(male1.nonzero > male1.samples / 4u);
     assert(male1.peak > 1000u && male1.peak < 32767u);
     assert(male1.clipped < male1.samples / 100u);
+    assert(male1.leading_zero_samples < 160u);
     assert(male1.callbacks > 1u);
     assert(male1.samples == male2.samples);
     assert(male1.hash == male2.hash);

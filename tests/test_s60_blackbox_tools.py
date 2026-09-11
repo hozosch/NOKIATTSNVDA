@@ -87,6 +87,7 @@ class BlackBoxToolsTest(unittest.TestCase):
             metrics = ANALYZE.wav_metrics(path)
         self.assertAlmostEqual(200.0, metrics["medianF0Hz"], delta=8.0)
         self.assertEqual(200, metrics["spectrumPeakHz"])
+        self.assertEqual(200, len(metrics["spectrumDb"]))
         self.assertGreater(metrics["voicedFrameRatio"], 0.9)
         self.assertGreater(sum(value is not None for value in metrics["f0ContourHz"]), 15)
 

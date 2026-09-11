@@ -60,7 +60,7 @@ _VOICES = OrderedDict((
 
 class SynthDriver(BaseSynthDriver):
 	name = "s60Klatt"
-	description = "S60 Klatt (independent 5320 reconstruction, test 3 probe 1)"
+	description = "S60 Klatt (independent 5320 reconstruction, test 3 probe 2)"
 	supportedSettings = (
 		BaseSynthDriver.VoiceSetting(),
 		BaseSynthDriver.RateSetting(),

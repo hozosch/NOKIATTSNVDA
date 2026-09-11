@@ -897,9 +897,16 @@ static int synthesize_segments(
                 double r4 = resonator_tick(&f4, source);
                 double r5 = resonator_tick(&f5, source);
                 if (voiced) {
-                    output = (0.06 * r1 + 2.30 * r2 + 1.60 * r3
-                            + 0.12 * r4 + 0.06 * r5)
-                        * (double)spec->gain * profile->voiced_gain;
+                    /* Carrier probes require more first- and upper-formant
+                     * energy for vowels than for sonorant consonants. */
+                    if (spec->source == SOURCE_VOWEL) {
+                        output = (0.20 * r1 + 2.30 * r2 + 1.60 * r3
+                                + 0.40 * r4 + 0.20 * r5);
+                    } else {
+                        output = (0.06 * r1 + 2.30 * r2 + 1.60 * r3
+                                + 0.12 * r4 + 0.06 * r5);
+                    }
+                    output *= (double)spec->gain * profile->voiced_gain;
                 } else {
                     output = (0.10 * r1 + 0.22 * r2 + 0.22 * r3
                             + 0.10 * r4 + 0.04 * r5)
@@ -937,7 +944,7 @@ static int synthesize_segments(
 }
 
 const char *classic_klatt_version(void) {
-    return "0.3.0-clean-test3-probe1";
+    return "0.3.0-clean-test3-probe2";
 }
 
 classic_klatt_engine *classic_klatt_create(void) {
