@@ -17,13 +17,22 @@ observable elements:
 The capture tool does not import reference implementation code, inspect its
 memory, request internal phoneme or Klatt frames, or copy parameter tables. It
 does not make the legal provenance of a particular reference installation
-lawful by itself; the person running it still needs a lawful basis to use that
+lawful by itself; the person running it still needs to be entitled to use that
 installation.
 
-Reference WAVs are transient measurement inputs. `reference-output/` is
-ignored by Git, and CI removes all captured WAVs before publishing its report.
-No reference PCM, firmware, snapshot or reference executable is placed in the
-independent add-on.
+German Copyright Act sections
+[`69a(2)`](https://www.gesetze-im-internet.de/urhg/__69a.html) and
+[`69d(3)`](https://www.gesetze-im-internet.de/urhg/__69d.html) distinguish a
+program's protected expression from underlying ideas and permit a person
+entitled to use a program copy to observe, study or test its functioning while
+performing authorized acts. This record is an engineering boundary, not legal
+advice. It deliberately does not rely on the narrower decompilation rule in
+[`69e`](https://www.gesetze-im-internet.de/urhg/__69e.html).
+
+Reference WAVs are transient measurement inputs. The local wrapper creates
+them below an operating-system temporary directory and erases them after the
+aggregate report has been written. No reference PCM, firmware, snapshot or
+reference executable is placed in the independent add-on.
 
 ## Language separation
 
@@ -33,13 +42,16 @@ universal phonetic model. German, British English, French and Italian are
 probed separately because their historical S60 frontends use different phone
 inventories, contextual realizations and stress behavior.
 
-The corpus contains 147 cases across those five languages. It includes:
+The corpus contains 175 cases across those five languages. It includes:
 
 - punctuation versus plain spaces, plus punctuation without surrounding space;
 - vowel inventories and length contrasts;
-- consonant and liquid contexts, including `l` in several positions;
+- isolated German stops, fricatives and sonorants plus liquid contexts,
+  including `l` in several positions;
 - weak endings, diphthongs and consonant length where applicable;
-- compounds, stress probes and a short sentence;
+- German `ch`, `sch`, `sp`/`st`, affricate, `ng`, final-devoicing, vocalic-`r`
+  and weak-vowel rules;
+- compounds, stress probes and short as well as longer intonation phrases;
 - German digit behavior.
 
 The acoustic and prosody subset separates short vowel carriers, `l` in
@@ -50,34 +62,28 @@ control rather than a template for German, English, French or Italian.
 All corpus text in `tools/s60_blackbox_corpus.json` was written for this test;
 it is not extracted from firmware resources or dictionaries.
 
-## Capturing the external reference
+## Running an authorized external reference locally
 
-The current adapter drives the public command-line boundary of `nk_render`:
+The public GitHub workflow validates only the newly written tools. It does not
+download a ROM, historical executable, emulator or third-party reference
+package. Reference comparison is an explicit local operation. The wrapper
+requires the operator to confirm that the supplied installation may be used:
 
 ```console
-python tools/capture_s60_blackbox.py \
-  --backend nk-render \
-  --renderer C:\path\to\nk_render.exe \
+python tools/run_s60_blackbox_local.py \
+  --reference-renderer C:\path\to\nk_render.exe \
   --rom C:\path\to\5320\SYM.ROM \
   --data-tree C:\path\to\5320\files \
-  --voice male \
-  --output-dir reference-output\5320-male \
-  --jobs 4
+  --candidate-dll C:\path\to\classic_klatt_x64.dll \
+  --output s60-blackbox-5320-male.json \
+  --confirm-authorized-reference
 ```
 
-`--language de-DE` can restrict a capture to one frontend. The corresponding
-independent German candidate is captured through its public DLL API:
-
-```console
-python tools/capture_s60_blackbox.py \
-  --backend clean-core \
-  --renderer C:\path\to\classic_klatt_x64.dll \
-  --language de-DE \
-  --voice male \
-  --output-dir reference-output\candidate-de
-```
-
-Existing output is never overwritten unless `--force` is supplied.
+`--language de-DE` is the default. A previous aggregate report becomes a
+release baseline with `--baseline-report old-report.json --enforce-gate`.
+Candidates improving the non-punctuation score by less than 15 percent are
+rejected before listening. Clearing the gate only makes a build eligible for a
+short listening check; it does not establish perceptual identity.
 
 ## Current analysis
 
@@ -85,18 +91,19 @@ Existing output is never overwritten unless `--force` is supplied.
 internal quiet intervals, RMS, peak level and zero-crossing density. It now
 also derives a 24-point F0 contour, F0 range and periodicity, a 25 Hz-spaced
 spectral envelope through 5 kHz, spectral tilt, coarse spectral bands and
-three regional resonance peaks. Candidate comparisons summarize the duration,
-F0-contour and spectrum errors by probe group. Explicit contrast pairs also
-report whether their PCM is identical. The JSON report deliberately omits PCM
-hashes, raw sample envelopes and all audio.
+three regional resonance peaks. A second, transient analysis aligns 30 ms
+frames with dynamic time warping after discarding only leading and trailing
+padding. It measures framewise spectral shape, spectral transitions, voicing
+decisions, F0 in cents, periodicity, unvoiced high-band energy, spectral flux
+and regional resonance trajectories. The JSON report deliberately omits PCM
+hashes, raw sample envelopes, frame feature sequences and all audio.
 
 The reference renderer's roughly 60–80 ms output padding is recorded as a
 measurement artifact, not reproduced by the independent runtime. Preserving
 immediate first audio for screen-reader use takes priority over matching file
 boundaries that do not change phonemes, spectral character or intonation.
 
-This first stage is sufficient to establish behavior such as whether a comma
-or period changes the waveform or inserts a pause. It does not yet identify a
-phone sequence. Subsequent stages will add time-local formant, excitation and
-noise measurements and will fit separate language frontends against controlled
+The objective gate excludes punctuation because matching it can conceal badly
+wrong phones. It is designed to spare the listener from small, unpromising
+iterations. Separate language frontends must still be fitted against controlled
 contrasts rather than against rules for linguistically ideal pronunciation.

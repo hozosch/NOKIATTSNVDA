@@ -46,7 +46,7 @@ class BlackBoxToolsTest(unittest.TestCase):
         cases = CAPTURE.load_corpus(TOOLS / "s60_blackbox_corpus.json")
         languages = {case["language"] for case in cases}
         self.assertEqual({"de-DE", "en-GB", "fi-FI", "fr-FR", "it-IT"}, languages)
-        self.assertEqual(147, len(cases))
+        self.assertEqual(175, len(cases))
         self.assertTrue(any(case.get("compareTo") for case in cases))
 
     def test_nk_renderer_command_is_an_explicit_process_boundary(self):
@@ -105,9 +105,39 @@ class BlackBoxToolsTest(unittest.TestCase):
             different = ANALYZE.compare_metrics(base_metrics, ANALYZE.wav_metrics(paused))
         self.assertTrue(same["pcmIdentical"])
         self.assertEqual(0.0, same["durationDeltaMs"])
+        self.assertEqual(0.0, same["localFeatureScore"])
+        self.assertGreater(same["alignedFrameCount"], 5)
         self.assertFalse(different["pcmIdentical"])
         self.assertEqual(80.0, different["durationDeltaMs"])
         self.assertGreater(different["energyEnvelopeDistance"], 0.05)
+        self.assertGreater(different["timeWarpRatio"], 0.0)
+
+    def test_time_local_analysis_detects_pitch_and_spectrum_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            low = root / "low.wav"
+            high = root / "high.wav"
+            write_test_wav(low, [(500, True)], frequency=160.0)
+            write_test_wav(high, [(500, True)], frequency=260.0)
+            comparison = ANALYZE.compare_metrics(
+                ANALYZE.wav_metrics(low), ANALYZE.wav_metrics(high)
+            )
+        self.assertGreater(comparison["localFeatureScore"], 5.0)
+        self.assertGreater(comparison["f0ContourRmseCents"], 500.0)
+        self.assertGreater(comparison["frameSpectrumDistanceDb"], 1.0)
+
+    def test_candidate_gate_ignores_punctuation_and_requires_large_gain(self):
+        rows = [
+            {"group": "punctuation", "localFeatureScore": 0.0},
+            {"group": "acoustic-vowel", "localFeatureScore": 40.0},
+            {"group": "consonants", "localFeatureScore": 50.0},
+        ]
+        baseline = ANALYZE.candidate_decision(rows)
+        self.assertEqual(45.0, baseline["score"])
+        rejected = ANALYZE.candidate_decision(rows, baseline_score=50.0)
+        self.assertEqual("rejected-small-improvement", rejected["status"])
+        accepted = ANALYZE.candidate_decision(rows, baseline_score=60.0)
+        self.assertEqual("eligible-for-listening", accepted["status"])
 
 
 if __name__ == "__main__":

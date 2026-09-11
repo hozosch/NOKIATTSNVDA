@@ -20,6 +20,12 @@ MIN_F0_HZ = 65
 MAX_F0_HZ = 320
 SPECTRUM_STEP_HZ = 25
 SPECTRUM_MAX_HZ = 5000
+LOCAL_FRAME_MS = 30
+LOCAL_HOP_MS = 20
+LOCAL_SPECTRUM_HZ = (
+    100, 150, 200, 250, 300, 400, 500, 650, 800,
+    1000, 1250, 1500, 1800, 2200, 2700, 3300, 4000, 4800,
+)
 
 
 def read_pcm(path: Path) -> tuple[int, list[int], str]:
@@ -93,6 +99,292 @@ def _goertzel_power(frame: list[float], rate: int, frequency: int) -> float:
         previous2 = previous
         previous = current
     return max(0.0, previous2 * previous2 + previous * previous - coefficient * previous * previous2)
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _frame_spectrum(frame: list[int], rate: int) -> tuple[list[float], float]:
+    mean = sum(frame) / len(frame)
+    denominator = max(1, len(frame) - 1)
+    windowed = [
+        (sample - mean) * (0.54 - 0.46 * math.cos(2.0 * math.pi * index / denominator))
+        for index, sample in enumerate(frame)
+    ]
+    powers = [_goertzel_power(windowed, rate, frequency) for frequency in LOCAL_SPECTRUM_HZ]
+    total = sum(powers) or 1.0
+    maximum = max(powers, default=0.0) or 1.0
+    spectrum = [
+        max(-80.0, 10.0 * math.log10(max(power, 1e-20) / maximum))
+        for power in powers
+    ]
+    high = sum(
+        power for frequency, power in zip(LOCAL_SPECTRUM_HZ, powers)
+        if frequency >= 2200
+    )
+    high_band = 10.0 * math.log10(max(high, 1e-20) / total)
+    return spectrum, high_band
+
+
+def _regional_peaks(spectrum: list[float]) -> list[int | None]:
+    peaks = []
+    for first, last in ((200, 1000), (1100, 2500), (2600, 4800)):
+        candidates = [
+            (level, frequency)
+            for frequency, level in zip(LOCAL_SPECTRUM_HZ, spectrum)
+            if first <= frequency <= last
+        ]
+        peaks.append(max(candidates)[1] if candidates else None)
+    return peaks
+
+
+def local_frame_features(samples: list[int], rate: int) -> list[dict]:
+    """Return transient frame features used only while comparing two WAVs.
+
+    Leading and trailing quiet frames are dropped so the historical renderer's
+    file padding cannot encourage latency in the independent implementation.
+    Internal quiet frames remain and therefore still influence alignment.
+    """
+    frame_size = max(32, rate * LOCAL_FRAME_MS // 1000)
+    hop = max(1, rate * LOCAL_HOP_MS // 1000)
+    if len(samples) < frame_size:
+        frames = [(0, samples + [0] * (frame_size - len(samples)))]
+    else:
+        frames = [
+            (start, samples[start:start + frame_size])
+            for start in range(0, len(samples) - frame_size + 1, hop)
+        ]
+    rms_values = [
+        math.sqrt(sum(value * value for value in frame) / len(frame))
+        for _start, frame in frames
+    ]
+    maximum_rms = max(rms_values, default=0.0)
+    active_threshold = max(24.0, maximum_rms * 0.04)
+    active_indexes = [index for index, rms in enumerate(rms_values) if rms >= active_threshold]
+    if not active_indexes:
+        return []
+    first = max(0, active_indexes[0] - 1)
+    last = min(len(frames) - 1, active_indexes[-1] + 1)
+    features = []
+    previous_spectrum: list[float] | None = None
+    for index in range(first, last + 1):
+        start, frame = frames[index]
+        rms = rms_values[index]
+        active = rms >= active_threshold
+        spectrum, high_band = _frame_spectrum(frame, rate)
+        frequency, periodicity = _pitch_for_frame(frame, rate) if active else (None, 0.0)
+        crossings = sum(
+            1 for left, right in zip(frame, frame[1:])
+            if (left < 0 <= right) or (left >= 0 > right)
+        )
+        flux = (
+            _mean([abs(a - b) for a, b in zip(spectrum, previous_spectrum)])
+            if previous_spectrum is not None else 0.0
+        )
+        features.append({
+            "timeMs": round(start * 1000.0 / rate, 3),
+            "active": active,
+            "energyDb": 20.0 * math.log10(max(rms, 1e-9) / max(maximum_rms, 1e-9)),
+            "zeroCrossingRate": crossings / max(1, len(frame) - 1),
+            "f0Hz": frequency,
+            "periodicity": periodicity,
+            "spectrumDb": spectrum,
+            "highBandDb": high_band,
+            "regionalPeaksHz": _regional_peaks(spectrum),
+            "spectralFluxDb": flux or 0.0,
+        })
+        previous_spectrum = spectrum
+    return features
+
+
+def _frame_cost(left: dict, right: dict) -> float:
+    activity_mismatch = 1.0 if left["active"] != right["active"] else 0.0
+    energy = min(2.0, abs(left["energyDb"] - right["energyDb"]) / 24.0)
+    if not left["active"] and not right["active"]:
+        return 0.8 * energy
+    spectrum = _mean([
+        abs(a - b) for a, b in zip(left["spectrumDb"], right["spectrumDb"])
+    ]) or 0.0
+    periodicity = abs(left["periodicity"] - right["periodicity"])
+    zcr = abs(left["zeroCrossingRate"] - right["zeroCrossingRate"])
+    if left["f0Hz"] is not None and right["f0Hz"] is not None:
+        f0 = min(2.0, abs(1200.0 * math.log2(right["f0Hz"] / left["f0Hz"])) / 500.0)
+        voicing_mismatch = 0.0
+    else:
+        f0 = 0.0
+        voicing_mismatch = 1.0 if (left["f0Hz"] is None) != (right["f0Hz"] is None) else 0.0
+    return (
+        0.46 * min(2.0, spectrum / 12.0)
+        + 0.14 * energy
+        + 0.10 * periodicity
+        + 0.08 * min(2.0, zcr * 8.0)
+        + 0.10 * f0
+        + 0.07 * voicing_mismatch
+        + 0.05 * activity_mismatch
+    )
+
+
+def align_frame_features(left: list[dict], right: list[dict]) -> list[tuple[int, int]]:
+    """Align frame sequences with bounded dynamic time warping."""
+    if not left or not right:
+        return []
+    rows = len(left)
+    columns = len(right)
+    band = max(abs(rows - columns) + 3, int(max(rows, columns) * 0.30))
+    infinity = float("inf")
+    costs = [[infinity] * (columns + 1) for _ in range(rows + 1)]
+    moves = [[0] * (columns + 1) for _ in range(rows + 1)]
+    costs[0][0] = 0.0
+    for i in range(1, rows + 1):
+        centre = i * columns / rows
+        first = max(1, int(centre - band))
+        last = min(columns, int(centre + band) + 1)
+        for j in range(first, last + 1):
+            diagonal = costs[i - 1][j - 1]
+            vertical = costs[i - 1][j] + 0.045
+            horizontal = costs[i][j - 1] + 0.045
+            previous, move = min(
+                ((diagonal, 1), (vertical, 2), (horizontal, 3)),
+                key=lambda item: item[0],
+            )
+            if math.isfinite(previous):
+                costs[i][j] = previous + _frame_cost(left[i - 1], right[j - 1])
+                moves[i][j] = move
+    if not math.isfinite(costs[rows][columns]):
+        return []
+    path = []
+    i, j = rows, columns
+    while i > 0 and j > 0:
+        path.append((i - 1, j - 1))
+        move = moves[i][j]
+        if move == 1:
+            i -= 1
+            j -= 1
+        elif move == 2:
+            i -= 1
+        elif move == 3:
+            j -= 1
+        else:
+            return []
+    path.reverse()
+    return path
+
+
+def compare_local_features(left: list[dict], right: list[dict]) -> dict:
+    path = align_frame_features(left, right)
+    if not path:
+        return {
+            "alignedFrameCount": 0,
+            "localFeatureScore": None,
+            "frameSpectrumDistanceDb": None,
+            "transitionSpectrumDistanceDb": None,
+            "f0ContourRmseCents": None,
+            "voicingMismatchRate": None,
+            "periodicityDistance": None,
+            "unvoicedHighBandDistanceDb": None,
+            "spectralFluxDistanceDb": None,
+            "timeWarpRatio": None,
+            "regionalPeakMeanAbsoluteDeltasHz": [None, None, None],
+        }
+
+    active_pairs = [
+        (left[i], right[j]) for i, j in path
+        if left[i]["active"] and right[j]["active"]
+    ]
+    spectrum_distances = [
+        _mean([abs(a - b) for a, b in zip(a_frame["spectrumDb"], b_frame["spectrumDb"])]) or 0.0
+        for a_frame, b_frame in active_pairs
+    ]
+    f0_cents = [
+        1200.0 * math.log2(b_frame["f0Hz"] / a_frame["f0Hz"])
+        for a_frame, b_frame in active_pairs
+        if a_frame["f0Hz"] is not None and b_frame["f0Hz"] is not None
+    ]
+    voicing_mismatches = [
+        (a_frame["f0Hz"] is None) != (b_frame["f0Hz"] is None)
+        for a_frame, b_frame in active_pairs
+    ]
+    unvoiced_pairs = [
+        (a_frame, b_frame) for a_frame, b_frame in active_pairs
+        if a_frame["f0Hz"] is None and b_frame["f0Hz"] is None
+    ]
+    transition_distances = []
+    for (previous_i, previous_j), (i, j) in zip(path, path[1:]):
+        if i == previous_i or j == previous_j:
+            continue
+        frames = (left[previous_i], right[previous_j], left[i], right[j])
+        if not all(frame["active"] for frame in frames):
+            continue
+        left_delta = [
+            current - previous
+            for previous, current in zip(left[previous_i]["spectrumDb"], left[i]["spectrumDb"])
+        ]
+        right_delta = [
+            current - previous
+            for previous, current in zip(right[previous_j]["spectrumDb"], right[j]["spectrumDb"])
+        ]
+        transition_distances.append(
+            _mean([abs(a - b) for a, b in zip(left_delta, right_delta)]) or 0.0
+        )
+    regional_deltas: list[list[float]] = [[], [], []]
+    for a_frame, b_frame in active_pairs:
+        for region, (a_peak, b_peak) in enumerate(zip(
+            a_frame["regionalPeaksHz"], b_frame["regionalPeaksHz"]
+        )):
+            if a_peak is not None and b_peak is not None:
+                regional_deltas[region].append(abs(b_peak - a_peak))
+
+    spectrum = _mean(spectrum_distances)
+    transition = _mean(transition_distances)
+    f0_rmse = math.sqrt(_mean([value * value for value in f0_cents]) or 0.0) if f0_cents else None
+    voicing = _mean([float(value) for value in voicing_mismatches])
+    periodicity = _mean([
+        abs(a_frame["periodicity"] - b_frame["periodicity"])
+        for a_frame, b_frame in active_pairs
+    ])
+    high_band = _mean([
+        abs(a_frame["highBandDb"] - b_frame["highBandDb"])
+        for a_frame, b_frame in unvoiced_pairs
+    ])
+    flux = _mean([
+        abs(a_frame["spectralFluxDb"] - b_frame["spectralFluxDb"])
+        for a_frame, b_frame in unvoiced_pairs
+    ])
+    warp_moves = sum(
+        1 for (previous_i, previous_j), (i, j) in zip(path, path[1:])
+        if i == previous_i or j == previous_j
+    )
+    warp = warp_moves / max(1, len(path) - 1)
+
+    # This score is a release-ranking aid, not a claim about perceptual
+    # equivalence.  A listening test remains mandatory for a final candidate.
+    score = 100.0 * (
+        0.35 * min(2.0, (spectrum or 0.0) / 12.0)
+        + 0.20 * min(2.0, (transition or 0.0) / 10.0)
+        + 0.12 * min(2.0, (f0_rmse or 0.0) / 400.0)
+        + 0.10 * (voicing or 0.0)
+        + 0.07 * min(2.0, (periodicity or 0.0) / 0.5)
+        + 0.06 * min(2.0, (high_band or 0.0) / 12.0)
+        + 0.05 * min(2.0, (flux or 0.0) / 10.0)
+        + 0.05 * min(2.0, warp / 0.5)
+    )
+    return {
+        "alignedFrameCount": len(path),
+        "localFeatureScore": round(score, 3),
+        "frameSpectrumDistanceDb": round(spectrum, 3) if spectrum is not None else None,
+        "transitionSpectrumDistanceDb": round(transition, 3) if transition is not None else None,
+        "f0ContourRmseCents": round(f0_rmse, 3) if f0_rmse is not None else None,
+        "voicingMismatchRate": round(voicing, 5) if voicing is not None else None,
+        "periodicityDistance": round(periodicity, 5) if periodicity is not None else None,
+        "unvoicedHighBandDistanceDb": round(high_band, 3) if high_band is not None else None,
+        "spectralFluxDistanceDb": round(flux, 3) if flux is not None else None,
+        "timeWarpRatio": round(warp, 5),
+        "regionalPeakMeanAbsoluteDeltasHz": [
+            round(value, 3) if value is not None else None
+            for value in (_mean(group) for group in regional_deltas)
+        ],
+    }
 
 
 def _binned_pitch(points: list[tuple[int, float, float]], total_samples: int) -> list[float | None]:
@@ -287,6 +579,7 @@ def wav_metrics(path: Path) -> dict:
         "zeroCrossingsPerSecond": round(zero_crossings * rate / len(samples), 3),
         "pcmSha256": pcm_hash,
         "energyEnvelope": [round(value, 3) for value in energy],
+        "_localFrames": local_frame_features(samples, rate),
     }
     metrics.update(acoustic_metrics(samples, rate))
     return metrics
@@ -329,7 +622,7 @@ def compare_metrics(left: dict, right: dict) -> dict:
     right_f0 = right["medianF0Hz"]
     left_centroid = left["spectralCentroidHz"]
     right_centroid = right["spectralCentroidHz"]
-    return {
+    comparison = {
         "pcmIdentical": left["pcmSha256"] == right["pcmSha256"],
         "durationDeltaMs": round(right["durationMs"] - left["durationMs"], 3),
         "internalSilenceDeltaMs": (
@@ -350,6 +643,8 @@ def compare_metrics(left: dict, right: dict) -> dict:
             )
         ],
     }
+    comparison.update(compare_local_features(left["_localFrames"], right["_localFrames"]))
+    return comparison
 
 
 def load_manifest(directory: Path) -> dict:
@@ -367,7 +662,7 @@ def analyze_capture(directory: Path) -> tuple[dict, dict[str, dict]]:
         metrics = wav_metrics(directory / case["file"])
         public_metrics = {
             key: value for key, value in metrics.items()
-            if key not in {"pcmSha256", "energyEnvelope"}
+            if key not in {"pcmSha256", "energyEnvelope"} and not key.startswith("_")
         }
         row = {
             key: case[key]
@@ -406,14 +701,60 @@ def summarize_comparisons(rows: list[dict]) -> list[dict]:
             "meanF0ContourRmseHz": mean_value("f0ContourRmseHz"),
             "meanAbsoluteSpectralCentroidDeltaHz": mean_absolute("spectralCentroidDeltaHz"),
             "meanSpectrumDistanceDb": mean_value("spectrumDistanceDb"),
+            "meanLocalFeatureScore": mean_value("localFeatureScore"),
+            "meanFrameSpectrumDistanceDb": mean_value("frameSpectrumDistanceDb"),
+            "meanTransitionSpectrumDistanceDb": mean_value("transitionSpectrumDistanceDb"),
+            "meanF0ContourRmseCents": mean_value("f0ContourRmseCents"),
+            "meanVoicingMismatchRate": mean_value("voicingMismatchRate"),
+            "meanUnvoicedHighBandDistanceDb": mean_value("unvoicedHighBandDistanceDb"),
+            "meanTimeWarpRatio": mean_value("timeWarpRatio"),
         })
     return summaries
+
+
+def candidate_decision(
+    rows: list[dict],
+    baseline_score: float | None = None,
+    minimum_improvement_percent: float = 15.0,
+) -> dict:
+    """Build a conservative non-punctuation release gate.
+
+    Punctuation is deliberately excluded because matching punctuation while
+    phones and transitions still sound wrong would be a false improvement.
+    """
+    focus_rows = [
+        row for row in rows
+        if not row["group"].startswith("punctuation")
+        and row.get("localFeatureScore") is not None
+    ]
+    score = _mean([row["localFeatureScore"] for row in focus_rows])
+    decision = {
+        "scope": "non-punctuation acoustic, pronunciation and prosody probes",
+        "cases": len(focus_rows),
+        "score": round(score, 3) if score is not None else None,
+        "lowerIsBetter": True,
+        "minimumImprovementPercent": minimum_improvement_percent,
+        "listeningValidationRequired": True,
+        "status": "no-comparable-cases" if score is None else "baseline-only",
+    }
+    if score is None or baseline_score is None:
+        return decision
+    improvement = 100.0 * (baseline_score - score) / max(abs(baseline_score), 1e-9)
+    decision.update({
+        "baselineScore": round(baseline_score, 3),
+        "improvementPercent": round(improvement, 3),
+        "status": "eligible-for-listening" if improvement >= minimum_improvement_percent else "rejected-small-improvement",
+    })
+    return decision
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--oracle-dir", type=Path, required=True)
     parser.add_argument("--candidate-dir", type=Path)
+    parser.add_argument("--baseline-report", type=Path)
+    parser.add_argument("--minimum-improvement-percent", type=float, default=15.0)
+    parser.add_argument("--enforce-gate", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -449,6 +790,17 @@ def main() -> int:
         report["candidate"] = candidate_public
         report["candidateComparisons"] = comparisons
         report["candidateSummary"] = summarize_comparisons(comparisons)
+        baseline_score = None
+        if args.baseline_report:
+            baseline = json.loads(args.baseline_report.read_text(encoding="utf-8"))
+            baseline_score = baseline.get("candidateDecision", {}).get("score")
+            if not isinstance(baseline_score, (int, float)):
+                parser.error("baseline report has no numeric candidateDecision.score")
+        report["candidateDecision"] = candidate_decision(
+            comparisons,
+            baseline_score=baseline_score,
+            minimum_improvement_percent=args.minimum_improvement_percent,
+        )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
@@ -480,9 +832,18 @@ def main() -> int:
             print(
                 f"{row['group']}: {row['cases']} cases; "
                 f"F0 contour RMSE {row['meanF0ContourRmseHz']} Hz; "
-                f"spectrum distance {row['meanSpectrumDistanceDb']} dB"
+                f"spectrum distance {row['meanSpectrumDistanceDb']} dB; "
+                f"time-local score {row['meanLocalFeatureScore']}"
             )
+        decision = report["candidateDecision"]
+        print(
+            f"Non-punctuation release gate: {decision['status']}; "
+            f"score {decision['score']}"
+        )
     print(f"wrote aggregate report {args.output}")
+    if args.enforce_gate and report.get("candidateDecision", {}).get("status") != "eligible-for-listening":
+        print("candidate did not clear the objective improvement gate", file=sys.stderr)
+        return 2
     return 0
 
 

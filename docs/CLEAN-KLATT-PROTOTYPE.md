@@ -23,10 +23,11 @@ data. CI rejects those file types if they appear inside `addonClean` or the
 staged add-on.
 
 The prototype currently offers two independent German 5320-targeted voices:
-male and female. Public reference recordings are used for listening and broad
-measurements only. They are not copied into source constants, linked into the
-runtime or packaged with the add-on. The measurement record and reproducible
-comparison command are in
+male and female. Output from a separately and lawfully operated reference may
+be used for local black-box measurements only. It is not copied into source
+constants, linked into the runtime or packaged with the add-on. Public CI does
+not fetch a historical renderer, firmware or reference audio. The measurement
+record and reproducible local comparison command are in
 [`CLEAN-ROOM-REFERENCE.md`](CLEAN-ROOM-REFERENCE.md).
 
 ## Implemented behaviour

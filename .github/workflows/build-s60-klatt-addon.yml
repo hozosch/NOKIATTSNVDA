@@ -28,7 +28,8 @@ jobs:
             addonClean/synthDrivers/s60Klatt.py \
             tools/render_clean_klatt_wav.py \
             tools/capture_s60_blackbox.py \
-            tools/analyze_s60_blackbox.py
+            tools/analyze_s60_blackbox.py \
+            tools/run_s60_blackbox_local.py
       - name: Verify the clean add-on source boundary
         shell: pwsh
         run: |

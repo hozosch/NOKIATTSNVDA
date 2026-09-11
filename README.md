@@ -25,16 +25,18 @@ and acoustic character of the historical Nokia S60 TTS systems.
 
 Test 2 targets the German male and female Nokia 5320 references rather than a
 generic phone voice. It adds per-voice source and formant profiles, connected
-voiced segments and German vowel-length, devoicing and vocalic-r rules. Public
-reference WAVs are used only for listening and broad measurements; their audio
-is not included in the build. See
+voiced segments and German vowel-length, devoicing and vocalic-r rules. Output
+from a separately and lawfully operated reference may be used only for local
+black-box measurement; its audio is not included in the build. See
 [`docs/CLEAN-KLATT-PROTOTYPE.md`](docs/CLEAN-KLATT-PROTOTYPE.md) and the
 [`reference measurement record`](docs/CLEAN-ROOM-REFERENCE.md).
 
 Because test 2 did not produce a recognizable historical voice, test 3 starts
 with a language-separated, output-only measurement harness instead of further
-global spectral tuning. The historical renderer is invoked only as a separate
-text-to-WAV process; captured PCM is never committed or packaged. See
+global spectral tuning. Any historical renderer is invoked only by an entitled
+operator, locally, as a separate text-to-WAV process; captured PCM is erased
+after analysis and never committed or packaged. Public CI validates the clean
+tools but does not fetch a ROM, emulator or historical renderer. See
 [`docs/BLACK-BOX-MEASUREMENT.md`](docs/BLACK-BOX-MEASUREMENT.md).
 The first probe establishes that common punctuation followed by whitespace is
 PCM-identical to whitespace alone in all five measured 5320 languages. The
@@ -50,6 +52,11 @@ filter balance. No reference start padding was copied into the candidate, so
 speech still begins immediately. Each historical language is measured
 independently; the current candidate is compared only with the German 5320
 reference.
+
+The repository also retains the earlier emulation/native-porting work described
+below. The clean-room claim applies only to `addonClean`, `native/clean` and the
+newly written output-analysis tools; it is not a declaration that every legacy
+reference or generated artifact elsewhere in the repository is redistributable.
 
 ## Project goal
 

@@ -1,4 +1,4 @@
-name: Probe historical S60 output boundary
+name: Validate local S60 output-only tools
 
 on:
   workflow_dispatch:
@@ -19,89 +19,5 @@ jobs:
           python -m unittest tests.test_s60_blackbox_tools
           python -m py_compile \
             tools/capture_s60_blackbox.py \
-            tools/analyze_s60_blackbox.py
-
-  output-only-probe:
-    needs: tool-tests
-    runs-on: windows-latest
-    steps:
-      - name: Check out the independent project
-        uses: actions/checkout@v7
-        with:
-          path: clean
-
-      - name: Check out the pinned external reference renderer
-        uses: actions/checkout@v7
-        with:
-          repository: joshknnd1982/nokiaklatt-sapi5
-          ref: d2ce4e98d4e759dafc46d608ee2f1e9257165276
-          path: oracle
-          fetch-depth: 1
-
-      - name: Build the external renderer as a separate executable
-        shell: pwsh
-        run: |
-          cmake -S oracle -B build/oracle -A x64
-          if ($LASTEXITCODE -ne 0) { throw 'reference renderer configure failed' }
-          cmake --build build/oracle --config Release --target nk_render --parallel
-          if ($LASTEXITCODE -ne 0) { throw 'reference renderer build failed' }
-          $renderer = Get-ChildItem build/oracle -Recurse -Filter nk_render.exe |
-            Select-Object -First 1
-          if (-not $renderer) { throw 'nk_render.exe was not produced' }
-          Copy-Item oracle/bin/_nokia/lib/unicorn/lib/unicorn.dll `
-            (Split-Path $renderer.FullName) -Force
-          $renderer.FullName | Out-File -Encoding utf8 build/oracle-renderer-path.txt
-
-      - name: Capture the language-separated 5320 male black box
-        shell: pwsh
-        run: |
-          $renderer = (Get-Content build/oracle-renderer-path.txt -Raw).Trim()
-          python clean/tools/capture_s60_blackbox.py `
-            --backend nk-render `
-            --renderer $renderer `
-            --corpus clean/tools/s60_blackbox_corpus.json `
-            --rom oracle/bin/roms/5320/SYM.ROM `
-            --data-tree oracle/bin/roms/5320/files `
-            --voice male `
-            --output-dir build/blackbox/oracle `
-            --jobs 4
-          if ($LASTEXITCODE -ne 0) { throw 'reference black-box capture failed' }
-
-      - name: Build and capture the independent German candidate
-        shell: pwsh
-        run: |
-          & clean/.github/scripts/enter-msvc.ps1 -Arch x64
-          New-Item -ItemType Directory -Force build/candidate | Out-Null
-          cl /nologo /std:c11 /O2 /W4 /WX /LD clean/native/clean/classic_klatt.c `
-            /link /OPT:REF /OPT:ICF "/OUT:build/candidate/classic_klatt_x64.dll"
-          if ($LASTEXITCODE -ne 0) { throw 'independent candidate build failed' }
-          python clean/tools/capture_s60_blackbox.py `
-            --backend clean-core `
-            --renderer build/candidate/classic_klatt_x64.dll `
-            --corpus clean/tools/s60_blackbox_corpus.json `
-            --language de-DE `
-            --voice male `
-            --output-dir build/blackbox/candidate `
-            --jobs 2
-          if ($LASTEXITCODE -ne 0) { throw 'candidate capture failed' }
-
-      - name: Analyze and discard all captured PCM
-        shell: pwsh
-        run: |
-          python clean/tools/analyze_s60_blackbox.py `
-            --oracle-dir build/blackbox/oracle `
-            --candidate-dir build/blackbox/candidate `
-            --output build/report/s60-blackbox-5320-male.json
-          if ($LASTEXITCODE -ne 0) { throw 'black-box analysis failed' }
-          Remove-Item build/blackbox -Recurse -Force
-          $remaining = Get-ChildItem build -Recurse -File -Filter *.wav
-          if ($remaining) {
-            throw "reference PCM survived analysis: $($remaining.FullName -join ', ')"
-          }
-          Get-Item build/report/s60-blackbox-5320-male.json | Format-List Name,Length
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: s60-blackbox-5320-male-test3
-          path: build/report/s60-blackbox-5320-male.json
-          if-no-files-found: error
+            tools/analyze_s60_blackbox.py \
+            tools/run_s60_blackbox_local.py
