@@ -33,6 +33,40 @@ LIMIT_TABLE = re.compile(
 )
 
 
+def _restore_local_continuation(line: str, local: set[int]) -> str:
+    """Turn an old dispatcher hop back into a local C goto when possible.
+
+    Closure extensions can add the target of a previously external edge to
+    the same split function at a later date.  Keeping that edge routed through
+    the top-level dispatcher is unnecessary and, on ARM64EC, has proved less
+    robust in the large text-analysis loops used by the 6650 and N85.
+    """
+    indent = line[:len(line) - len(line.lstrip())]
+    statement = line.strip()
+    conditional = re.fullmatch(
+        r"if \((.*)\) \{ reg_pc=UINT64_C\((\d+)\); "
+        r"return NOKIA_FRONTEND_CONTINUE; \}",
+        statement,
+    )
+    if conditional:
+        target = int(conditional.group(2)) & ~1
+        if target in local:
+            return (
+                f"{indent}if ({conditional.group(1)}) "
+                f"goto L_{target:08x};"
+            )
+        return line
+    direct = re.fullmatch(
+        r"reg_pc=UINT64_C\((\d+)\); return NOKIA_FRONTEND_CONTINUE;",
+        statement,
+    )
+    if direct:
+        target = int(direct.group(1)) & ~1
+        if target in local:
+            return f"{indent}goto L_{target:08x};"
+    return line
+
+
 def _blocks(function: str) -> list[tuple[int, list[str]]]:
     close = function.rfind("\n}")
     if close < 0:
@@ -85,7 +119,10 @@ def _render_function(
     )
     out.extend(("    default: return NOKIA_FRONTEND_YIELDED;", "    }"))
     for _address, lines in blocks:
-        out.extend(route(line, local) for line in lines)
+        out.extend(
+            route(_restore_local_continuation(line, local), local)
+            for line in lines
+        )
     out.append("}")
 
     rendered = "\n".join(out)
