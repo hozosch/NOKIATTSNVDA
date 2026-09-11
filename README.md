@@ -42,6 +42,13 @@ PCM-identical to whitespace alone in all five measured 5320 languages. The
 pauses and question contour while retaining the still-unmatched test 2
 acoustic core for further measurement.
 
+The next probe targets the fundamental mismatch reported in listening tests:
+intonation and acoustic character. It measures time-local F0 contours,
+periodicity, spectral tilt and regional resonance peaks on isolated vowel and
+`l` contexts, growing phrases and short sentences. Each historical language
+is measured independently; the current candidate is compared only with the
+German 5320 reference.
+
 ## Project goal
 
 The goal is not to ship a complete phone emulator. The intended result is a
