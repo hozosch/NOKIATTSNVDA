@@ -16,14 +16,14 @@ porting experiment and is not an official Nokia project.
 ## Independent S60 Klatt experiment
 
 A separate, newly written prototype now explores the long-term ROM-free
-direction under the descriptive product name **S60 Klatt**. Clean test 2 uses
+direction under the descriptive product name **S60 Klatt**. The clean series uses
 its own compact C formant synthesizer and German pronunciation rules and does
 not load or package firmware, ROM pages, generated AOT, snapshots or extracted
 speech data. Its explicit goal is to recreate, through newly authored code and
 independently measured voice profiles, the pronunciation behaviour, prosody
 and acoustic character of the historical Nokia S60 TTS systems.
 
-Test 2 targets the German male and female Nokia 5320 references rather than a
+The current test targets the German male and female Nokia 5320 references rather than a
 generic phone voice. It adds per-voice source and formant profiles, connected
 voiced segments and German vowel-length, devoicing and vocalic-r rules. Output
 from a separately and lawfully operated reference may be used only for local
@@ -44,7 +44,7 @@ PCM-identical to whitespace alone in all five measured 5320 languages. The
 pauses and question contour while retaining the still-unmatched test 2
 acoustic core for further measurement.
 
-Probe 2 targets the fundamental mismatch reported in listening tests:
+Probe 2 targeted the fundamental mismatch reported in listening tests:
 intonation and acoustic character. Its word-level German contour was fitted
 against time-local F0 measurements from isolated vowels, `l` contexts, growing
 phrases and short sentences. Vowels receive a separately measured parallel
@@ -52,6 +52,14 @@ filter balance. No reference start padding was copied into the candidate, so
 speech still begins immediately. Each historical language is measured
 independently; the current candidate is compared only with the German 5320
 reference.
+
+Clean test 4 adds a deterministic output-only parameter fitter and replaces the
+male voice's word-local pitch resets with a mostly level phrase plateau and a
+late final fall. It also refits the source/filter balance, transitions and stop
+release. The fixed-sentence time-local score improves from 71.354 to 59.817
+(16.2%), clearing the predeclared 15% threshold for a listening candidate. A
+31-case German aggregate check improves spectral and duration measures but has
+mixed F0 results, so this is still an experiment rather than a fidelity claim.
 
 The repository also retains the earlier emulation/native-porting work described
 below. The clean-room claim applies only to `addonClean`, `native/clean` and the

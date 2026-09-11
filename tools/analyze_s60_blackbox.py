@@ -351,6 +351,14 @@ def compare_local_features(left: list[dict], right: list[dict]) -> dict:
         abs(a_frame["spectralFluxDb"] - b_frame["spectralFluxDb"])
         for a_frame, b_frame in unvoiced_pairs
     ])
+    left_has_unvoiced = any(frame["active"] and frame["f0Hz"] is None for frame in left)
+    right_has_unvoiced = any(frame["active"] and frame["f0Hz"] is None for frame in right)
+    if not unvoiced_pairs and (left_has_unvoiced or right_has_unvoiced):
+        # Do not reward a candidate for making every historical unvoiced frame
+        # align with a voiced frame (or vice versa). The former ``None -> 0``
+        # fallback let such a mismatch erase both consonant penalties.
+        high_band = 12.0
+        flux = 10.0
     warp_moves = sum(
         1 for (previous_i, previous_j), (i, j) in zip(path, path[1:])
         if i == previous_i or j == previous_j

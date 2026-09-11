@@ -28,6 +28,134 @@
 #define CK_MAX_WORD_UNITS 192u
 #define CK_PI 3.14159265358979323846
 
+/*
+ * Acoustic constants stay overrideable at compile time so the independent
+ * renderer can be fitted against authorized output-only recordings without
+ * copying tables or code from a historical runtime. Release builds use the
+ * defaults below; tools/fit_clean_klatt_profile.py reports the exact -D values
+ * used for an experimental candidate.
+ */
+#ifndef CK_MALE_BASE_F0
+#define CK_MALE_BASE_F0 104.20237377
+#endif
+#ifndef CK_MALE_DURATION_SCALE
+#define CK_MALE_DURATION_SCALE 1.062711047
+#endif
+#ifndef CK_MALE_F1_SCALE
+#define CK_MALE_F1_SCALE 1.286131101
+#endif
+#ifndef CK_MALE_F2_SCALE
+#define CK_MALE_F2_SCALE 0.907313863
+#endif
+#ifndef CK_MALE_F3_SCALE
+#define CK_MALE_F3_SCALE 0.82995155
+#endif
+#ifndef CK_MALE_VOICED_GAIN
+#define CK_MALE_VOICED_GAIN 1.865120855
+#endif
+#ifndef CK_MALE_NOISE_GAIN
+#define CK_MALE_NOISE_GAIN 0.404999301
+#endif
+#ifndef CK_MALE_F4
+#define CK_MALE_F4 3236.598473193
+#endif
+#ifndef CK_MALE_F5
+#define CK_MALE_F5 3887.54132219
+#endif
+#ifndef CK_MALE_HIGHPASS_HZ
+#define CK_MALE_HIGHPASS_HZ 117.194188306
+#endif
+#ifndef CK_TRANSITION_FRACTION
+#define CK_TRANSITION_FRACTION 0.15869866
+#endif
+#ifndef CK_PHRASE_BOOST
+#define CK_PHRASE_BOOST 0.23
+#endif
+#ifndef CK_ACCENT_BOOST
+#define CK_ACCENT_BOOST 0.10
+#endif
+#ifndef CK_WORD_SLOPE
+#define CK_WORD_SLOPE 0.28
+#endif
+#ifndef CK_UTTERANCE_SLOPE
+#define CK_UTTERANCE_SLOPE 0.12
+#endif
+#ifndef CK_USE_PLATEAU_INTONATION
+#define CK_USE_PLATEAU_INTONATION 1
+#endif
+#ifndef CK_PHRASE_PLATEAU
+#define CK_PHRASE_PLATEAU 1.14
+#endif
+#ifndef CK_PLATEAU_ACCENT_BOOST
+#define CK_PLATEAU_ACCENT_BOOST 0.035
+#endif
+#ifndef CK_EARLY_PHRASE_SLOPE
+#define CK_EARLY_PHRASE_SLOPE 0.0292
+#endif
+#ifndef CK_FINAL_FALL_START
+#define CK_FINAL_FALL_START 0.852
+#endif
+#ifndef CK_FINAL_FALL
+#define CK_FINAL_FALL 0.24
+#endif
+#ifndef CK_GLOTTAL_OPEN_END
+#define CK_GLOTTAL_OPEN_END 0.313795581
+#endif
+#ifndef CK_GLOTTAL_CLOSE_END
+#define CK_GLOTTAL_CLOSE_END 0.454459372
+#endif
+#ifndef CK_GLOTTAL_SOURCE_GAIN
+#define CK_GLOTTAL_SOURCE_GAIN 2.114334083
+#endif
+#ifndef CK_VOWEL_R1_GAIN
+#define CK_VOWEL_R1_GAIN 0.430314685
+#endif
+#ifndef CK_VOWEL_R2_GAIN
+#define CK_VOWEL_R2_GAIN 3.542284009
+#endif
+#ifndef CK_VOWEL_R3_GAIN
+#define CK_VOWEL_R3_GAIN 2.491973693
+#endif
+#ifndef CK_VOWEL_R4_GAIN
+#define CK_VOWEL_R4_GAIN 0.639462027
+#endif
+#ifndef CK_VOWEL_R5_GAIN
+#define CK_VOWEL_R5_GAIN 0.051814576
+#endif
+#ifndef CK_SONORANT_R1_GAIN
+#define CK_SONORANT_R1_GAIN 0.214416151
+#endif
+#ifndef CK_SONORANT_R2_GAIN
+#define CK_SONORANT_R2_GAIN 1.476630345
+#endif
+#ifndef CK_SONORANT_R3_GAIN
+#define CK_SONORANT_R3_GAIN 1.699269913
+#endif
+#ifndef CK_SONORANT_R4_GAIN
+#define CK_SONORANT_R4_GAIN 0.085299204
+#endif
+#ifndef CK_SONORANT_R5_GAIN
+#define CK_SONORANT_R5_GAIN 0.202283292
+#endif
+#ifndef CK_NOISE_R1_GAIN
+#define CK_NOISE_R1_GAIN 0.120626292
+#endif
+#ifndef CK_NOISE_R2_GAIN
+#define CK_NOISE_R2_GAIN 0.191621891
+#endif
+#ifndef CK_NOISE_R3_GAIN
+#define CK_NOISE_R3_GAIN 0.225510298
+#endif
+#ifndef CK_NOISE_R4_GAIN
+#define CK_NOISE_R4_GAIN 0.110203523
+#endif
+#ifndef CK_NOISE_R5_GAIN
+#define CK_NOISE_R5_GAIN 0.050347456
+#endif
+#ifndef CK_STOP_RELEASE_START
+#define CK_STOP_RELEASE_START 0.48
+#endif
+
 typedef enum phoneme_id {
     PH_SIL,
     PH_A,
@@ -184,7 +312,10 @@ static const phoneme_spec PHONEMES[] = {
  * are represented here; no firmware tables or extracted voice data are used.
  */
 static const voice_profile VOICE_PROFILES[] = {
-    {100.0, 0.970, 1.05, 0.84, 0.98, 2.30, 0.42, 3550.0, 4550.0, 80.0},
+    {CK_MALE_BASE_F0, CK_MALE_DURATION_SCALE,
+        CK_MALE_F1_SCALE, CK_MALE_F2_SCALE, CK_MALE_F3_SCALE,
+        CK_MALE_VOICED_GAIN, CK_MALE_NOISE_GAIN,
+        CK_MALE_F4, CK_MALE_F5, CK_MALE_HIGHPASS_HZ},
     {200.0, 1.025, 1.40, 0.80, 0.94, 1.35, 0.40, 3900.0, 5000.0, 400.0},
 };
 
@@ -802,22 +933,40 @@ static int synthesize_segments(
 
         for (sample_index = 0; sample_index < sample_count; ++sample_index) {
             double position = (double)sample_index / (double)sample_count;
-            double transition = position < 0.30 ? position / 0.30 : 1.0;
+            double transition = position < CK_TRANSITION_FRACTION
+                ? position / CK_TRANSITION_FRACTION : 1.0;
             double utterance_position = segments->count > 1u
                 ? ((double)segment_index + position) / (double)segments->count : position;
             double word_position = word_end > word_start
                 ? ((double)(segment_index - word_start) + position)
                     / (double)(word_end - word_start)
                 : 0.0;
-            double phrase_boost = word_count > 1u ? 0.23 : 0.0;
-            double accent_boost = word_count > 1u ? 0.10 : 0.06;
-            double word_slope = word_count > 1u ? 0.28 : 0.10;
-            double utterance_slope = word_count > 1u ? 0.12 : 0.04;
-            double f0 = base_f0 * pitch_scale * (
-                1.04 + phrase_boost - word_slope * word_position
-                - utterance_slope * utterance_position
-                + accent_boost * segment->accent
-            );
+            double phrase_boost = word_count > 1u ? CK_PHRASE_BOOST : 0.0;
+            double accent_boost = word_count > 1u ? CK_ACCENT_BOOST : 0.06;
+            double word_slope = word_count > 1u ? CK_WORD_SLOPE : 0.10;
+            double utterance_slope = word_count > 1u ? CK_UTTERANCE_SLOPE : 0.04;
+            double f0;
+#if CK_USE_PLATEAU_INTONATION
+            if (voice == 0 && word_count > 1u) {
+                double final_progress = utterance_position > CK_FINAL_FALL_START
+                    ? (utterance_position - CK_FINAL_FALL_START)
+                        / (1.0 - CK_FINAL_FALL_START)
+                    : 0.0;
+                f0 = base_f0 * pitch_scale * (
+                    CK_PHRASE_PLATEAU
+                    - CK_EARLY_PHRASE_SLOPE * utterance_position
+                    - CK_FINAL_FALL * final_progress
+                    + CK_PLATEAU_ACCENT_BOOST * segment->accent
+                );
+            } else
+#endif
+            {
+                f0 = base_f0 * pitch_scale * (
+                    1.04 + phrase_boost - word_slope * word_position
+                    - utterance_slope * utterance_position
+                    + accent_boost * segment->accent
+                );
+            }
             double amplitude_envelope = 1.0;
             double source = 0.0;
             double noise = next_noise(engine);
@@ -862,26 +1011,31 @@ static int synthesize_segments(
                 double glottal;
                 engine->phase += f0 / (double)CK_SAMPLE_RATE;
                 if (engine->phase >= 1.0) engine->phase -= floor(engine->phase);
-                if (engine->phase < 0.34) {
-                    glottal = 0.5 - 0.5 * cos(CK_PI * engine->phase / 0.34);
-                } else if (engine->phase < 0.55) {
-                    glottal = cos(0.5 * CK_PI * (engine->phase - 0.34) / 0.21);
+                if (engine->phase < CK_GLOTTAL_OPEN_END) {
+                    glottal = 0.5 - 0.5 * cos(
+                        CK_PI * engine->phase / CK_GLOTTAL_OPEN_END
+                    );
+                } else if (engine->phase < CK_GLOTTAL_CLOSE_END) {
+                    glottal = cos(0.5 * CK_PI
+                        * (engine->phase - CK_GLOTTAL_OPEN_END)
+                        / (CK_GLOTTAL_CLOSE_END - CK_GLOTTAL_OPEN_END));
                 } else {
                     glottal = 0.0;
                 }
-                source = (glottal - engine->previous_glottal) * 3.65;
+                source = (glottal - engine->previous_glottal) * CK_GLOTTAL_SOURCE_GAIN;
                 engine->previous_glottal = glottal;
                 if (spec->source == SOURCE_VOICED) source *= 0.82;
                 source += noise * spec->noise * 0.18;
             } else if (spec->source == SOURCE_FRICATIVE) {
                 source = noise * spec->noise;
             } else if (spec->source == SOURCE_STOP) {
-                if (position < 0.58) {
+                if (position < CK_STOP_RELEASE_START) {
                     source = spec->noise < 0.8f ? 0.04 * sin(2.0 * CK_PI * engine->phase) : 0.0;
                     engine->phase += f0 / (double)CK_SAMPLE_RATE;
                     if (engine->phase >= 1.0) engine->phase -= 1.0;
                 } else {
-                    double burst = (position - 0.58) / 0.42;
+                    double burst = (position - CK_STOP_RELEASE_START)
+                        / (1.0 - CK_STOP_RELEASE_START);
                     source = noise * spec->noise * exp(-5.0 * burst);
                 }
             }
@@ -900,16 +1054,21 @@ static int synthesize_segments(
                     /* Carrier probes require more first- and upper-formant
                      * energy for vowels than for sonorant consonants. */
                     if (spec->source == SOURCE_VOWEL) {
-                        output = (0.20 * r1 + 2.30 * r2 + 1.60 * r3
-                                + 0.40 * r4 + 0.20 * r5);
+                        output = (CK_VOWEL_R1_GAIN * r1 + CK_VOWEL_R2_GAIN * r2
+                                + CK_VOWEL_R3_GAIN * r3 + CK_VOWEL_R4_GAIN * r4
+                                + CK_VOWEL_R5_GAIN * r5);
                     } else {
-                        output = (0.06 * r1 + 2.30 * r2 + 1.60 * r3
-                                + 0.12 * r4 + 0.06 * r5);
+                        output = (CK_SONORANT_R1_GAIN * r1
+                                + CK_SONORANT_R2_GAIN * r2
+                                + CK_SONORANT_R3_GAIN * r3
+                                + CK_SONORANT_R4_GAIN * r4
+                                + CK_SONORANT_R5_GAIN * r5);
                     }
                     output *= (double)spec->gain * profile->voiced_gain;
                 } else {
-                    output = (0.10 * r1 + 0.22 * r2 + 0.22 * r3
-                            + 0.10 * r4 + 0.04 * r5)
+                    output = (CK_NOISE_R1_GAIN * r1 + CK_NOISE_R2_GAIN * r2
+                            + CK_NOISE_R3_GAIN * r3 + CK_NOISE_R4_GAIN * r4
+                            + CK_NOISE_R5_GAIN * r5)
                         * (double)spec->gain * profile->noise_gain;
                 }
                 output *= amplitude_envelope * 1.48;
@@ -944,7 +1103,7 @@ static int synthesize_segments(
 }
 
 const char *classic_klatt_version(void) {
-    return "0.3.0-clean-test3-probe2";
+    return "0.4.0-clean-test4";
 }
 
 classic_klatt_engine *classic_klatt_create(void) {

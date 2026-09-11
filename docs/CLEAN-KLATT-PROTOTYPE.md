@@ -1,6 +1,6 @@
 # Independent S60 Klatt prototype
 
-`s60Klatt-0.3.0-clean-test3-probe2` is a deliberately separate NVDA add-on. Its
+`s60Klatt-0.4.0-clean-test4` is a deliberately separate NVDA add-on. Its
 package name, driver name and user-facing product name are **S60 Klatt**.
 Its explicit goal is to recreate the pronunciation behaviour, prosody and
 acoustic character of the historical Nokia S60 TTS systems through newly
@@ -43,23 +43,32 @@ record and reproducible local comparison command are in
 - German short and long vowels, umlauts, final devoicing and vocalic `r`;
 - common punctuation does not add pauses or a question contour, matching the
   first output-only 5320 probes;
-- word-level F0 resets and phrase declination fitted to German 5320 output;
+- a mostly level multiword F0 plateau followed by a late phrase-final fall,
+  fitted to authorized German 5320 male output; the female contour remains
+  separate until it has an equally strong output-only fit;
 - a vowel-specific parallel-filter balance fitted to output-only spectral
   measurements without adding the reference renderer's start padding;
 - common digraphs and clusters including `sch`, `ch`, `ng`, `pf`, `sp`,
   `st`, `ei`, `au`, `eu` and `ie`;
-- digit spelling and basic sentence pauses;
+- digit spelling and punctuation-neutral word separation;
 - deterministic output for repeatable regression tests.
 
-## Deliberate limitations of test 3 probe 2
+## Test 4 measurement result and limitations
 
-The test 2 acoustic core is deliberately retained only as an instrumented
-candidate while the output-only measurement boundary is established. It is
-not yet established as a recognizable 5320 reproduction. Probe 2 adds measured
-German word-level intonation and a first vowel spectral-balance correction,
-but does not yet claim corrected phone inventories, consonants, stress,
-coarticulation or voice quality. Listening during ordinary NVDA navigation
-remains the decisive test.
+Test 4 replaces word-local pitch resets with a measured German 5320 male phrase
+plateau and late final fall. Its glottal timing, formant scaling, vowel,
+sonorant and noise balance, transitions and stop release were searched against
+time-local features from an authorized output-only recording. On the fixed
+German sentence, the local feature score falls from 71.354 to 59.817: a 16.2%
+improvement, clearing the predeclared 15% gate for a listening candidate.
+
+Across 31 previously measured German probes, whole-utterance spectral distance
+falls by about 9.7%, spectral-centroid error by about 45%, and absolute duration
+error by about 40%. The coarse 24-bin F0 error across those probes is about 9%
+worse, while time-aligned F0 error on the fixed sentence improves. This mixed
+result is why test 4 is a listening candidate rather than a fidelity claim.
+Pronunciation rules, individual phones, stress, coarticulation and female voice
+quality remain incomplete.
 
 Pure ARM64 is compiled and checked in CI but is not packaged because current
 NVDA processes on Windows ARM load the ARM64EC DLL. The add-on packages x86,

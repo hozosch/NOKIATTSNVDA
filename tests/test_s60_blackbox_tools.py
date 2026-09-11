@@ -16,6 +16,7 @@ sys.path.insert(0, str(TOOLS))
 
 import analyze_s60_blackbox as ANALYZE  # noqa: E402
 import capture_s60_blackbox as CAPTURE  # noqa: E402
+import fit_clean_klatt_profile as FIT  # noqa: E402
 
 
 def write_test_wav(
@@ -42,6 +43,44 @@ def write_test_wav(
 
 
 class BlackBoxToolsTest(unittest.TestCase):
+    def test_fitter_defaults_are_valid_and_compile_defines_are_stable(self):
+        values = FIT.default_values()
+        self.assertEqual(set(FIT.PARAMETERS), set(values))
+        self.assertEqual(values, FIT.normalize(values))
+        defines = FIT.compile_defines(values)
+        self.assertEqual("-DCK_USE_PLATEAU_INTONATION=1", defines[0])
+        self.assertEqual(sorted(defines[1:]), defines[1:])
+        self.assertIn("-DCK_MALE_BASE_F0=104.202374", defines)
+
+    def test_fitter_keeps_glottal_close_after_open(self):
+        values = FIT.default_values()
+        values["CK_GLOTTAL_OPEN_END"] = 0.48
+        values["CK_GLOTTAL_CLOSE_END"] = 0.38
+        normalized = FIT.normalize(values)
+        self.assertGreaterEqual(
+            normalized["CK_GLOTTAL_CLOSE_END"],
+            normalized["CK_GLOTTAL_OPEN_END"] + 0.08,
+        )
+
+    def test_fitter_accepts_its_report_as_a_new_search_centre(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fit.json"
+            expected = FIT.default_values()
+            path.write_text(
+                __import__("json").dumps({"defines": expected}), encoding="utf-8"
+            )
+            self.assertEqual(expected, FIT.load_initial_values(path))
+
+    def test_coordinate_candidates_change_one_parameter(self):
+        values = FIT.default_values()
+        candidates = FIT.coordinate_candidates(
+            values, ("CK_MALE_BASE_F0", "CK_MALE_F1_SCALE"), 0.1
+        )
+        self.assertEqual(4, len(candidates))
+        for candidate in candidates:
+            changed = [name for name in values if candidate[name] != values[name]]
+            self.assertEqual(1, len(changed))
+
     def test_repository_corpus_is_valid_and_language_separated(self):
         cases = CAPTURE.load_corpus(TOOLS / "s60_blackbox_corpus.json")
         languages = {case["language"] for case in cases}
@@ -138,6 +177,26 @@ class BlackBoxToolsTest(unittest.TestCase):
         self.assertEqual("rejected-small-improvement", rejected["status"])
         accepted = ANALYZE.candidate_decision(rows, baseline_score=60.0)
         self.assertEqual("eligible-for-listening", accepted["status"])
+
+    def test_local_score_does_not_reward_missing_unvoiced_alignment(self):
+        def feature(f0):
+            return {
+                "active": True,
+                "energyDb": 0.0,
+                "spectrumDb": [0.0] * len(ANALYZE.LOCAL_SPECTRUM_HZ),
+                "periodicity": 0.8 if f0 else 0.1,
+                "zeroCrossingRate": 0.1,
+                "f0Hz": f0,
+                "highBandDb": -8.0,
+                "regionalPeaksHz": [500, 1500, 3300],
+                "spectralFluxDb": 0.0,
+            }
+
+        comparison = ANALYZE.compare_local_features(
+            [feature(None)], [feature(100.0)]
+        )
+        self.assertEqual(12.0, comparison["unvoicedHighBandDistanceDb"])
+        self.assertEqual(10.0, comparison["spectralFluxDistanceDb"])
 
 
 if __name__ == "__main__":

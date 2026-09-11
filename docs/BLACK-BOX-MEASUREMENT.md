@@ -85,6 +85,24 @@ Candidates improving the non-punctuation score by less than 15 percent are
 rejected before listening. Clearing the gate only makes a build eligible for a
 short listening check; it does not establish perceptual identity.
 
+For a single already captured and authorized output-only WAV, the independent
+core can be searched without invoking any historical runtime:
+
+```console
+python tools/fit_clean_klatt_profile.py reference.wav \
+  "Guten Tag, ich bin die Nokia Klatt Sprachausgabe und ich spreche Deutsch." \
+  --confirm-authorized-reference --baseline-score 71.354 \
+  --output clean-klatt-fit.json
+```
+
+The fitter compiles only `native/clean/classic_klatt.c`, varies newly authored
+acoustic constants, renders transient candidate PCM and deletes its temporary
+libraries and audio buffers. It accepts neither firmware nor a runtime binary.
+Its JSON records the reference PCM hash, deterministic seed, exact candidate
+constants and known limitations; it never embeds reference PCM or local frame
+features. A one-utterance result must still be checked against the wider corpus
+and by listening.
+
 ## Current analysis
 
 `tools/analyze_s60_blackbox.py` measures utterance length, active boundaries,

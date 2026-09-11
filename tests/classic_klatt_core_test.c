@@ -152,8 +152,9 @@ int main(void) {
     assert(male1.callbacks > 1u);
     assert(male1.samples == male2.samples);
     assert(male1.hash == male2.hash);
-    assert(female.samples > male1.samples);
-    assert(female.samples < male1.samples * 6u / 5u);
+    assert(female.samples != male1.samples);
+    assert(female.samples * 6u / 5u > male1.samples);
+    assert(male1.samples * 6u / 5u > female.samples);
     assert(female.hash != male1.hash);
 
     slow = render(engine, hallo, (uint32_t)(sizeof(hallo) / sizeof(hallo[0])), 25, 50, 0, 1);
