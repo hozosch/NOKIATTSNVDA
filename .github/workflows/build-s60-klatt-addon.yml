@@ -60,7 +60,8 @@ jobs:
           & "build/runtime/classic_klatt_test_${{ matrix.arch }}.exe"
           if ($LASTEXITCODE -ne 0) { throw 'S60 Klatt native test failed' }
           $exports = dumpbin /exports "build/runtime/classic_klatt_${{ matrix.arch }}.dll"
-          if ($LASTEXITCODE -ne 0 -or $exports -notmatch 'classic_klatt_speak_utf16') {
+          $dumpbinExit = $LASTEXITCODE
+          if ($dumpbinExit -ne 0 -or ($exports -join "`n") -notmatch 'classic_klatt_speak_utf16') {
             throw 'S60 Klatt synthesis export is missing'
           }
       - uses: actions/upload-artifact@v6
