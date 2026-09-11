@@ -1,6 +1,6 @@
 # Independent S60 Klatt prototype
 
-`s60Klatt-0.2.0-clean-test2` is a deliberately separate NVDA add-on. Its
+`s60Klatt-0.3.0-clean-test3-probe1` is a deliberately separate NVDA add-on. Its
 package name, driver name and user-facing product name are **S60 Klatt**.
 Its explicit goal is to recreate the pronunciation behaviour, prosody and
 acoustic character of the historical Nokia S60 TTS systems through newly
@@ -40,21 +40,22 @@ comparison command are in
 - five resonators with continuous envelopes across adjacent voiced phonemes;
 - German letter spelling and uppercase acronym spelling;
 - German short and long vowels, umlauts, final devoicing and vocalic `r`;
+- common punctuation does not add pauses or a question contour, matching the
+  first output-only 5320 probes;
 - common digraphs and clusters including `sch`, `ch`, `ng`, `pf`, `sp`,
   `st`, `ei`, `au`, `eu` and `ie`;
 - digit spelling and basic sentence pauses;
 - deterministic output for repeatable regression tests.
 
-## Deliberate limitations of test 2
+## Deliberate limitations of test 3 probe 1
 
-This is the first model-targeted acoustic iteration, not a claim of a completed
-5320 reproduction. Duration and median pitch now closely follow the selected
-reference sentence and the broad spectral distribution is substantially
-closer than test 1, but those aggregate measurements cannot establish audible
-identity. Stress, compound analysis, loanwords, full number expansion,
-punctuation naming, detailed coarticulation and consonant quality remain
-incomplete. Listening during ordinary NVDA navigation remains the decisive
-test.
+The test 2 acoustic core is deliberately retained only as an instrumented
+candidate while the output-only measurement boundary is established. It is
+not a recognizable 5320 reproduction. Probe 1 applies the first directly
+observed behavioral result—common punctuation produces no additional pause or
+question contour—but does not yet claim corrected phone inventories, stress,
+coarticulation or voice quality. Listening during ordinary NVDA navigation
+remains the decisive test after later probes replace the acoustic core.
 
 Pure ARM64 is compiled and checked in CI but is not packaged because current
 NVDA processes on Windows ARM load the ARM64EC DLL. The add-on packages x86,

@@ -88,12 +88,18 @@ int main(void) {
     static const uint16_t tag[] = {'T', 'a', 'g'};
     static const uint16_t klatt[] = {'K', 'l', 'a', 't', 't'};
     static const uint16_t fuer[] = {'f', 0x00fcu, 'r'};
+    static const uint16_t anna_space[] = {'A', 'n', 'n', 'a', ' ', 'M', 'a', 'r', 'i', 'a'};
+    static const uint16_t anna_comma[] = {'A', 'n', 'n', 'a', ',', ' ', 'M', 'a', 'r', 'i', 'a'};
+    static const uint16_t anna_period[] = {'A', 'n', 'n', 'a', '.', ' ', 'M', 'a', 'r', 'i', 'a'};
+    static const uint16_t anna_question[] = {'A', 'n', 'n', 'a', '?', ' ', 'M', 'a', 'r', 'i', 'a'};
     classic_klatt_engine *engine = classic_klatt_create();
     capture male1;
     capture male2;
     capture female;
     capture slow;
     capture fast;
+    capture punctuation_space;
+    capture punctuation_variant;
     capture cancelled = {0};
     classic_klatt_callbacks cancel_callbacks;
 
@@ -105,6 +111,29 @@ int main(void) {
     assert_phonemes(tag, (uint32_t)(sizeof(tag) / sizeof(tag[0])), "t a: k _");
     assert_phonemes(klatt, (uint32_t)(sizeof(klatt) / sizeof(klatt[0])), "k l a t _");
     assert_phonemes(fuer, (uint32_t)(sizeof(fuer) / sizeof(fuer[0])), "f ue 6 _");
+
+    punctuation_space = render(
+        engine, anna_space, (uint32_t)(sizeof(anna_space) / sizeof(anna_space[0])),
+        50, 50, 0, 1
+    );
+    punctuation_variant = render(
+        engine, anna_comma, (uint32_t)(sizeof(anna_comma) / sizeof(anna_comma[0])),
+        50, 50, 0, 1
+    );
+    assert(punctuation_variant.samples == punctuation_space.samples);
+    assert(punctuation_variant.hash == punctuation_space.hash);
+    punctuation_variant = render(
+        engine, anna_period, (uint32_t)(sizeof(anna_period) / sizeof(anna_period[0])),
+        50, 50, 0, 1
+    );
+    assert(punctuation_variant.samples == punctuation_space.samples);
+    assert(punctuation_variant.hash == punctuation_space.hash);
+    punctuation_variant = render(
+        engine, anna_question, (uint32_t)(sizeof(anna_question) / sizeof(anna_question[0])),
+        50, 50, 0, 1
+    );
+    assert(punctuation_variant.samples == punctuation_space.samples);
+    assert(punctuation_variant.hash == punctuation_space.hash);
 
     male1 = render(engine, phrase, (uint32_t)(sizeof(phrase) / sizeof(phrase[0])), 50, 50, 0, 1);
     male2 = render(engine, phrase, (uint32_t)(sizeof(phrase) / sizeof(phrase[0])), 50, 50, 0, 1);

@@ -42,7 +42,7 @@ class BlackBoxToolsTest(unittest.TestCase):
         cases = CAPTURE.load_corpus(TOOLS / "s60_blackbox_corpus.json")
         languages = {case["language"] for case in cases}
         self.assertEqual({"de-DE", "en-GB", "fi-FI", "fr-FR", "it-IT"}, languages)
-        self.assertGreaterEqual(len(cases), 60)
+        self.assertEqual(74, len(cases))
         self.assertTrue(any(case.get("compareTo") for case in cases))
 
     def test_nk_renderer_command_is_an_explicit_process_boundary(self):

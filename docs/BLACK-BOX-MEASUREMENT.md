@@ -33,9 +33,9 @@ universal phonetic model. German, British English, French and Italian are
 probed separately because their historical S60 frontends use different phone
 inventories, contextual realizations and stress behavior.
 
-The first corpus contains 64 cases across those five languages. It includes:
+The first corpus contains 74 cases across those five languages. It includes:
 
-- punctuation versus plain spaces;
+- punctuation versus plain spaces, plus punctuation without surrounding space;
 - vowel inventories and length contrasts;
 - consonant and liquid contexts, including `l` in several positions;
 - weak endings, diphthongs and consonant length where applicable;

@@ -334,19 +334,6 @@ static int match_triple(
 static int append_word(segment_list *list, const uint16_t *word, size_t length, int allow_spelling);
 static int append_diphthong(segment_list *list, phoneme_id first, phoneme_id second);
 
-static int append_ascii_word(segment_list *list, const char *word) {
-    uint16_t units[32];
-    size_t length = strlen(word);
-    size_t i;
-    if (length > sizeof(units) / sizeof(units[0])) {
-        return 0;
-    }
-    for (i = 0; i < length; ++i) {
-        units[i] = (uint16_t)(unsigned char)word[i];
-    }
-    return append_word(list, units, length, 0);
-}
-
 static int append_letter_name(segment_list *list, uint16_t c) {
     c = lower_character(c);
     switch (c) {
@@ -691,32 +678,12 @@ static int append_word(segment_list *list, const uint16_t *input, size_t length,
     return 1;
 }
 
-static int append_punctuation_name(segment_list *list, uint16_t c) {
-    const char *name = NULL;
-    switch (c) {
-        case '.': name = "punkt"; break;
-        case ',': name = "komma"; break;
-        case ':': name = "doppelpunkt"; break;
-        case ';': name = "semikolon"; break;
-        case '!': name = "ausrufezeichen"; break;
-        case '?': name = "fragezeichen"; break;
-        case '-': name = "bindestrich"; break;
-        case '_': name = "unterstrich"; break;
-        case '/': name = "schraegstrich"; break;
-        case '\\': name = "backslash"; break;
-        case '@': name = "at"; break;
-        default: break;
-    }
-    return !name || append_ascii_word(list, name);
-}
-
 static int phonemize_text(
     const uint16_t *text,
     uint32_t text_units,
     segment_list *list
 ) {
     uint32_t at = 0;
-    int only_punctuation = text_units == 1u && !is_word_character(text[0]);
     while (at < text_units) {
         if (is_word_character(text[at])) {
             uint32_t start = at;
@@ -724,14 +691,9 @@ static int phonemize_text(
             if (!append_word(list, text + start, at - start, 1)) return 0;
             continue;
         }
-        if (only_punctuation && !append_punctuation_name(list, text[at])) return 0;
-        if (text[at] == '.' || text[at] == '!' || text[at] == '?') {
-            if (!append_segment(list, PH_SIL, 3.1f)) return 0;
-        } else if (text[at] == ',' || text[at] == ';' || text[at] == ':') {
-            if (!append_segment(list, PH_SIL, 1.8f)) return 0;
-        } else if (text[at] == '\n' || text[at] == '\r') {
-            if (!append_segment(list, PH_SIL, 2.4f)) return 0;
-        }
+        /* Output-only 5320 probes show byte-identical PCM when common
+         * punctuation is replaced by ordinary whitespace.  Punctuation does
+         * not add a pause or question contour in the historical frontend. */
         at += 1u;
     }
     return 1;
@@ -797,8 +759,7 @@ static int synthesize_segments(
     int rate,
     int pitch,
     int voice,
-    const classic_klatt_callbacks *callbacks,
-    int question
+    const classic_klatt_callbacks *callbacks
 ) {
     resonator f1 = {0}, f2 = {0}, f3 = {0}, f4 = {0}, f5 = {0};
     pcm_writer writer = {0};
@@ -835,10 +796,8 @@ static int synthesize_segments(
             double transition = position < 0.30 ? position / 0.30 : 1.0;
             double utterance_position = segments->count > 1u
                 ? ((double)segment_index + position) / (double)segments->count : position;
-            double final_lift = question && utterance_position > 0.72
-                ? 0.22 * (utterance_position - 0.72) / 0.28 : 0.0;
             double f0 = base_f0 * pitch_scale
-                * (1.06 - 0.16 * utterance_position + 0.075 * segment->accent + final_lift);
+                * (1.06 - 0.16 * utterance_position + 0.075 * segment->accent);
             double amplitude_envelope = 1.0;
             double source = 0.0;
             double noise = next_noise(engine);
@@ -949,7 +908,7 @@ static int synthesize_segments(
 }
 
 const char *classic_klatt_version(void) {
-    return "0.2.0-clean-test2";
+    return "0.3.0-clean-test3-probe1";
 }
 
 classic_klatt_engine *classic_klatt_create(void) {
@@ -984,21 +943,16 @@ int classic_klatt_speak_utf16(
     const classic_klatt_callbacks *callbacks
 ) {
     segment_list segments = {0};
-    int question = 0;
-    uint32_t i;
     int result;
     if (!engine || !text || !text_units || !callbacks || !callbacks->pcm) return 0;
     if (voice != CLASSIC_KLATT_VOICE_MALE && voice != CLASSIC_KLATT_VOICE_FEMALE) return 0;
-    for (i = 0; i < text_units; ++i) {
-        if (text[i] == '?') question = 1;
-    }
     if (engine_cancelled(engine)) return 0;
     if (!phonemize_text(text, text_units, &segments)) {
         free(segments.items);
         return 0;
     }
     result = segments.count
-        ? synthesize_segments(engine, &segments, rate, pitch, voice, callbacks, question)
+        ? synthesize_segments(engine, &segments, rate, pitch, voice, callbacks)
         : 1;
     free(segments.items);
     return result;

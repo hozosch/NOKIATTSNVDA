@@ -36,6 +36,11 @@ with a language-separated, output-only measurement harness instead of further
 global spectral tuning. The historical renderer is invoked only as a separate
 text-to-WAV process; captured PCM is never committed or packaged. See
 [`docs/BLACK-BOX-MEASUREMENT.md`](docs/BLACK-BOX-MEASUREMENT.md).
+The first probe establishes that common punctuation followed by whitespace is
+PCM-identical to whitespace alone in all five measured 5320 languages. The
+`0.3.0-clean-test3-probe1` candidate therefore removes its invented punctuation
+pauses and question contour while retaining the still-unmatched test 2
+acoustic core for further measurement.
 
 ## Project goal
 

@@ -204,7 +204,7 @@ def main() -> int:
 
     print("Black-box punctuation and boundary comparisons:")
     for row in report["behaviorComparisons"]:
-        if row["group"] != "punctuation":
+        if not row["group"].startswith("punctuation"):
             continue
         identical = "identical" if row["pcmIdentical"] else "different"
         print(
